@@ -166,9 +166,13 @@ export class QuestManager {
 
   update() {
     const q = this.current
-    if (!q) return
-    const p = this.progress(q)
-    if (p.have >= p.need) this.complete(q)
+    if (q) {
+      const p = this.progress(q)
+      if (p.have >= p.need) this.complete(q)
+    }
+    // Deliberately outside the quest check: the endless nights past the last
+    // quest are exactly where the 1,000- and 5,000-kill marks get passed, and
+    // an early return here meant those could never be earned.
     this.checkAchievements()
   }
 
@@ -197,9 +201,10 @@ export class QuestManager {
     s.bus.emit('quest:complete', { id: q.id })
   }
 
-  private checkAchievements() {
+  /** The live numbers every achievement is measured against. */
+  achievementStats(): Record<string, number> {
     const s = this.scene
-    const stats: Record<string, number> = {
+    return {
       kills: this.kills,
       recruited: s.army.totalRecruited,
       woodTotal: s.res.totalGathered.wood,
@@ -207,6 +212,11 @@ export class QuestManager {
       bossKills: this.bossKills,
       campsCleared: this.campsCleared,
     }
+  }
+
+  private checkAchievements() {
+    const s = this.scene
+    const stats = this.achievementStats()
     for (const a of ACHIEVEMENTS) {
       if (this.unlockedAchievements.has(a.id)) continue
       if ((stats[a.stat] ?? 0) >= a.amount) {

@@ -1,7 +1,7 @@
 import { Overlay } from './Overlay'
 import { ABILITY_KEYS } from '../config/abilities'
 import { PAL } from '../config/palette'
-import { QUESTS } from '../config/quests'
+import { QUESTS, ACHIEVEMENTS } from '../config/quests'
 import { SaveManager } from '../systems/SaveManager'
 import type { GameScene } from '../scenes/GameScene'
 import type Phaser from 'phaser'
@@ -9,7 +9,7 @@ import type Phaser from 'phaser'
 const QUALITY_NAMES = ['LOW', 'MED', 'HIGH']
 
 /** Which screen a menu row opens. UIScene owns the actual overlays. */
-export type ScreenName = 'quests'
+export type ScreenName = 'quests' | 'deeds'
 
 /**
  * Rows in display order, grouped into the lines they share.
@@ -19,7 +19,7 @@ export type ScreenName = 'quests'
  * anywhere to hang a quest log at all. Everything that pairs naturally shares
  * a line instead, so the list can grow without getting any taller.
  */
-const LINES: number[][] = [[0], [1], [2, 3], [4, 5], [6], [7]]
+const LINES: number[][] = [[0], [1, 2], [3, 4], [5, 6], [7], [8]]
 
 export class PauseMenu extends Overlay {
   private heading!: Phaser.GameObjects.Text
@@ -41,11 +41,12 @@ export class PauseMenu extends Overlay {
     this.rows = [
       this.button('RESUME', () => this.scene.events.emit('togglePause'), PAL.good),
       this.button('QUEST LOG', open('quests'), PAL.gold, 12),
+      this.button('DEEDS', open('deeds'), PAL.gold, 12),
       this.button('MASTER', () => this.cycle('master'), PAL.heroTrim, 12),
       this.button('EFFECTS', () => this.cycle('sfx'), PAL.heroTrim, 12),
       this.button('MUSIC', () => this.cycle('music'), PAL.heroTrim, 12),
       this.button('QUALITY', () => this.cycleQuality(), PAL.heroTrim, 12),
-      this.button('SAVE NOW', () => { this.game.saves.save(); this.rows[6].setLabel('SAVED ✓') }),
+      this.button('SAVE NOW', () => { this.game.saves.save(); this.rows[7].setLabel('SAVED ✓') }),
       this.button('RESET PROGRESS', () => this.resetProgress(), PAL.danger),
     ]
   }
@@ -73,10 +74,10 @@ export class PauseMenu extends Overlay {
   private resetProgress() {
     if (!this.confirmingReset) {
       this.confirmingReset = true
-      this.rows[7].setLabel('TAP AGAIN TO WIPE')
+      this.rows[8].setLabel('TAP AGAIN TO WIPE')
       this.scene.time.delayedCall(2600, () => {
         this.confirmingReset = false
-        this.rows[7].setLabel('RESET PROGRESS')
+        this.rows[8].setLabel('RESET PROGRESS')
       })
       return
     }
@@ -115,9 +116,11 @@ export class PauseMenu extends Overlay {
       `${g.army.count} troops   ·   ${g.workers.count} workers   ·   ${mins} min played`,
     ).setPosition(cx, y + (c ? 48 : 74))
 
+    const earned = g.quests.unlockedAchievements.size
     const labels = [
       'RESUME',
       `QUEST LOG  ${g.quests.index}/${QUESTS.length}`,
+      `DEEDS  ${earned}/${ACHIEVEMENTS.length}`,
       `MASTER  ${Math.round(g.settings.master * 100)}%`,
       `EFFECTS  ${Math.round(g.settings.sfx * 100)}%`,
       `MUSIC  ${Math.round(g.settings.music * 100)}%`,

@@ -5,6 +5,7 @@ import { Joystick } from '../ui/Joystick'
 import { LevelUpOverlay } from '../ui/LevelUpOverlay'
 import { PauseMenu, type ScreenName } from '../ui/PauseMenu'
 import { QuestLog } from '../ui/QuestLog'
+import { AchievementsPanel } from '../ui/AchievementsPanel'
 import { DebugPanel } from '../ui/DebugPanel'
 import { Overlay } from '../ui/Overlay'
 import { PAL } from '../config/palette'
@@ -46,6 +47,7 @@ export class UIScene extends Phaser.Scene {
   private debug!: DebugPanel
   private coreLost!: CoreLostOverlay
   private questLog!: QuestLog
+  private deeds!: AchievementsPanel
   private pendingUpgrades = 0
   private stickWasActive = false
 
@@ -62,6 +64,7 @@ export class UIScene extends Phaser.Scene {
     this.debug = new DebugPanel(this, this.gs)
     this.coreLost = new CoreLostOverlay(this, () => this.restartWave())
     this.questLog = new QuestLog(this, this.gs)
+    this.deeds = new AchievementsPanel(this, this.gs)
 
     const ge = this.gs.events
     ge.on('offerUpgrades', () => { this.pendingUpgrades++ })
@@ -85,7 +88,7 @@ export class UIScene extends Phaser.Scene {
 
   /** The pause menu's sub-screens, which open over it and return to it. */
   private screens(): Overlay[] {
-    return [this.questLog]
+    return [this.questLog, this.deeds]
   }
 
   private anyModalOpen() {
@@ -97,6 +100,7 @@ export class UIScene extends Phaser.Scene {
     this.pause.hide()
     for (const s of this.screens()) s.hide()
     if (name === 'quests') this.questLog.show()
+    else if (name === 'deeds') this.deeds.show()
   }
 
   /** Back out of a sub-screen to the menu it was opened from, still paused. */
