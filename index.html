@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0d1726">
 <title>Emberhold — frontier survival</title>
+<!--
+  Always revalidate the page itself. GitHub Pages serves HTML with a ~10 minute
+  cache, so after a deploy a returning phone happily keeps loading the previous
+  build's hashed bundle and the fix looks like it never shipped. The bundle
+  filenames are content-hashed, so they stay cached as long as they are valid.
+-->
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta name="description" content="Rebuild a burned frontier outpost, gather by hand, raise an army, and hold the night against the horde.">
 
 <!-- Added to the home screen on iOS, this opens without Safari's chrome. -->
