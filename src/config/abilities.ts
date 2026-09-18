@@ -46,7 +46,17 @@ export const ABILITIES: Record<AbilityKey, AbilityDef> = {
   },
 }
 
-export const ABILITY_SLOTS: AbilityKey[] = ['whirlwind', 'shockwave', 'arrowRain', 'firebomb', 'mend']
+/**
+ * The hotbar, left to right. Slot i is always this ability, unlocked or not, so
+ * a key never comes to mean something else halfway through a run. The order
+ * follows the unlock levels above for the same reason: the bar fills from the
+ * left as you level and never leaves a hole in the middle.
+ */
+export const ABILITY_SLOTS: AbilityKey[] = ['whirlwind', 'shockwave', 'mend', 'arrowRain', 'firebomb']
+
+/** Keyboard binding per slot, same order. One entry per slot, always. */
+export const ABILITY_KEYS: string[] = ['SPACE', 'Q', 'E', 'F', 'G']
+
 export const ULTIMATE: AbilityKey = 'rally'
 
 export const ABILITY_TUNING = {

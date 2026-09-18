@@ -1,9 +1,9 @@
 import Phaser from 'phaser'
 import { PAL, CSS } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
-import { ABILITIES } from '../config/abilities'
+import { ABILITIES, ABILITY_KEYS, ABILITY_SLOTS } from '../config/abilities'
 import { clamp, short } from '../core/math'
-import { safeAreaInsets } from '../core/device'
+import { safeAreaInsets, wantsTouchTargets } from '../core/device'
 import type { GameScene } from '../scenes/GameScene'
 
 const FONT = 'Verdana, Geneva, sans-serif'
@@ -100,7 +100,9 @@ export class HUD {
       this.rows.push({ icon, text, rate, type })
     }
 
-    for (let i = 0; i < 4; i++) this.buttons.push(this.makeButton(i))
+    // One button per hotbar slot, unlocked or not. The button keeps its place
+    // whether or not the ability behind it exists yet, so nothing ever shuffles.
+    for (let i = 0; i < ABILITY_SLOTS.length; i++) this.buttons.push(this.makeButton(i))
     this.ultBtn = this.makeButton(-1)
 
     this.game.bus.on('achievement', p => this.toast(`ACHIEVEMENT — ${p.title}`))
@@ -184,17 +186,37 @@ export class HUD {
     this.holdText.setPosition(padL + 4, this.H - padB - 2)
     this.statsText.setPosition(padL + 4, this.H - padB - 22)
 
-    // ability hotbar bottom-right, thumb reachable
-    const r = small ? 26 : 30
-    const gap = small ? 12 : 16
-    const baseY = this.H - padB - r - 6
-    this.game.uiBands.bottom = this.H - (baseY - r - 8)
-    let x = this.W - padR - r - 6
-    this.ultBtn.x = x; this.ultBtn.y = baseY; this.ultBtn.r = r + 5
-    this.ultBtn.zone.setPosition(x, baseY).setSize((r + 5) * 2, (r + 5) * 2)
+    // ability hotbar bottom-right, thumb reachable.
+    // Six circles — five slots plus the larger ultimate — do not fit across a
+    // phone in portrait at the size a desktop uses, so solve the radius and the
+    // gap from the width actually on offer instead of assuming a number that
+    // only ever fitted four. Widest gap that still allows the biggest radius.
+    const n = this.buttons.length
+    const rWant = small ? 26 : 30
+    const gapWant = small ? 12 : 16
+    // Below this a thumb misses; better to crowd the bar than to shrink past it.
+    const rFloor = wantsTouchTargets(this.W) ? 20 : 15
+    const right = this.W - padR - 6
+    const avail = right - padL
+    let r = 0
+    let gap = gapWant
+    for (let tryGap = gapWant; tryGap >= 6; tryGap -= 2) {
+      // span = ultimate (2r + 10) + gap + n buttons (2r) + n - 1 gaps
+      const fits = Math.min(rWant, Math.floor((avail - 10 - n * tryGap) / (2 * n + 2)))
+      if (fits > r) { r = fits; gap = tryGap }
+      if (r >= rWant) break
+    }
+    r = Math.max(rFloor, r)
+
+    const ultR = r + 5
+    const baseY = this.H - padB - ultR - 6
+    this.game.uiBands.bottom = this.H - (baseY - ultR - 8)
+    let x = right - ultR
+    this.ultBtn.x = x; this.ultBtn.y = baseY; this.ultBtn.r = ultR
+    this.ultBtn.zone.setPosition(x, baseY).setSize(ultR * 2, ultR * 2)
     this.ultBtn.glyph.setPosition(x, baseY - 2).setFontSize(`${r}px`)
-    this.ultBtn.key.setPosition(x, baseY + r + 2)
-    x -= (r + 5) * 2 + gap
+    this.ultBtn.key.setPosition(x, baseY + ultR + 2)
+    x -= ultR + gap + r
     for (let i = 0; i < this.buttons.length; i++) {
       const b = this.buttons[i]
       b.x = x; b.y = baseY; b.r = r
@@ -317,11 +339,13 @@ export class HUD {
     }
 
     // ---- abilities --------------------------------------------------------
-    const vis = g.abilities.visible
-    const keyLabels = ['SPACE', 'Q', 'E', 'F']
+    // Slot b is always the same ability. A locked one draws nothing at all, but
+    // it keeps its place in the row, so the key under your finger today is the
+    // key under your finger at level 9.
+    const slots = g.abilities.slots
     for (let b = 0; b < this.buttons.length; b++) {
       const btn = this.buttons[b]
-      const slot = vis[b]
+      const slot = slots[b]?.unlocked ? slots[b] : undefined
       if (!slot) {
         btn.ring.clear(); btn.glyph.setVisible(false); btn.key.setVisible(false)
         btn.zone.setSize(1, 1)
@@ -330,7 +354,7 @@ export class HUD {
       const def = ABILITIES[slot.key]
       const ready = slot.cd <= 0
       this.drawButton(btn, def.glyph, def.colour, ready ? 1 : 1 - slot.cd / def.cooldown, ready)
-      btn.key.setVisible(true).setText(keyLabels[b] ?? '')
+      btn.key.setVisible(true).setText(ABILITY_KEYS[b] ?? '')
       btn.zone.setSize(btn.r * 2, btn.r * 2)
     }
     if (g.abilities.ultimate.unlocked) {

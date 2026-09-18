@@ -24,7 +24,7 @@ Then open <http://localhost:5180>.
 | Attack | automatic — you swing at whatever is in range |
 | Build / upgrade | walk into a build site; hold `SHIFT` to fund an upgrade |
 | Hire, recruit | stand on the camp or barracks |
-| Abilities | `SPACE`, `Q`, `E`, `F`, ultimate on `R` |
+| Abilities | `SPACE`, `Q`, `E`, `F`, `G`, ultimate on `R` |
 | Army follow / hold | `H` |
 | Pause | `ESC` or `P` |
 | Debug panel | `F2` |

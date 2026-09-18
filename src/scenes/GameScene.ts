@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { WORLD, CAMERA, PLAYER, PICKUP } from '../config/balance'
 import { PAL } from '../config/palette'
 import { ZONES } from '../config/map'
+import { ABILITY_KEYS } from '../config/abilities'
 import { clamp, dist, rr, short, srand } from '../core/math'
 import { Bus } from '../core/Events'
 import { Grid } from '../core/Grid'
@@ -191,10 +192,9 @@ export class GameScene extends Phaser.Scene {
       'W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,Q,E,R,F,G,H,ONE,TWO,THREE,FOUR,SHIFT',
     ) as Record<string, Phaser.Input.Keyboard.Key>
 
-    kb.on('keydown-SPACE', () => this.abilities.castSlot(0))
-    kb.on('keydown-Q', () => this.abilities.castSlot(1))
-    kb.on('keydown-E', () => this.abilities.castSlot(2))
-    kb.on('keydown-F', () => this.abilities.castSlot(3))
+    // One binding per hotbar slot, straight off the config, so a slot can never
+    // exist without a key again.
+    ABILITY_KEYS.forEach((k, i) => kb.on(`keydown-${k}`, () => this.abilities.castSlot(i)))
     kb.on('keydown-R', () => this.abilities.castUltimate())
     kb.on('keydown-H', () => this.toggleHold())
     kb.on('keydown-ESC', () => this.events.emit('togglePause'))

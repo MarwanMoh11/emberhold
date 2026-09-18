@@ -40,9 +40,6 @@ export class AbilitySystem {
     }
   }
 
-  /** Slots that are visible on the hotbar right now. */
-  get visible() { return this.slots.filter(s => s.unlocked) }
-
   update(dt: number) {
     for (const s of this.slots) if (s.cd > 0) s.cd -= dt
     if (this.ultimate.cd > 0) this.ultimate.cd -= dt
@@ -66,10 +63,16 @@ export class AbilitySystem {
     }
   }
 
+  /**
+   * Cast the ability in hotbar slot `index` — a fixed position, not a position
+   * in the unlocked subset. Indexing the unlocked ones used to shuffle every
+   * ability onto a different key each time a new one unlocked, and left the
+   * last of the five with no key and no button at all. `cast` already refuses a
+   * locked slot, so a press on an empty one is simply ignored.
+   */
   castSlot(index: number): boolean {
-    const vis = this.visible
-    if (index < 0 || index >= vis.length) return false
-    return this.cast(vis[index])
+    const s = this.slots[index]
+    return s ? this.cast(s) : false
   }
 
   castUltimate(): boolean {
