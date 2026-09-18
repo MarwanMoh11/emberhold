@@ -143,8 +143,10 @@ export class BuildingPanel {
       this.btnG.strokeRoundedRect(-bw / 2, y, bw, bh, 7)
       this.btnG.setVisible(true)
       this.btnText.setVisible(true).setText(committed ? 'UPGRADING' : 'UPGRADE').setPosition(0, by)
-      // zone lives in world space, so offset it by where the panel sits
-      this.btnZone.setSize(bw, bh).setPosition(this.root.x, this.root.y + by)
+      // Local coordinates: btnZone is a child of `root`, so setting it to the
+      // container's own world position offset it twice and left the tap target
+      // far from the drawn button. The button simply never worked.
+      this.btnZone.setSize(bw, bh).setPosition(0, by)
       y += bh + 6
     } else {
       this.btnG.clear().setVisible(false)
@@ -182,7 +184,7 @@ export class BuildingPanel {
     const minX = view.x + sideBand
     const x = Phaser.Math.Clamp(b.x, minX, Math.max(minX, view.right - sideBand))
     this.root.setPosition(Math.round(x), Math.round(Phaser.Math.Clamp(topY, minY, maxY)))
-    if (showButton) this.btnZone.setPosition(this.root.x, this.root.y + this.btnText.y)
+    if (showButton) this.btnZone.setPosition(0, this.btnText.y)
   }
 
   destroy() { this.root.destroy() }

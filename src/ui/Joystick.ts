@@ -48,9 +48,22 @@ export class Joystick {
     return p.x < this.scene.scale.width * 0.55
   }
 
+  /**
+   * World-space controls — the build card's UPGRADE button — sit wherever the
+   * structure is, which on a phone is usually inside the movement half. Without
+   * this a thumb pressing UPGRADE also drags the hero, and walking off the pad
+   * cancels the very upgrade it just asked for.
+   */
+  private overWorldControl(p: Phaser.Input.Pointer) {
+    const game = this.scene.scene.get('Game')
+    if (!game?.input) return false
+    return game.input.hitTestPointer(p).length > 0
+  }
+
   private onDown(p: Phaser.Input.Pointer) {
     if (!this.enabled || this.pointerId !== -1) return
     if (!this.isMoveZone(p)) return
+    if (this.overWorldControl(p)) return
     this.pointerId = p.id
     this.originX = p.x
     this.originY = p.y
