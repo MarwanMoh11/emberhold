@@ -54,11 +54,30 @@
   }
   #boot .mark { color: #f0b846; font-size: 26px; font-weight: bold; letter-spacing: .2em; }
   #boot.gone { opacity: 0; pointer-events: none; transition: opacity .35s ease; }
+  /*
+   * A boot that never finishes says so. The splash used to sit on "lighting
+   * the fires…" forever when the first frame threw, which is indistinguishable
+   * from a slow phone right up until you close the tab.
+   */
+  #boot-retry {
+    display: none; margin-top: 6px; padding: 11px 26px; border-radius: 9px;
+    background: #1b2739; color: #e9f1ff; border: 2px solid #33506f;
+    font: inherit; font-size: 13px; letter-spacing: .12em; cursor: pointer;
+  }
+  #boot.failed #boot-retry { display: block; }
+  #boot.failed #boot-msg {
+    color: #ff8a7a; max-width: 360px; text-align: center;
+    line-height: 1.7; letter-spacing: .04em;
+  }
 </style>
 </head>
 <body>
 <div id="app"></div>
-<div id="boot"><div class="mark">EMBERHOLD</div><div>lighting the fires…</div></div>
+<div id="boot">
+  <div class="mark">EMBERHOLD</div>
+  <div id="boot-msg">lighting the fires…</div>
+  <button id="boot-retry" type="button">TRY AGAIN</button>
+</div>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

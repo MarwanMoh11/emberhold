@@ -13,6 +13,9 @@ const FONT = 'Verdana, Geneva, sans-serif'
 function dismissSplash() {
   const el = document.getElementById('boot')
   if (!el) return
+  // A slow boot can trip the watchdog in main.ts and put the failure message
+  // up moments before the title lands. Getting here is the proof it was wrong.
+  el.classList.remove('failed')
   el.classList.add('gone')
   setTimeout(() => el.remove(), 400)
 }
