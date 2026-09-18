@@ -144,7 +144,7 @@ export class WorkerManager {
       scene.fx.popup(w.x, w.y - 44, 'BACK TO WORK', PAL.good, 12)
       return false
     }
-    // Builders and porters have nothing to stockpile; they just wait it out.
+    // Builders have nothing to stockpile; they just wait it out.
     if (w.def.yield > 0) {
       const rate = (home!.stats.rate ?? 1) * (1 + scene.buildings.bonus.prod) * SHELTER_RATE
       w.gatherT += dt

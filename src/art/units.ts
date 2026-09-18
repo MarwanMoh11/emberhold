@@ -206,7 +206,7 @@ const ENEMY_WEAPON: Record<string, UnitLook['weapon']> = {
 
 const WORKER_WEAPON: Record<string, UnitLook['weapon']> = {
   lumberjack: 'axe', farmer: 'scythe', cutter: 'hammer', miner: 'pick', delver: 'chisel',
-  porter: 'none', builder: 'hammer',
+  builder: 'hammer',
 }
 
 export function buildUnitTextures(p: Pen) {

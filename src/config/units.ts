@@ -75,7 +75,7 @@ export const SOLDIERS: Record<SoldierKey, SoldierDef> = {
   },
 }
 
-export type WorkerKey = 'lumberjack' | 'farmer' | 'cutter' | 'miner' | 'delver' | 'porter' | 'builder'
+export type WorkerKey = 'lumberjack' | 'farmer' | 'cutter' | 'miner' | 'delver' | 'builder'
 
 export interface WorkerDef {
   key: WorkerKey
@@ -131,12 +131,6 @@ export const WORKERS: Record<WorkerKey, WorkerDef> = {
     colour: 0xb08fd8, accent: 0x54397e, home: 'crystalDelve',
     desc: 'Chips shards loose from the crystal seam. Never in a hurry.',
   },
-  porter: { // reserved for a later automation tier
-    key: 'porter', name: 'Porter', hp: 60, speed: 150, yield: 0, gatherTime: 1,
-    carry: 40, pop: 1, cost: { food: 30, coins: 60 },
-    colour: 0xd0b98a, accent: 0x7a6944, home: 'depot',
-    desc: 'Runs hauls between sites.',
-  },
   builder: {
     key: 'builder', name: 'Builder', hp: 70, speed: 136, yield: 0, gatherTime: 1,
     carry: 0, pop: 1, cost: { coins: 90, wood: 40, food: 20 },
@@ -145,7 +139,20 @@ export const WORKERS: Record<WorkerKey, WorkerDef> = {
   },
 }
 
-/** Which worker a given production building employs. */
+/**
+ * Which worker a given production building employs. A building missing from
+ * this map cannot hire, so this is the whole roster.
+ *
+ * There is deliberately no hauler here. A porter sat in this file for a long
+ * time, fully statted and impossible to hire, described as running deliveries
+ * between sites — but nothing in the game has a delivery to run. A crew banks
+ * its haul at its own camp and the number lands in one shared store the
+ * instant it does; no site holds stock, nothing is ever in transit, and the
+ * depot only exists to take the load off the hero's back. A porter here would
+ * have had to invent resources at one end of a walk, which is a second income
+ * channel wearing a logistics costume. If site-level stockpiles ever land,
+ * that is when a hauler earns its keep.
+ */
 export const WORKER_FOR: Partial<Record<BuildingKey, WorkerKey>> = {
   lumberCamp: 'lumberjack',
   farm: 'farmer',
