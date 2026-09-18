@@ -110,13 +110,13 @@ export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
     { cost: { coins: 100, wood: 50 }, hp: 700, stats: { unit: 0, rally: 4, trainMult: 1 } },
     { cost: { coins: 300, wood: 200, stone: 80 }, hp: 1000, stats: { unit: 0, rally: 7, trainMult: 1.25 } },
     { cost: { coins: 800, wood: 450, stone: 260, metal: 60 }, hp: 1500, stats: { unit: 0, rally: 11, trainMult: 1.6 } },
-  ], 'Trains swordsmen. Walk in with food and coin to muster troops.', { blocking: true }),
+  ], 'Musters your infantry — swordsmen, then spears, then heavy guards as it grows. Walk in with food and coin.', { blocking: true }),
 
   archeryRange: B('archeryRange', 'Archery Range', 'ARCHERY', 'military', 78, 60, [
     { cost: { coins: 260, wood: 220 }, hp: 620, stats: { rally: 4, trainMult: 1 } },
     { cost: { coins: 620, wood: 420, stone: 160 }, hp: 900, stats: { rally: 7, trainMult: 1.3 } },
     { cost: { coins: 1400, wood: 800, stone: 400, metal: 100 }, hp: 1300, stats: { rally: 10, trainMult: 1.7 } },
-  ], 'Trains archers who shoot over your shield line.',
+  ], 'Musters your shooting line: archers from the first level, crossbowmen once it is raised.',
     { requiresTownHall: 2, blocking: true }),
 
   stable: B('stable', 'Outrider Camp', 'OUTRIDER', 'military', 80, 64, [
