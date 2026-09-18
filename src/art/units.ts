@@ -10,7 +10,7 @@ export interface UnitLook {
   skin?: number
   /** overall pixel height of the character */
   h?: number
-  weapon?: 'sword' | 'spear' | 'bow' | 'crossbow' | 'axe' | 'club' | 'staff' | 'none' | 'hammer' | 'pick' | 'scythe' | 'torch'
+  weapon?: 'sword' | 'spear' | 'bow' | 'crossbow' | 'axe' | 'club' | 'staff' | 'none' | 'hammer' | 'pick' | 'scythe' | 'torch' | 'chisel'
   shield?: boolean
   helmet?: boolean
   cape?: number
@@ -131,6 +131,13 @@ export function drawUnit(p: Pen, key: string, look: UnitLook) {
       p.fill(0x6b4a2a).rect(wx - 2, wy - H * 0.14, 4, H * 0.44, 1)
       p.fill(0x9aa4ad).poly([[wx - H * 0.22, wy - H * 0.26], [wx + H * 0.22, wy - H * 0.26], [wx, wy - H * 0.14]])
       break
+    case 'chisel':
+      // mallet-and-chisel, with the shard it just freed still in the light
+      p.fill(0x6b4a2a).rect(wx - 2, wy - H * 0.04, 4, H * 0.30, 1)
+      p.fill(0x9aa4ad).rect(wx - 3, wy - H * 0.20, 6, H * 0.17, 1)
+      p.fill(steel).poly([[wx - 3, wy - H * 0.20], [wx + 3, wy - H * 0.20], [wx, wy - H * 0.30]])
+      p.fill(PAL.crystal, 0.95).poly([[wx + H * 0.14, wy - H * 0.22], [wx + H * 0.20, wy - H * 0.34], [wx + H * 0.26, wy - H * 0.22], [wx + H * 0.20, wy - H * 0.14]])
+      break
     case 'scythe':
       p.fill(0x6b4a2a).rect(wx - 2, wy - H * 0.2, 4, H * 0.5, 1)
       p.fill(steel).poly([[wx, wy - H * 0.2], [wx + H * 0.3, wy - H * 0.34], [wx + H * 0.22, wy - H * 0.16]])
@@ -198,7 +205,8 @@ const ENEMY_WEAPON: Record<string, UnitLook['weapon']> = {
 }
 
 const WORKER_WEAPON: Record<string, UnitLook['weapon']> = {
-  lumberjack: 'axe', farmer: 'scythe', cutter: 'hammer', miner: 'pick', porter: 'none', builder: 'hammer',
+  lumberjack: 'axe', farmer: 'scythe', cutter: 'hammer', miner: 'pick', delver: 'chisel',
+  porter: 'none', builder: 'hammer',
 }
 
 export function buildUnitTextures(p: Pen) {

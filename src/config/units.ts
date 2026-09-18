@@ -75,7 +75,7 @@ export const SOLDIERS: Record<SoldierKey, SoldierDef> = {
   },
 }
 
-export type WorkerKey = 'lumberjack' | 'farmer' | 'cutter' | 'miner' | 'porter' | 'builder'
+export type WorkerKey = 'lumberjack' | 'farmer' | 'cutter' | 'miner' | 'delver' | 'porter' | 'builder'
 
 export interface WorkerDef {
   key: WorkerKey
@@ -120,6 +120,17 @@ export const WORKERS: Record<WorkerKey, WorkerDef> = {
     colour: 0xb08b5c, accent: 0x5a4227, home: 'mine',
     desc: 'Digs iron from the seam.',
   },
+  /**
+   * The slowest crew in the game, on purpose. Crystal is what the top level of
+   * five different structures is priced in, so a delver who worked like a
+   * miner would flatten the whole endgame inside one night.
+   */
+  delver: {
+    key: 'delver', name: 'Delver', hp: 80, speed: 108, yield: 2, gatherTime: 7,
+    carry: 10, pop: 1, cost: { coins: 260, food: 90, metal: 25 },
+    colour: 0xb08fd8, accent: 0x54397e, home: 'crystalDelve',
+    desc: 'Chips shards loose from the crystal seam. Never in a hurry.',
+  },
   porter: { // reserved for a later automation tier
     key: 'porter', name: 'Porter', hp: 60, speed: 150, yield: 0, gatherTime: 1,
     carry: 40, pop: 1, cost: { food: 30, coins: 60 },
@@ -140,5 +151,6 @@ export const WORKER_FOR: Partial<Record<BuildingKey, WorkerKey>> = {
   farm: 'farmer',
   quarry: 'cutter',
   mine: 'miner',
+  crystalDelve: 'delver',
   workshop: 'builder',
 }

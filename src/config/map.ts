@@ -96,6 +96,14 @@ export const PADS: PadSpec[] = [
   { id: 'quarry1', key: 'quarry', x: CX + 780, y: CY - 130, zone: 'greyfall', requiresTownHall: 2 },
   { id: 'farm2', key: 'farm', x: CX - 820, y: CY + 60, zone: 'hollow', requiresTownHall: 2 },
   { id: 'mine1', key: 'mine', x: CX + 620, y: CY + 760, zone: 'deepvein', requiresTownHall: 3 },
+  // Set against the Deepvein crystal pocket, one hall level above the seam
+  // itself: you claim the ground at Lv.3 and the delve stands there greyed
+  // out, telling you exactly what the next rung of the hall is for.
+  //
+  // Placed well back from the Seam Overseers, not beside them. Anything inside
+  // 300px of that warcamp is besieged forever — the crew never stops taking
+  // cover, and a delve built there banks nothing at all until the camp burns.
+  { id: 'delve1', key: 'crystalDelve', x: CX + 640, y: CY + 1140, zone: 'deepvein', requiresTownHall: 4 },
 
   // --- defence: towers on the approaches -------------------------------
   { id: 'towerN', key: 'watchtower', x: CX - 90, y: CY - 452, zone: 'hold' },

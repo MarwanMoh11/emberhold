@@ -172,6 +172,50 @@ const DRAW: Record<BuildingKey, Draw> = {
     if (lvl >= 3) { p.fill(WD).rect(cx - 40, by - 40, 4, 40); flag(p, cx - 38, by - 40, 12, PAL.metal) }
   },
 
+  crystalDelve: (p, lvl, _W, _H, cx, by) => {
+    plinth(p, cx, by, 48, 0x57496a)
+    // the working face: a shelf of violet rock with the seam split through it
+    p.fill(0x4a3d60).ellipse(cx, by - 14, 78, 38)
+    p.fill(shade(0x4a3d60, -0.34)).ellipse(cx + 1, by - 17, 58, 26)
+    p.fill(0x1d1528).poly([[cx - 11, by - 12], [cx - 8, by - 32], [cx + 8, by - 32], [cx + 11, by - 12]])
+    // the crystals themselves are the silhouette — everything else frames them
+    const spike = (x: number, yb: number, h: number, w: number) => {
+      p.fill(shade(PAL.crystal, -0.38)).poly([[x - w, yb], [x, yb - h], [x + w, yb]])
+      p.fill(PAL.crystal).poly([[x - w, yb], [x, yb - h], [x - w * 0.12, yb]])
+      p.fill(0xffffff, 0.55).poly([[x - w * 0.55, yb - h * 0.28], [x, yb - h * 0.84], [x - w * 0.12, yb - h * 0.28]])
+    }
+    spike(cx - 17, by - 8, 20 + lvl * 3, 7)
+    spike(cx + 14, by - 10, 15 + lvl * 3, 6)
+    spike(cx - 2, by - 5, 26 + lvl * 4, 8)
+    if (lvl >= 2) spike(cx + 26, by - 6, 13 + lvl * 2, 5)
+    if (lvl >= 3) spike(cx - 29, by - 6, 16, 5)
+    // head frame over the cut, with a hoist rope and the shard it just lifted
+    p.fill(WD).rect(cx - 31, by - 50, 4, 46).rect(cx + 27, by - 50, 4, 46)
+    p.fill(shade(WD, -0.32)).rect(cx - 36, by - 54, 72, 6, 1)
+    p.fill(WL).rect(cx - 36, by - 54, 72, 3, 1)
+    p.fill(0x2a2018).rect(cx + 7, by - 48, 1.6, 12)
+    p.fill(shade(PAL.crystal, -0.25)).poly([[cx + 3, by - 32], [cx + 8, by - 40], [cx + 13, by - 32], [cx + 8, by - 27]])
+    p.fill(PAL.crystal, 0.95).poly([[cx + 3, by - 32], [cx + 8, by - 40], [cx + 8, by - 27]])
+    // a lantern, because the seam is dark work
+    p.fill(0x4a3320).rect(cx - 30, by - 48, 2.5, 3)
+    p.fill(0x2a2018).rect(cx - 29.5, by - 46, 1.2, 6)
+    p.fill(0xffc76a, 0.9).circle(cx - 29, by - 37, 4)
+    p.fill(0xfff0b0).circle(cx - 29, by - 38, 2)
+    // spoil: chips of dead rock swept out of the cut
+    p.fill(shade(0x4a3d60, 0.22)).circle(cx - 36, by - 4, 3.4).circle(cx - 31, by - 2, 2.6).circle(cx + 36, by - 3, 3)
+    if (lvl >= 2) {
+      // trimming bench, out past the frame where you can see it
+      p.fill(shade(WL, -0.12)).rect(cx + 34, by - 17, 22, 4, 1)
+      p.fill(WD).rect(cx + 36, by - 13, 3, 13).rect(cx + 52, by - 13, 3, 13)
+      p.fill(shade(PAL.crystal, 0.2)).poly([[cx + 38, by - 17], [cx + 41, by - 25], [cx + 44, by - 17]])
+      p.fill(PAL.crystal).poly([[cx + 46, by - 17], [cx + 49, by - 23], [cx + 52, by - 17]])
+    }
+    if (lvl >= 3) {
+      p.fill(PAL.crystal, 0.16).circle(cx - 2, by - 30, 34)
+      flag(p, cx - 34, by - 54, 15, PAL.crystal)
+    }
+  },
+
   barracks: (p, lvl, _W, _H, cx, by) => {
     plinth(p, cx, by, 52)
     const w = 62

@@ -1,7 +1,7 @@
 import type { ResourceType, ResourceBag } from '../core/types'
 
 export type BuildingKey =
-  | 'townHall' | 'depot' | 'lumberCamp' | 'farm' | 'quarry' | 'mine'
+  | 'townHall' | 'depot' | 'lumberCamp' | 'farm' | 'quarry' | 'mine' | 'crystalDelve'
   | 'barracks' | 'archeryRange' | 'stable' | 'house' | 'warehouse'
   | 'blacksmith' | 'workshop' | 'healingTent'
   | 'watchtower' | 'cannonTower' | 'wall' | 'gate'
@@ -86,6 +86,25 @@ export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
     { cost: { coins: 3000, stone: 1100, metal: 400 }, hp: 1300, stats: { workers: 6, rate: 2.1 } },
   ], 'Miners draw iron from the deep seams. Metal buys the finest gear.',
     { workerSlots: 2, gathers: 'metal', requiresTownHall: 3, blocking: true }),
+
+  /**
+   * The one resource the top of every tree is priced in used to come only off
+   * the end of your own pick: eleven nodes and the odd warlord. Everything
+   * else in the settlement could be handed to a crew, so the one thing gating
+   * the Citadel was the one thing you were still mining by hand at hour four.
+   *
+   * The delve fixes that without making crystal common. Its crew is the
+   * slowest in the game — a rate below 1 until the top level — and the seam it
+   * works is a pocket of five nodes on a 20 second regrowth, so the ground
+   * itself caps what a delve can pull out of it. It turns a grind into a
+   * trickle; it does not turn crystal into stone.
+   */
+  crystalDelve: B('crystalDelve', 'Crystal Delve', 'DELVE', 'production', 66, 56, [
+    { cost: { coins: 1500, wood: 450, stone: 550, metal: 140 }, hp: 680, stats: { workers: 2, rate: 0.6 } },
+    { cost: { coins: 3200, stone: 950, metal: 380 }, hp: 980, stats: { workers: 3, rate: 0.8 } },
+    { cost: { coins: 6500, stone: 1600, metal: 750, crystal: 12 }, hp: 1400, stats: { workers: 4, rate: 1 } },
+  ], 'Delvers chip shards out of the violet seam. Slow, patient work — but crystal stops being something you dig up yourself.',
+    { workerSlots: 2, gathers: 'crystal', requiresTownHall: 4, blocking: true }),
 
   barracks: B('barracks', 'Barracks', 'BARRACKS', 'military', 76, 62, [
     { cost: { coins: 100, wood: 50 }, hp: 700, stats: { unit: 0, rally: 4, trainMult: 1 } },
