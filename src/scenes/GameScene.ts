@@ -314,9 +314,13 @@ export class GameScene extends Phaser.Scene {
    */
   zonesNextTarget(): { x: number; y: number; hint?: string } | null {
     let unaffordable: { x: number; y: number; hint?: string } | null = null
+    let gatedHall = 0
     for (const z of ZONES) {
       if (z.startsUnlocked || this.zones.isUnlocked(z.id)) continue
-      if (this.buildings.townHallLevel < z.requiresTownHall) continue
+      if (this.buildings.townHallLevel < z.requiresTownHall) {
+        if (!gatedHall || z.requiresTownHall < gatedHall) gatedHall = z.requiresTownHall
+        continue
+      }
       const c = this.zones.claimPoint(z.id)
       if (!c) continue
       if (this.zones.canUnlockId(z.id)) return { x: c.x, y: c.y, hint: `Claim ${z.name}` }
@@ -326,7 +330,14 @@ export class GameScene extends Phaser.Scene {
         unaffordable = { x: c.x, y: c.y, hint: `Save for ${z.name} — ${price}` }
       }
     }
-    return unaffordable
+    if (unaffordable) return unaffordable
+    // Every border left needs a bigger hall. "Claim a new territory" with no
+    // arrow and no reason was the same dead end the build goals had.
+    if (gatedHall) {
+      const hall = this.buildings.buildings.find(b => b.key === 'townHall')
+      if (hall) return { x: hall.x, y: hall.y, hint: `Command Hall Lv.${gatedHall} first` }
+    }
+    return null
   }
 
   // ---- hero attack ------------------------------------------------------

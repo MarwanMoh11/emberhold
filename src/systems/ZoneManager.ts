@@ -26,6 +26,8 @@ const CLAIM_MARGIN = 96
 const CLAIM_DWELL = 0.45
 /** The banner only draws within this range of the claim point. */
 const BANNER_RANGE = 460
+/** Height of the flag planted on the claim ring; the frame clears it. */
+const POLE_H = 44
 
 interface ZoneView {
   spec: ZoneSpec
@@ -172,10 +174,12 @@ export class ZoneManager {
       g.strokePath()
     }
 
+    // planted on the spot, rising out of the ring rather than hanging off the
+    // frame — the frame is a label and may slide; this never does
     g.fillStyle(0x4a3320, 1)
     g.fillRect(v.cx - 2, v.cy - 34, 4, 34)
     g.fillStyle(PAL.gold, 1)
-    g.fillTriangle(v.cx + 2, v.cy - 32, v.cx + 26, v.cy - 25, v.cx + 2, v.cy - 17)
+    g.fillTriangle(v.cx + 2, v.cy - 34, v.cx + 26, v.cy - 27, v.cx + 2, v.cy - 19)
   }
 
   /**
@@ -187,10 +191,12 @@ export class ZoneManager {
   private frameBanner(v: ZoneView) {
     const lh = v.label.height
     const ch = v.cost.height
-    const top = -46 - lh - ch
+    // The frame floats a flag's height above its anchor so it clears both the
+    // pole and the ring drawn on the ground around it.
+    const top = -POLE_H - 46 - lh - ch
     v.label.setPosition(0, top + 10)
     v.cost.setPosition(0, top + 14 + lh)
-    const h = -top + 4
+    const h = -top - POLE_H + 4
 
     const cam = this.scene.cameras.main
     const view = cam.worldView
@@ -207,7 +213,7 @@ export class ZoneManager {
     const drop = v.cy - v.banner.y
     if (Math.abs(drop) > 8) {
       v.bg.lineStyle(2, PAL.gold, 0.4)
-      v.bg.lineBetween(0, 0, 0, drop)
+      v.bg.lineBetween(0, -POLE_H, 0, drop - 34)
     }
     v.bg.fillStyle(PAL.uiBg, 0.9)
     v.bg.fillRoundedRect(-BANNER_W / 2, top, BANNER_W, h, 8)
