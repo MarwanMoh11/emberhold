@@ -78,6 +78,14 @@ export class BuildingManager {
   private razePad: string | null = null
   private razeT = 0
 
+  /**
+   * The pad the hero is standing in having just pulled it down. An empty site
+   * rebuilds itself out of your stores the moment you stand in one, which put
+   * the building straight back up under the feet of the player who had just
+   * paid to be rid of it. Stepping off the pad clears this.
+   */
+  private justRazed: string | null = null
+
   /** Farm pads whose crop ring has already been sown, so a rebuild adds none. */
   private fielded = new Set<string>()
 
@@ -566,7 +574,10 @@ export class BuildingManager {
         // holding shift is the desktop shortcut for "pour it in"
         if (this.shiftKey?.isDown && b.level > 0 && !b.isMax) b.committed = true
         if (b.dwellT >= DWELL) {
-          if (!b.isMax && (b.level === 0 || b.committed)) this.tickDeposit(b, dt)
+          // A site you just pulled down does not start rebuilding itself where
+          // you stand — walk out of the pad first.
+          const cleared = this.justRazed === b.padId
+          if (!b.isMax && !cleared && (b.level === 0 || b.committed)) this.tickDeposit(b, dt)
           if (b.level > 0) {
             if (this.rosterFor(b).length) this.tickRecruit(b, dt)
             else if (WORKER_FOR[b.key]) this.tickHireWorker(b, dt)
@@ -576,6 +587,7 @@ export class BuildingManager {
       } else {
         b.dwellT = 0
         b.committed = false
+        if (this.justRazed === b.padId) this.justRazed = null
         if (b.recruitCd < 0) b.recruitCd = 0
       }
     }
@@ -748,6 +760,7 @@ export class BuildingManager {
     b.committed = false
     b.dwellT = 0
     b.recruitCd = 0
+    this.justRazed = b.padId
     this.trains.delete(b.padId)
     b.applyTexture()
     b.sprite.setScale(1, 1)
@@ -820,6 +833,8 @@ export class BuildingManager {
       }
       if (missing.length) {
         hint = `need ${missing.join(', ')}`
+      } else if (this.justRazed === b.padId) {
+        hint = 'cleared — step off the pad before rebuilding'
       } else if (res.canAfford(rem)) {
         hint = 'stand here to build — paid from your stores'
       } else {
