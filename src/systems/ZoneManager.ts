@@ -10,16 +10,54 @@ import type { GameScene } from '../scenes/GameScene'
 const FOG_SCALE = 4
 /** Banner frame width in world units; also its wrap width. */
 const BANNER_W = 248
+/** How close the hero has to be for a claim to fire. */
+const CLAIM_RADIUS = 70
+/**
+ * How far outside its own border a zone's claim point is pushed.
+ *
+ * Authored banner anchors sit on the fence line, and two of them were inside
+ * the rect outright — which put the claim disc inside the soft barrier that
+ * shoves the hero back out. "Stand here to claim" then named a spot the game
+ * actively refused to let you stand on. Every anchor is projected clear of its
+ * own border now, so the disc always lands on ground you can hold.
+ */
+const CLAIM_MARGIN = 96
+/** Dwell before a claim fires, mirroring the build pads. */
+const CLAIM_DWELL = 0.45
+/** The banner only draws within this range of the claim point. */
+const BANNER_RANGE = 460
 
 interface ZoneView {
   spec: ZoneSpec
+  /** Where the hero actually stands to claim. Never inside the zone itself. */
+  cx: number
+  cy: number
   overlay: Phaser.GameObjects.Rectangle
   banner: Phaser.GameObjects.Container
   bg: Phaser.GameObjects.Graphics
   label: Phaser.GameObjects.Text
   cost: Phaser.GameObjects.Text
   post: Phaser.GameObjects.Graphics
+  marker: Phaser.GameObjects.Graphics
+  dwell: number
   unlocked: boolean
+}
+
+/**
+ * Project a banner anchor clear of its own zone rect, out through whichever
+ * edge it sits nearest. Anchors already well outside are left where they are.
+ */
+function claimPointFor(s: ZoneSpec): { x: number; y: number } {
+  const l = s.x - CLAIM_MARGIN, r = s.x + s.w + CLAIM_MARGIN
+  const t = s.y - CLAIM_MARGIN, b = s.y + s.h + CLAIM_MARGIN
+  const x = s.bannerX, y = s.bannerY
+  if (x < l || x > r || y < t || y > b) return { x, y }
+  const dl = x - l, dr = r - x, dt = y - t, db = b - y
+  const m = Math.min(dl, dr, dt, db)
+  if (m === dl) return { x: l, y }
+  if (m === dr) return { x: r, y }
+  if (m === dt) return { x, y: t }
+  return { x, y: b }
 }
 
 /**
@@ -76,7 +114,12 @@ export class ZoneManager {
     const post = this.scene.add.graphics().setDepth(depth + 1)
     if (!unlocked) this.drawBoundary(post, spec)
 
-    const banner = this.scene.add.container(spec.bannerX, spec.bannerY).setDepth(depth + 2)
+    const { x: cx, y: cy } = claimPointFor(spec)
+    // The ring is the actual affordance: a marked patch of ground you can walk
+    // onto. The frame above it is only a label.
+    const marker = this.scene.add.graphics().setDepth(depth + 1).setVisible(false)
+
+    const banner = this.scene.add.container(cx, cy).setDepth(depth + 2)
     // The frame is drawn in update() once the text has been measured: the name
     // plus its blurb runs well past a fixed 248px box, and on a phone that box
     // is most of the screen anyway.
@@ -91,21 +134,55 @@ export class ZoneManager {
       color: CSS(PAL.uiText), align: 'center',
       wordWrap: { width: BANNER_W - 24 },
     }).setOrigin(0.5, 0)
-    const flagPole = this.scene.add.graphics()
-    flagPole.fillStyle(0x4a3320, 1); flagPole.fillRect(-2, 0, 4, 34)
-    flagPole.fillStyle(PAL.gold, 1)
-    flagPole.fillTriangle(2, 2, 26, 9, 2, 17)
-    banner.add([bg, label, cost, flagPole])
+    banner.add([bg, label, cost])
     banner.setVisible(!unlocked)
 
-    this.views.set(spec.id, { spec, overlay, banner, bg, label, cost, post, unlocked })
+    this.views.set(spec.id, {
+      spec, cx, cy, overlay, banner, bg, label, cost, post, marker, dwell: 0, unlocked,
+    })
   }
 
+  /**
+   * Draw the claim disc where the hero has to stand, plus the flag planted on
+   * it. The pole lives here rather than on the banner container so it stays on
+   * the spot even when the frame above it slides to clear the HUD.
+   */
+  private drawMarker(v: ZoneView, affordable: boolean, inside: boolean) {
+    const g = v.marker
+    const ry = CLAIM_RADIUS * 0.55
+    g.clear()
+    const col = affordable ? PAL.good : PAL.uiDim
+    g.fillStyle(col, inside ? 0.22 : 0.1)
+    g.fillEllipse(v.cx, v.cy, CLAIM_RADIUS * 2, ry * 2)
+    g.lineStyle(3, col, affordable ? 0.95 : 0.5)
+    g.strokeEllipse(v.cx, v.cy, CLAIM_RADIUS * 2, ry * 2)
+
+    if (v.dwell > 0) {
+      const f = Math.min(1, v.dwell / CLAIM_DWELL)
+      const steps = Math.max(2, Math.round(f * 40))
+      g.lineStyle(6, PAL.gold, 1)
+      g.beginPath()
+      for (let i = 0; i <= steps; i++) {
+        const a = -Math.PI / 2 + (i / steps) * f * Math.PI * 2
+        const px = v.cx + Math.cos(a) * CLAIM_RADIUS
+        const py = v.cy + Math.sin(a) * ry
+        if (i === 0) g.moveTo(px, py)
+        else g.lineTo(px, py)
+      }
+      g.strokePath()
+    }
+
+    g.fillStyle(0x4a3320, 1)
+    g.fillRect(v.cx - 2, v.cy - 34, 4, 34)
+    g.fillStyle(PAL.gold, 1)
+    g.fillTriangle(v.cx + 2, v.cy - 32, v.cx + 26, v.cy - 25, v.cx + 2, v.cy - 17)
+  }
 
   /**
-   * Fit the frame around whatever the label wrapped to, then keep the whole
-   * banner inside the camera. A banner near the edge of the view used to run
-   * off the side of the screen, which on a phone hid the claim prompt itself.
+   * Fit the frame around whatever the label wrapped to, then keep it clear of
+   * the HUD. It slides vertically only: the frame used to be clamped sideways
+   * too, which pinned it to the screen edge while the claim disc stayed behind
+   * in the world, so "stand here" pointed at a box that was never the target.
    */
   private frameBanner(v: ZoneView) {
     const lh = v.label.height
@@ -115,24 +192,27 @@ export class ZoneManager {
     v.cost.setPosition(0, top + 14 + lh)
     const h = -top + 4
 
+    const cam = this.scene.cameras.main
+    const view = cam.worldView
+    const bands = this.scene.uiBands
+    // -top is the banner's height above its anchor, so this keeps the frame
+    // itself clear of the HUD rather than just its foot.
+    const minY = view.y + bands.top / cam.zoom - top
+    const maxY = view.bottom - bands.bottom / cam.zoom
+    v.banner.x = v.cx
+    v.banner.y = Phaser.Math.Clamp(v.cy, minY, Math.max(minY, maxY))
+
     v.bg.clear()
+    // tether back to the flag whenever the frame has been pushed off its spot
+    const drop = v.cy - v.banner.y
+    if (Math.abs(drop) > 8) {
+      v.bg.lineStyle(2, PAL.gold, 0.4)
+      v.bg.lineBetween(0, 0, 0, drop)
+    }
     v.bg.fillStyle(PAL.uiBg, 0.9)
     v.bg.fillRoundedRect(-BANNER_W / 2, top, BANNER_W, h, 8)
     v.bg.lineStyle(2, PAL.gold, 1)
     v.bg.strokeRoundedRect(-BANNER_W / 2, top, BANNER_W, h, 8)
-
-    const cam = this.scene.cameras.main
-    const view = cam.worldView
-    const bands = this.scene.uiBands
-    const halfW = BANNER_W / 2 + 10
-    // -top is the banner's height above its anchor, so this keeps the frame
-    // itself clear of the HUD rather than just the flag pole at its foot.
-    const minY = view.y + bands.top / cam.zoom - top
-    const maxY = view.bottom - bands.bottom / cam.zoom
-    v.banner.x = Phaser.Math.Clamp(
-      v.spec.bannerX, view.x + halfW, Math.max(view.x + halfW, view.right - halfW),
-    )
-    v.banner.y = Phaser.Math.Clamp(v.spec.bannerY, minY, Math.max(minY, maxY))
   }
 
   private drawBoundary(g: Phaser.GameObjects.Graphics, spec: ZoneSpec) {
@@ -154,6 +234,12 @@ export class ZoneManager {
 
   isUnlocked(id: ZoneId) { return this.views.get(id)?.unlocked ?? true }
 
+  /** Where the hero has to stand to claim a zone — also what the arrow aims at. */
+  claimPoint(id: ZoneId): { x: number; y: number } | null {
+    const v = this.views.get(id)
+    return v ? { x: v.cx, y: v.cy } : null
+  }
+
   zoneAt(x: number, y: number): ZoneView | null {
     for (const v of this.views.values()) {
       const s = v.spec
@@ -162,9 +248,20 @@ export class ZoneManager {
     return null
   }
 
+  /** The locked zone a point sits in, if any. Used to redirect guidance. */
+  lockedZoneAt(x: number, y: number): ZoneSpec | null {
+    const v = this.zoneAt(x, y)
+    return v && !v.unlocked ? v.spec : null
+  }
+
   canUnlock(v: ZoneView) {
     return this.scene.buildings.townHallLevel >= v.spec.requiresTownHall &&
       this.scene.res.canAfford(v.spec.cost)
+  }
+
+  canUnlockId(id: ZoneId) {
+    const v = this.views.get(id)
+    return !!v && !v.unlocked && this.canUnlock(v)
   }
 
   unlock(id: ZoneId, silent = false) {
@@ -173,6 +270,8 @@ export class ZoneManager {
     v.unlocked = true
     this.unlockedCount++
     v.post.clear()
+    v.marker.clear()
+    v.marker.setVisible(false)
     v.banner.setVisible(false)
     if (silent) {
       v.overlay.setVisible(false)
@@ -182,8 +281,8 @@ export class ZoneManager {
       targets: v.overlay, alpha: 0, duration: 700, ease: 'Cubic.easeOut',
       onComplete: () => v.overlay.setVisible(false),
     })
-    this.scene.fx.popup(v.spec.bannerX, v.spec.bannerY - 70, `${v.spec.name.toUpperCase()} CLAIMED`, PAL.gold, 26)
-    this.scene.fx.ring(v.spec.bannerX, v.spec.bannerY, 340, PAL.gold, 0.9)
+    this.scene.fx.popup(v.cx, v.cy - 70, `${v.spec.name.toUpperCase()} CLAIMED`, PAL.gold, 26)
+    this.scene.fx.ring(v.cx, v.cy, 340, PAL.gold, 0.9)
     this.scene.fx.flash(0xffe9b0, 0.22)
     this.scene.audio.play('quest', 0.8)
     this.scene.bus.emit('zone:unlocked', { id })
@@ -207,10 +306,11 @@ export class ZoneManager {
       // Stand off while a build-site card is up. You cannot fund a building and
       // claim territory in the same moment, and two world panels fighting for
       // the middle of a phone screen just looks broken.
-      const near = Math.hypot(p.x - v.spec.bannerX, p.y - v.spec.bannerY) < 460
-        && !this.scene.buildings.panelShown
+      const d = Math.hypot(p.x - v.cx, p.y - v.cy)
+      const near = d < BANNER_RANGE && !this.scene.buildings.panelShown
       v.banner.setVisible(near)
-      if (!near) continue
+      v.marker.setVisible(near)
+      if (!near) { v.dwell = 0; continue }
 
       const affordable = this.canUnlock(v)
       const needHall = this.scene.buildings.townHallLevel < v.spec.requiresTownHall
@@ -218,16 +318,21 @@ export class ZoneManager {
         .map(k => `${short(v.spec.cost[k] ?? 0)} ${k}`).join('   ')
       v.cost.setText(
         needHall ? `COMMAND HALL LV.${v.spec.requiresTownHall} REQUIRED`
-          : `${costStr}\n${affordable ? 'STAND HERE TO CLAIM' : 'not enough'}`,
+          : `${costStr}\n${affordable ? 'STAND ON THE RING TO CLAIM' : 'not enough'}`,
       ).setColor(affordable ? CSS(PAL.good) : needHall ? CSS(PAL.danger) : CSS(PAL.uiDim))
       v.label.setText(`${v.spec.name.toUpperCase()}  ·  ${v.spec.blurb}`)
       this.frameBanner(v)
 
-      const onBanner = Math.hypot(p.x - v.spec.bannerX, p.y - v.spec.bannerY) < 70
-      if (onBanner && affordable) {
-        this.scene.res.spend(v.spec.cost)
-        this.unlock(v.spec.id)
-      }
+      const inside = d < CLAIM_RADIUS
+      if (inside && affordable) {
+        v.dwell += dt
+        if (v.dwell >= CLAIM_DWELL) {
+          this.scene.res.spend(v.spec.cost)
+          this.unlock(v.spec.id)
+          continue
+        }
+      } else v.dwell = 0
+      this.drawMarker(v, affordable, inside)
     }
 
     // soft barrier: nudge the hero back out of land they have not claimed
