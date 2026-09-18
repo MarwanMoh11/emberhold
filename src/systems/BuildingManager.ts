@@ -702,7 +702,10 @@ export class BuildingManager {
   private salvageLabel(b: Building) {
     const bag = this.salvage(b)
     const parts = RESOURCE_ORDER.filter(k => (bag[k] ?? 0) > 0).map(k => `${short(bag[k]!)} ${k}`)
-    return parts.slice(0, 3).join(' · ') || 'nothing'
+    // Two entries is what fits inside the bar at phone sizes; the popup on the
+    // way down names the rest.
+    if (!parts.length) return 'nothing'
+    return parts.slice(0, 2).join(' · ') + (parts.length > 2 ? ' …' : '')
   }
 
   /** The DEMOLISH bar was pressed or released. Pressing alone does nothing. */
