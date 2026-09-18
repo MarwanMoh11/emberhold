@@ -1,0 +1,83 @@
+import Phaser from 'phaser'
+import { PAL, CSS } from '../config/palette'
+
+export const FONT = 'Verdana, Geneva, sans-serif'
+
+/** Shared chrome for the modal panels: dim, card, title, buttons. */
+export class Overlay {
+  readonly root: Phaser.GameObjects.Container
+  protected dim: Phaser.GameObjects.Rectangle
+  protected card: Phaser.GameObjects.Graphics
+  open = false
+
+  constructor(protected scene: Phaser.Scene, depth = 1_100_000) {
+    this.root = scene.add.container(0, 0).setDepth(depth).setVisible(false).setScrollFactor(0)
+    this.dim = scene.add.rectangle(0, 0, 10, 10, 0x040810, 0.72).setOrigin(0, 0).setScrollFactor(0)
+    this.card = scene.add.graphics().setScrollFactor(0)
+    this.root.add([this.dim, this.card])
+    scene.scale.on('resize', () => { if (this.open) this.layout() })
+  }
+
+  protected get W() { return this.scene.cameras.main.width }
+  protected get H() { return this.scene.cameras.main.height }
+
+  protected drawCard(x: number, y: number, w: number, h: number, accent = PAL.uiEdge) {
+    this.dim.setSize(this.W, this.H)
+    this.card.clear()
+    this.card.fillStyle(PAL.uiPanel, 0.97)
+    this.card.fillRoundedRect(x, y, w, h, 14)
+    this.card.lineStyle(2, accent, 1)
+    this.card.strokeRoundedRect(x, y, w, h, 14)
+    this.card.fillStyle(accent, 0.9)
+    this.card.fillRoundedRect(x + 16, y + 8, w - 32, 3, 2)
+  }
+
+  protected text(size: number, colour: number, bold = false) {
+    const t = this.scene.add.text(0, 0, '', {
+      fontFamily: FONT, fontSize: `${size}px`, color: CSS(colour),
+      fontStyle: bold ? 'bold' : 'normal', align: 'center',
+    }).setOrigin(0.5).setScrollFactor(0)
+    this.root.add(t)
+    return t
+  }
+
+  protected button(label: string, onClick: () => void, colour = PAL.heroTrim) {
+    const g = this.scene.add.graphics().setScrollFactor(0)
+    const t = this.scene.add.text(0, 0, label, {
+      fontFamily: FONT, fontSize: '14px', color: CSS(PAL.uiText), fontStyle: 'bold',
+    }).setOrigin(0.5).setScrollFactor(0)
+    const zone = this.scene.add.zone(0, 0, 10, 10).setScrollFactor(0).setInteractive({ useHandCursor: true })
+    let hover = false
+    const redraw = (x: number, y: number, w: number, h: number) => {
+      g.clear()
+      g.fillStyle(hover ? PAL.uiEdge : PAL.uiBg, 0.95)
+      g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 8)
+      g.lineStyle(2, colour, hover ? 1 : 0.7)
+      g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 8)
+    }
+    zone.on('pointerover', () => { hover = true; api.place(api.x, api.y, api.w, api.h) })
+    zone.on('pointerout', () => { hover = false; api.place(api.x, api.y, api.w, api.h) })
+    zone.on('pointerdown', onClick)
+    this.root.add([g, t, zone])
+    const api = {
+      x: 0, y: 0, w: 140, h: 40,
+      place(x: number, y: number, w = 140, h = 40) {
+        api.x = x; api.y = y; api.w = w; api.h = h
+        redraw(x, y, w, h)
+        t.setPosition(x, y)
+        zone.setPosition(x, y).setSize(w, h)
+      },
+      setLabel(s: string) { t.setText(s) },
+      setVisible(v: boolean) { g.setVisible(v); t.setVisible(v); zone.setSize(v ? api.w : 1, v ? api.h : 1) },
+    }
+    api.place(0, 0)
+    return api
+  }
+
+  show() { this.open = true; this.root.setVisible(true); this.layout() }
+  hide() { this.open = false; this.root.setVisible(false) }
+  toggle() { this.open ? this.hide() : this.show() }
+
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  protected layout() {}
+}

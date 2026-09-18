@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Emberhold">
+  <rect width="512" height="512" rx="96" fill="#0d1726"/>
+  <circle cx="256" cy="292" r="150" fill="#f0b846" opacity="0.13"/>
+  <!-- watchtower silhouette over an ember -->
+  <path d="M256 92 L352 196 H160 Z" fill="#c9752f"/>
+  <rect x="186" y="196" width="140" height="150" rx="10" fill="#8a5a33"/>
+  <rect x="186" y="196" width="140" height="18" fill="#a06a3c"/>
+  <rect x="232" y="268" width="48" height="78" rx="6" fill="#3a2718"/>
+  <rect x="204" y="222" width="34" height="30" rx="5" fill="#2a3b52"/>
+  <rect x="274" y="222" width="34" height="30" rx="5" fill="#2a3b52"/>
+  <!-- the ember itself -->
+  <path d="M256 462 C202 432 186 396 206 362 C220 386 232 390 240 380 C228 344 244 316 282 296 C272 336 292 344 304 366 C324 400 306 436 256 462 Z" fill="#f0b846"/>
+  <path d="M256 448 C226 430 218 408 230 388 C240 402 248 402 252 396 C246 374 256 358 278 346 C272 370 284 376 290 390 C302 412 288 432 256 448 Z" fill="#ffe08a"/>
+</svg>
