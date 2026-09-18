@@ -26,14 +26,16 @@ Then open <http://localhost:5180>.
 | Hire, recruit | stand on the camp or barracks |
 | Abilities | `SPACE`, `Q`, `E`, `F`, `G`, ultimate on `R` |
 | Army follow / hold | `H`, or the stance button under the health bar |
+| Minimap | `M`, or the MAP chip under the stance button |
 | Pause | `ESC` or `P`, or PAUSE under the health bar |
 | Debug panel | `F2` |
 
 On a phone it plays in either orientation: drag the left half of the screen to
 move, tap the buttons bottom-right for abilities, tap PAUSE or the army's
 standing order under the health bar, and everything else happens by walking
-into it. Add it to your home screen and it opens without browser chrome.
-The horde is capped lower on a phone so the frame rate holds.
+into it. The minimap starts folded away on a phone, because the corners are
+full; tap MAP to unfold it. Add it to your home screen and it opens without
+browser chrome. The horde is capped lower on a phone so the frame rate holds.
 
 The loop: sweep up coins and wood by hand → walk the load to the depot or a
 build site → raise a camp → the crew there works on its own → spend the income
@@ -100,6 +102,11 @@ The target is a few hundred enemies at 60 fps, and the design follows from that.
 - **Staggered AI.** Retarget timers are offset per entity id, and separation
   looks at a fixed handful of neighbours rather than all of them.
 - **Pools** for enemies, projectiles, pickups and floating text.
+- **The minimap never redraws.** Territory, structures and fog bake into a
+  RenderTexture at most four times a second and only when something changed;
+  the hero, camera box and enemy density are rebuilt at 9 Hz out of flat
+  rectangles. Rounded rectangles and circles are paths Phaser re-triangulates
+  every frame, and four of them cost more than the rest of the widget together.
 - **The terrain is one draw call** — baked into a half-resolution RenderTexture
   at startup. Fog of war is a quarter-resolution texture that gets erased.
 

@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { HUD } from '../ui/HUD'
+import { Minimap } from '../ui/Minimap'
 import { Joystick } from '../ui/Joystick'
 import { LevelUpOverlay } from '../ui/LevelUpOverlay'
 import { PauseMenu } from '../ui/PauseMenu'
@@ -37,6 +38,7 @@ class CoreLostOverlay extends Overlay {
 export class UIScene extends Phaser.Scene {
   private gs!: GameScene
   private hud!: HUD
+  private minimap!: Minimap
   private joystick!: Joystick
   private levelUp!: LevelUpOverlay
   private pause!: PauseMenu
@@ -50,6 +52,8 @@ export class UIScene extends Phaser.Scene {
   create(data: { game: GameScene }) {
     this.gs = data.game
     this.hud = new HUD(this, this.gs)
+    // After the HUD: the minimap lays itself out from the bands the HUD writes.
+    this.minimap = new Minimap(this, this.gs)
     this.joystick = new Joystick(this)
     this.levelUp = new LevelUpOverlay(this, this.gs)
     this.pause = new PauseMenu(this, this.gs)
@@ -147,8 +151,10 @@ export class UIScene extends Phaser.Scene {
     // A modal owns the screen: the HUD's own buttons stop answering taps that
     // land beside the card rather than on it.
     this.hud.blocked = modal
+    this.minimap.blocked = modal
 
     this.hud.update(dt)
+    this.minimap.update(dt)
     this.debug.update()
 
     if (this.pendingUpgrades > 0 && !this.anyModalOpen()) {
