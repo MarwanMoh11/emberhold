@@ -21,6 +21,14 @@ export class Overlay {
   protected get W() { return this.scene.cameras.main.width }
   protected get H() { return this.scene.cameras.main.height }
 
+  /**
+   * A landscape phone: barely 390px of height for a card that also has to hold
+   * a heading and a row of buttons. Every panel reads this and goes flat and
+   * wide — smaller type, tighter rows, more columns — rather than running off
+   * the bottom of the screen where nothing can reach it.
+   */
+  protected get compact() { return this.H < 470 }
+
   protected drawCard(x: number, y: number, w: number, h: number, accent = PAL.uiEdge) {
     this.dim.setSize(this.W, this.H)
     this.card.clear()
@@ -32,32 +40,60 @@ export class Overlay {
     this.card.fillRoundedRect(x + 16, y + 8, w - 32, 3, 2)
   }
 
-  protected text(size: number, colour: number, bold = false) {
+  protected text(size: number, colour: number, bold = false, originX = 0.5, originY = 0.5) {
     const t = this.scene.add.text(0, 0, '', {
       fontFamily: FONT, fontSize: `${size}px`, color: CSS(colour),
-      fontStyle: bold ? 'bold' : 'normal', align: 'center',
-    }).setOrigin(0.5).setScrollFactor(0)
+      fontStyle: bold ? 'bold' : 'normal', align: originX === 0.5 ? 'center' : 'left',
+    }).setOrigin(originX, originY).setScrollFactor(0)
     this.root.add(t)
     return t
   }
 
-  protected button(label: string, onClick: () => void, colour = PAL.heroTrim) {
+  /**
+   * Shrink a single line until it fits the card it sits in.
+   *
+   * A heading sized for a desktop card runs straight off both edges of the same
+   * card on a portrait phone, where the width is pinned to the screen. Call it
+   * after the text is set; it only ever makes type smaller.
+   */
+  protected fitText(t: Phaser.GameObjects.Text, size: number, maxW: number, min = 8) {
+    t.setFontSize(size)
+    while (t.width > maxW && size > min) {
+      size -= 1
+      t.setFontSize(size)
+    }
+    return t
+  }
+
+  /**
+   * A graphics layer inside the card. Panels make theirs first so the rows and
+   * bars they draw sit *under* the text that explains them.
+   */
+  protected gfx() {
+    const g = this.scene.add.graphics().setScrollFactor(0)
+    this.root.add(g)
+    return g
+  }
+
+  protected button(label: string, onClick: () => void, colour = PAL.heroTrim, size = 14) {
     const g = this.scene.add.graphics().setScrollFactor(0)
     const t = this.scene.add.text(0, 0, label, {
-      fontFamily: FONT, fontSize: '14px', color: CSS(PAL.uiText), fontStyle: 'bold',
+      fontFamily: FONT, fontSize: `${size}px`, color: CSS(PAL.uiText), fontStyle: 'bold',
     }).setOrigin(0.5).setScrollFactor(0)
     const zone = this.scene.add.zone(0, 0, 10, 10).setScrollFactor(0).setInteractive({ useHandCursor: true })
     let hover = false
+    let enabled = true
     const redraw = (x: number, y: number, w: number, h: number) => {
       g.clear()
-      g.fillStyle(hover ? PAL.uiEdge : PAL.uiBg, 0.95)
+      g.fillStyle(hover && enabled ? PAL.uiEdge : PAL.uiBg, enabled ? 0.95 : 0.55)
       g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 8)
-      g.lineStyle(2, colour, hover ? 1 : 0.7)
+      g.lineStyle(2, colour, enabled ? (hover ? 1 : 0.7) : 0.22)
       g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 8)
+      t.setColor(CSS(enabled ? PAL.uiText : PAL.uiDim))
     }
     zone.on('pointerover', () => { hover = true; api.place(api.x, api.y, api.w, api.h) })
     zone.on('pointerout', () => { hover = false; api.place(api.x, api.y, api.w, api.h) })
-    zone.on('pointerdown', onClick)
+    zone.on('pointerdown', () => { if (enabled) onClick() })
     this.root.add([g, t, zone])
     const api = {
       x: 0, y: 0, w: 140, h: 40,
@@ -69,6 +105,8 @@ export class Overlay {
       },
       setLabel(s: string) { t.setText(s) },
       setVisible(v: boolean) { g.setVisible(v); t.setVisible(v); zone.setSize(v ? api.w : 1, v ? api.h : 1) },
+      /** A greyed button still draws, but swallows nothing: the tap does nothing. */
+      setEnabled(v: boolean) { enabled = v; redraw(api.x, api.y, api.w, api.h) },
     }
     api.place(0, 0)
     return api
