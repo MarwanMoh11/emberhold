@@ -1,7 +1,9 @@
 import { QUESTS, ACHIEVEMENTS, type QuestDef } from '../config/quests'
 import { PAL } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
+import { dist } from '../core/math'
 import type { BuildingKey } from '../config/buildings'
+import type { Building } from '../entities/Building'
 import type { GameScene } from '../scenes/GameScene'
 
 export interface QuestView {
@@ -12,6 +14,13 @@ export interface QuestView {
   /** world position the guidance arrow should point at, if any */
   targetX?: number
   targetY?: number
+}
+
+/** Where the arrow points, plus an optional line replacing the quest hint. */
+interface Guidance {
+  x: number
+  y: number
+  hint?: string
 }
 
 /**
@@ -57,43 +66,87 @@ export class QuestManager {
     }
   }
 
+  /**
+   * Redirect a target standing on unclaimed ground to the claim point that
+   * opens it. The arrow used to send you at camps and pads inside locked
+   * zones, where the soft barrier just bounces you back out — naming the thing
+   * you cannot reach instead of the purchase that would let you reach it.
+   */
+  private throughZone(x: number, y: number): Guidance {
+    const locked = this.scene.zones.lockedZoneAt(x, y)
+    if (!locked) return { x, y }
+    const c = this.scene.zones.claimPoint(locked.id)
+    return c ? { x: c.x, y: c.y, hint: `Claim ${locked.name} first` } : { x, y }
+  }
+
+  /** A pad you cannot build on yet: aim at whatever is actually blocking it. */
+  private gatedTarget(b: Building): Guidance {
+    const s = this.scene
+    const viaZone = this.throughZone(b.x, b.y)
+    if (viaZone.hint) return viaZone
+    const needHall = Math.max(b.requiresTownHall, b.def.requiresTownHall ?? 0)
+    if (s.buildings.townHallLevel < needHall) {
+      const hall = s.buildings.buildings.find(h => h.key === 'townHall')
+      if (hall) return { x: hall.x, y: hall.y, hint: `Command Hall Lv.${needHall} first` }
+    }
+    return { x: b.x, y: b.y }
+  }
+
+  private nearestCamp(list: { spec: { x: number; y: number } }[]) {
+    const p = this.scene.player
+    let best: { spec: { x: number; y: number } } | null = null
+    let bestD = Infinity
+    for (const c of list) {
+      const d = dist(p.x, p.y, c.spec.x, c.spec.y)
+      if (d < bestD) { bestD = d; best = c }
+    }
+    return best
+  }
+
   /** Where to point the guidance arrow for the active objective. */
-  private targetFor(q: QuestDef): { x: number; y: number } | null {
+  private targetFor(q: QuestDef): Guidance | null {
     const s = this.scene
     const g = q.goal
     if (g.type === 'build') {
-      const pad = s.buildings.buildings.find(b =>
-        b.key === g.building && b.level === 0 && s.buildings.isPadAvailable(b))
-      if (pad) return { x: pad.x, y: pad.y }
+      const pads = s.buildings.buildings.filter(b => b.key === g.building && b.level === 0)
+      const open = pads.find(b => s.buildings.isPadAvailable(b))
+      if (open) return { x: open.x, y: open.y }
+      if (pads.length) return this.gatedTarget(pads[0])
     }
     if (g.type === 'upgrade') {
-      const pad = s.buildings.buildings.find(b => b.key === g.building && b.level < g.level)
-      if (pad) return { x: pad.x, y: pad.y }
+      const pads = s.buildings.buildings.filter(b => b.key === g.building && b.level < g.level)
+      const open = pads.find(b => s.zones.isUnlocked(b.zone))
+      if (open) return { x: open.x, y: open.y }
+      if (pads.length) return this.gatedTarget(pads[0])
     }
     if (g.type === 'workers') {
       const pad = s.buildings.buildings.find(b =>
-        b.level > 0 && (b.stats.workers ?? 0) > b.workers.length)
+        b.level > 0 && (b.stats.workers ?? 0) > b.workers.length && s.zones.isUnlocked(b.zone))
       if (pad) return { x: pad.x, y: pad.y }
     }
     if (g.type === 'recruit') {
-      const pad = s.buildings.buildings.find(b => b.level > 0 && (b.key === 'barracks' || b.key === 'archeryRange'))
+      const pad = s.buildings.buildings.find(b =>
+        b.level > 0 && (b.key === 'barracks' || b.key === 'archeryRange') && s.zones.isUnlocked(b.zone))
       if (pad) return { x: pad.x, y: pad.y }
     }
     if (g.type === 'collect') {
       if (g.resource === 'coins') {
-        const e = s.enemies.grid.nearest(s.player.x, s.player.y, 1400, en => en.alive && !en.def.structure)
+        // enemies inside a locked zone are behind the barrier: ignore them
+        const e = s.enemies.grid.nearest(s.player.x, s.player.y, 1400, en =>
+          en.alive && !en.def.structure && !s.zones.lockedZoneAt(en.x, en.y))
         if (e) return { x: e.x, y: e.y }
       }
       const node = s.nodes.findFor(g.resource as ResourceType, s.player.x, s.player.y, 1600, 0)
       if (node) return { x: node.x, y: node.y }
     }
     if (g.type === 'camp') {
-      const camp = s.camps.camps.find(c => !c.destroyed)
-      if (camp) return { x: camp.spec.x, y: camp.spec.y }
+      const live = s.camps.camps.filter(c => !c.destroyed)
+      // prefer one you can walk to; fall back to naming the border in the way
+      const c = this.nearestCamp(live.filter(x => s.zones.isUnlocked(x.spec.zone)))
+        ?? this.nearestCamp(live)
+      if (c) return this.throughZone(c.spec.x, c.spec.y)
     }
     if (g.type === 'zone') {
-      const z = s.zones.zoneAt(-1, -1)
-      void z
       const locked = s.zonesNextTarget()
       if (locked) return locked
     }
@@ -105,7 +158,10 @@ export class QuestManager {
     if (!q) return { title: 'FRONTIER SECURED', hint: 'Hold Emberhold as long as you can', have: this.scene.waves.wave, need: this.scene.waves.wave }
     const p = this.progress(q)
     const t = this.targetFor(q)
-    return { title: q.title, hint: q.hint, have: Math.min(p.have, p.need), need: p.need, targetX: t?.x, targetY: t?.y }
+    return {
+      title: q.title, hint: t?.hint ?? q.hint,
+      have: Math.min(p.have, p.need), need: p.need, targetX: t?.x, targetY: t?.y,
+    }
   }
 
   update() {

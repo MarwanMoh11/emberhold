@@ -304,15 +304,29 @@ export class GameScene extends Phaser.Scene {
     })
   }
 
-  /** Next locked territory the objective arrow should point at. */
-  zonesNextTarget(): { x: number; y: number } | null {
+  /**
+   * Next locked territory the objective arrow should point at.
+   *
+   * Aims at the claim ring rather than the authored banner anchor, so the
+   * arrow and the trigger agree on where the spot is, and prefers a zone you
+   * can actually pay for — it used to send you at a 900-coin border while you
+   * were holding forty.
+   */
+  zonesNextTarget(): { x: number; y: number; hint?: string } | null {
+    let unaffordable: { x: number; y: number; hint?: string } | null = null
     for (const z of ZONES) {
-      if (z.startsUnlocked) continue
-      if (this.zones.isUnlocked(z.id)) continue
+      if (z.startsUnlocked || this.zones.isUnlocked(z.id)) continue
       if (this.buildings.townHallLevel < z.requiresTownHall) continue
-      return { x: z.bannerX, y: z.bannerY }
+      const c = this.zones.claimPoint(z.id)
+      if (!c) continue
+      if (this.zones.canUnlockId(z.id)) return { x: c.x, y: c.y, hint: `Claim ${z.name}` }
+      if (!unaffordable) {
+        const price = RESOURCE_ORDER.filter(k => z.cost[k])
+          .map(k => `${short(z.cost[k] ?? 0)} ${k}`).join(', ')
+        unaffordable = { x: c.x, y: c.y, hint: `Save for ${z.name} — ${price}` }
+      }
     }
-    return null
+    return unaffordable
   }
 
   // ---- hero attack ------------------------------------------------------
