@@ -1,5 +1,7 @@
 # Emberhold
 
+**▶ Play: <https://marwanmoh11.github.io/emberhold/>** — desktop or phone, no install.
+
 A browser game about rebuilding a burned frontier outpost: kill things, carry the
 loot home on your back, raise camps, hire a crew, recruit an army, and hold the
 settlement through the night.
@@ -18,7 +20,7 @@ Then open <http://localhost:5180>.
 
 | | |
 |---|---|
-| Move | `WASD` / arrows, or drag anywhere on screen |
+| Move | `WASD` / arrows, or drag the left half of the screen |
 | Attack | automatic — you swing at whatever is in range |
 | Build / upgrade | walk into a build site; hold `SHIFT` to fund an upgrade |
 | Hire, recruit | stand on the camp or barracks |
@@ -26,6 +28,11 @@ Then open <http://localhost:5180>.
 | Army follow / hold | `H` |
 | Pause | `ESC` or `P` |
 | Debug panel | `F2` |
+
+On a phone it plays in either orientation: drag the left half of the screen to
+move, tap the buttons bottom-right for abilities, and everything else happens by
+walking into it. Add it to your home screen and it opens without browser chrome.
+The horde is capped lower on a phone so the frame rate holds.
 
 The loop: sweep up coins and wood by hand → walk the load to the depot or a
 build site → raise a camp → the crew there works on its own → spend the income
@@ -56,6 +63,11 @@ resource counters never stall:
   crew comes back with it.
 - **Time away pays.** Offline income tapers toward a one-hour ceiling, so a week
   away and a night away are worth about the same.
+
+One deliberate exception: **upgrading an existing building never spends on its
+own.** Walk into an empty site and it builds itself out of your stores, but
+raising a level costs a press of UPGRADE. Standing still used to quietly drain
+every coin you owned into whatever you happened to be next to.
 
 ## Architecture
 
@@ -92,6 +104,12 @@ The target is a few hundred enemies at 60 fps, and the design follows from that.
 
 Measured on an Apple M5, 415 enemies mid-fight: **~3.0 ms/frame** for update and
 render together, against a 16.6 ms budget.
+
+## Deployment
+
+`.github/workflows/deploy.yml` builds on every push to `main` and publishes
+`dist/` to GitHub Pages. Pages serves a project site from `/emberhold/`, which
+is why `vite.config.ts` sets `base` for production builds only.
 
 ## Development
 

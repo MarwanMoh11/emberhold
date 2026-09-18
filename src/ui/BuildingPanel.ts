@@ -26,6 +26,7 @@ export class BuildingPanel {
   private hint: Phaser.GameObjects.Text
   private rows: Row[] = []
   private shown = false
+
   private btnG: Phaser.GameObjects.Graphics
   private btnText: Phaser.GameObjects.Text
   private btnZone: Phaser.GameObjects.Zone
@@ -79,6 +80,8 @@ export class BuildingPanel {
     this.btnZone.setSize(1, 1)
     this.root.setVisible(false)
   }
+
+  get isShown() { return this.shown }
 
   show(
     b: Building, title: string, sub: string,

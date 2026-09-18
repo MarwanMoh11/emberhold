@@ -204,7 +204,11 @@ export class ZoneManager {
     const here = this.zoneAt(p.x, p.y)
     for (const v of this.views.values()) {
       if (v.unlocked) continue
+      // Stand off while a build-site card is up. You cannot fund a building and
+      // claim territory in the same moment, and two world panels fighting for
+      // the middle of a phone screen just looks broken.
       const near = Math.hypot(p.x - v.spec.bannerX, p.y - v.spec.bannerY) < 460
+        && !this.scene.buildings.panelShown
       v.banner.setVisible(near)
       if (!near) continue
 
