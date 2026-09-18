@@ -111,6 +111,9 @@ export class BuildingManager {
   /** True while a build-site card is on screen; other world panels defer to it. */
   get panelShown() { return this.panel.isShown }
 
+  /** Is this world point on the build card? Used to keep taps off the stick. */
+  panelContains(x: number, y: number) { return this.panel.containsWorldPoint(x, y) }
+
   get townHall() { return this.byPad.get('hall')! }
   get depot() { return this.byPad.get('depot')! }
   get townHallLevel() { return this.townHall?.level ?? 1 }

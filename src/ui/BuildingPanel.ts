@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { PAL, CSS } from '../config/palette'
 import { short } from '../core/math'
 import type { Building } from '../entities/Building'
+import { IS_TOUCH } from '../core/device'
 
 interface Row {
   icon: Phaser.GameObjects.Image
@@ -32,6 +33,8 @@ export class BuildingPanel {
   private btnZone: Phaser.GameObjects.Zone
   private btnHover = false
   private current: Building | null = null
+  /** Height of the card as last drawn, for the hit test below. */
+  private cardH = 0
 
   constructor(private scene: Phaser.Scene, private onUpgrade: (b: Building) => void) {
     this.root = scene.add.container(0, 0).setDepth(900_000).setVisible(false)
@@ -83,6 +86,18 @@ export class BuildingPanel {
 
   get isShown() { return this.shown }
 
+  /**
+   * Does this world point land on the card? The movement stick asks before it
+   * claims a touch: a thumb that misses UPGRADE should do nothing, not walk
+   * the hero off the pad and cancel the upgrade it was reaching for.
+   */
+  containsWorldPoint(x: number, y: number) {
+    if (!this.shown) return false
+    return x >= this.root.x - W / 2 && x <= this.root.x + W / 2
+      && y >= this.root.y && y <= this.root.y + this.cardH
+  }
+
+
   show(
     b: Building, title: string, sub: string,
     rows: { tex: string; have: number; need: number }[], hint: string,
@@ -129,7 +144,11 @@ export class BuildingPanel {
     y += Math.max(14, this.hint.height) + 6
 
     if (showButton) {
-      const bw = 148, bh = 30
+      // A 30px-tall button is about 5mm on a phone — far under a thumb. Missing
+      // it landed on the card background, which is not a control, so the move
+      // stick popped up instead and the press looked like it did nothing.
+      const bw = IS_TOUCH ? 200 : 148
+      const bh = IS_TOUCH ? 46 : 30
       const by = y + bh / 2
       // Breathe when the cost is already banked. "I have the wood and nothing
       // is happening" is the single most confusing moment on a build site, and
@@ -142,11 +161,15 @@ export class BuildingPanel {
       this.btnG.lineStyle(ready ? 3 : 2, committed ? PAL.good : PAL.gold, ready ? pulse : 1)
       this.btnG.strokeRoundedRect(-bw / 2, y, bw, bh, 7)
       this.btnG.setVisible(true)
-      this.btnText.setVisible(true).setText(committed ? 'UPGRADING' : 'UPGRADE').setPosition(0, by)
+      this.btnText.setVisible(true).setText(committed ? 'UPGRADING' : 'UPGRADE')
+        .setPosition(0, by).setFontSize(IS_TOUCH ? 16 : 13)
       // Local coordinates: btnZone is a child of `root`, so setting it to the
       // container's own world position offset it twice and left the tap target
       // far from the drawn button. The button simply never worked.
-      this.btnZone.setSize(bw, bh).setPosition(0, by)
+      // The tap target is deliberately larger than the drawn button: a near
+      // miss should still press it rather than grab the movement stick.
+      const slop = IS_TOUCH ? 22 : 6
+      this.btnZone.setSize(bw + slop * 2, bh + slop).setPosition(0, by)
       y += bh + 6
     } else {
       this.btnG.clear().setVisible(false)
@@ -155,6 +178,7 @@ export class BuildingPanel {
     }
 
     const h = y + 6
+    this.cardH = h
 
     this.bg.clear()
     this.bg.fillStyle(PAL.uiBg, 0.92)

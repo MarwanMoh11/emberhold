@@ -55,9 +55,17 @@ export class Joystick {
    * cancels the very upgrade it just asked for.
    */
   private overWorldControl(p: Phaser.Input.Pointer) {
-    const game = this.scene.scene.get('Game')
+    const game = this.scene.scene.get('Game') as Phaser.Scene & {
+      buildings?: { panelContains(x: number, y: number): boolean }
+    }
     if (!game?.input) return false
-    return game.input.hitTestPointer(p).length > 0
+    if (game.input.hitTestPointer(p).length > 0) return true
+    // The whole card counts, not just the button. A thumb that lands an inch
+    // wide of UPGRADE should still not start walking.
+    const cam = game.cameras?.main
+    if (!cam || !game.buildings) return false
+    const wp = cam.getWorldPoint(p.x, p.y)
+    return game.buildings.panelContains(wp.x, wp.y)
   }
 
   private onDown(p: Phaser.Input.Pointer) {
