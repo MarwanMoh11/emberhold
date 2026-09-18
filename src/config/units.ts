@@ -7,6 +7,8 @@ export type SoldierKey = 'swordsman' | 'spearman' | 'archer' | 'guard' | 'crossb
 export interface SoldierDef {
   key: SoldierKey
   name: string
+  /** Chip-sized name for the muster line on the building card. */
+  short: string
   hp: number
   damage: number
   attackRate: number
@@ -19,7 +21,11 @@ export interface SoldierDef {
   pop: number
   cost: ResourceBag
   from: BuildingKey
-  /** building level needed to train this */
+  /**
+   * Building level that puts this unit on the roster. It is a floor, not a
+   * swap: a Lv.3 Barracks can still muster swordsmen, and the spearman stays
+   * available for the brutes it was designed to counter.
+   */
   tier: number
   ranged?: boolean
   projectileSpeed?: number
@@ -30,39 +36,39 @@ export interface SoldierDef {
 
 export const SOLDIERS: Record<SoldierKey, SoldierDef> = {
   swordsman: {
-    key: 'swordsman', name: 'Swordsman', hp: 110, damage: 11, attackRate: 1.05, range: 34,
+    key: 'swordsman', name: 'Swordsman', short: 'SWORD', hp: 110, damage: 11, attackRate: 1.05, range: 34,
     speed: 168, radius: 13, scale: 1, colour: PAL.allyBody, accent: 0x24486f, pop: 1,
     cost: { food: 30, coins: 12 }, from: 'barracks', tier: 1,
     desc: 'Steady line infantry.',
   },
   spearman: {
-    key: 'spearman', name: 'Spearman', hp: 130, damage: 13, attackRate: 0.85, range: 54,
+    key: 'spearman', name: 'Spearman', short: 'SPEAR', hp: 130, damage: 13, attackRate: 0.85, range: 54,
     speed: 160, radius: 13, scale: 1.04, colour: 0x3d94a8, accent: 0x1f5566, pop: 1,
     cost: { food: 48, coins: 26, wood: 15 }, from: 'barracks', tier: 2, vsHeavy: 2.1,
     desc: 'Longer reach. Tears through brutes and elites.',
   },
   guard: {
-    key: 'guard', name: 'Heavy Guard', hp: 300, damage: 14, attackRate: 0.8, range: 36,
+    key: 'guard', name: 'Heavy Guard', short: 'GUARD', hp: 300, damage: 14, attackRate: 0.8, range: 36,
     speed: 132, radius: 16, scale: 1.24, colour: 0x5f6f8c, accent: 0x2e384a, pop: 2,
     cost: { food: 85, coins: 60, metal: 10 }, from: 'barracks', tier: 3,
     desc: 'Soaks the charge so the rest of the line lives.',
   },
   archer: {
-    key: 'archer', name: 'Archer', hp: 75, damage: 10, attackRate: 1.15, range: 250,
+    key: 'archer', name: 'Archer', short: 'ARCHER', hp: 75, damage: 10, attackRate: 1.15, range: 250,
     speed: 160, radius: 12, scale: 0.96, colour: PAL.allyAlt, accent: 0x2e6b3a, pop: 1,
     cost: { food: 38, coins: 28, wood: 12 }, from: 'archeryRange', tier: 1,
     ranged: true, projectileSpeed: 560,
     desc: 'Shoots over the shield wall.',
   },
   crossbow: {
-    key: 'crossbow', name: 'Crossbowman', hp: 90, damage: 26, attackRate: 0.6, range: 300,
+    key: 'crossbow', name: 'Crossbowman', short: 'BOLT', hp: 90, damage: 26, attackRate: 0.6, range: 300,
     speed: 148, radius: 12, scale: 1.02, colour: 0x8a9f4f, accent: 0x4c5c25, pop: 1,
     cost: { food: 65, coins: 62, metal: 10 }, from: 'archeryRange', tier: 2,
     ranged: true, projectileSpeed: 700,
     desc: 'Slow, punishing bolts with real punch.',
   },
   outrider: {
-    key: 'outrider', name: 'Outrider', hp: 160, damage: 22, attackRate: 1.3, range: 40,
+    key: 'outrider', name: 'Outrider', short: 'RIDER', hp: 160, damage: 22, attackRate: 1.3, range: 40,
     speed: 250, radius: 14, scale: 1.1, colour: 0xc08a4a, accent: 0x6d4620, pop: 2,
     cost: { food: 105, coins: 105, metal: 20 }, from: 'stable', tier: 1,
     desc: 'Fast flanker that runs down stragglers.',

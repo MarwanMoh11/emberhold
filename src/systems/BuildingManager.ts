@@ -10,7 +10,7 @@ import { clamp, dist, rr, short } from '../core/math'
 import { SOLDIERS, WORKER_FOR, WORKERS, type SoldierKey } from '../config/units'
 import { wantsTouchTargets } from '../core/device'
 import type { GameScene } from '../scenes/GameScene'
-import { BuildingPanel } from '../ui/BuildingPanel'
+import { BuildingPanel, type PanelChip, type PanelRow } from '../ui/BuildingPanel'
 
 /** Seconds the hero must stand on a pad before it starts drawing resources. */
 const DWELL = 0.3
@@ -20,13 +20,25 @@ const TEX: Record<ResourceType, string> = {
   stone: 'res_stone', metal: 'res_metal', crystal: 'res_crystal',
 }
 
-/** Which soldier a military building trains at a given level. */
-function unitFor(key: BuildingKey, level: number): SoldierKey | null {
-  if (key === 'barracks') return level >= 3 ? 'guard' : level >= 2 ? 'spearman' : 'swordsman'
-  if (key === 'archeryRange') return level >= 2 ? 'crossbow' : 'archer'
-  if (key === 'stable') return 'outrider'
-  return null
-}
+/**
+ * Every soldier each military building can muster, cheapest tier first.
+ *
+ * A building's level says which of these are *available*; it never says which
+ * one gets trained. The old rule replaced the roster on every upgrade, so a
+ * Lv.3 Barracks could no longer field a swordsman and — worse — the spearman,
+ * the game's anti-heavy counter, vanished from the world at exactly the wave
+ * where brutes and elites start arriving. Now the level is a floor and the
+ * player picks off the card.
+ */
+const ROSTER: Partial<Record<BuildingKey, SoldierKey[]>> = (() => {
+  const out: Partial<Record<BuildingKey, SoldierKey[]>> = {}
+  for (const k of Object.keys(SOLDIERS) as SoldierKey[]) {
+    const list = out[SOLDIERS[k].from] ?? (out[SOLDIERS[k].from] = [])
+    list.push(k)
+  }
+  for (const list of Object.values(out)) list?.sort((a, b) => SOLDIERS[a].tier - SOLDIERS[b].tier)
+  return out
+})()
 
 /** How much of a razed site's cost survives as salvage in the rubble. */
 const RUBBLE_REFUND = 0.6
@@ -48,10 +60,16 @@ export class BuildingManager {
   private healTick = 0
   private autoHireTick = 0
 
+  /** Which unit each muster line has been set to train, by pad id. */
+  private trains = new Map<string, SoldierKey>()
+
   private shiftKey?: Phaser.Input.Keyboard.Key
 
   constructor(private scene: GameScene) {
-    this.panel = new BuildingPanel(scene, b => this.commitUpgrade(b))
+    this.panel = new BuildingPanel(scene, {
+      upgrade: b => this.commitUpgrade(b),
+      pickUnit: (b, key) => this.setTrains(b, key as SoldierKey),
+    })
     this.shiftKey = scene.input.keyboard?.addKey('SHIFT')
   }
 
@@ -138,6 +156,42 @@ export class BuildingManager {
     let hp = 0
     for (const b of this.buildings) if ((b.key === 'wall' || b.key === 'gate') && b.level > 0) hp += b.hp
     return hp
+  }
+
+  /** Every unit this building will ever muster, locked ones included. */
+  rosterFor(b: Building): SoldierKey[] { return ROSTER[b.key] ?? [] }
+
+  /** The ones its current level has actually unlocked. */
+  unlockedFor(b: Building): SoldierKey[] {
+    return this.rosterFor(b).filter(k => SOLDIERS[k].tier <= b.level)
+  }
+
+  /**
+   * Who this muster line turns out next. With nothing chosen it defaults to
+   * the best unlocked unit, which is what the building used to be locked into.
+   */
+  trainsAt(b: Building): SoldierKey | null {
+    const open = this.unlockedFor(b)
+    if (!open.length) return null
+    const picked = this.trains.get(b.padId)
+    return picked && open.includes(picked) ? picked : open[open.length - 1]
+  }
+
+  /** Player tapped a unit chip. Costs nothing — it only aims the next recruit. */
+  setTrains(b: Building, key: SoldierKey) {
+    const def = SOLDIERS[key]
+    if (!def || def.from !== b.key) return
+    if (def.tier > b.level) {
+      this.scene.fx.popup(b.x, b.y - b.def.h - 26,
+        `${def.name.toUpperCase()} NEEDS LV.${def.tier}`, PAL.danger, 15)
+      this.scene.audio.play('deny')
+      return
+    }
+    if (this.trains.get(b.padId) === key) return
+    this.trains.set(b.padId, key)
+    b.recruitCd = Math.max(b.recruitCd, 0)
+    this.scene.audio.play('ui')
+    this.scene.fx.popup(b.x, b.y - b.def.h - 26, `MUSTERING ${def.short}`, PAL.gold, 16)
   }
 
   /** A pad only shows once its zone is claimed and the hall is tall enough. */
@@ -248,7 +302,7 @@ export class BuildingManager {
   private tickRecruit(b: Building, dt: number) {
     b.recruitCd -= dt
     if (b.recruitCd > 0) return
-    const key = unitFor(b.key, b.level)
+    const key = this.trainsAt(b)
     if (!key) return
     const def = SOLDIERS[key]
     const res = this.scene.res
@@ -467,7 +521,7 @@ export class BuildingManager {
         if (b.dwellT >= DWELL) {
           if (!b.isMax && (b.level === 0 || b.committed)) this.tickDeposit(b, dt)
           if (b.level > 0) {
-            if (unitFor(b.key, b.level)) this.tickRecruit(b, dt)
+            if (this.rosterFor(b).length) this.tickRecruit(b, dt)
             else if (WORKER_FOR[b.key]) this.tickHireWorker(b, dt)
             else if (b.key === 'depot') this.tickDepotDump(b, dt)
           }
@@ -571,7 +625,7 @@ export class BuildingManager {
     const res = this.scene.res
     let title: string
     let sub: string
-    const rows: { tex: string; have: number; need: number }[] = []
+    const rows: PanelRow[] = []
 
     if (b.isMax) {
       title = `${b.def.name.toUpperCase()}  LV.${b.level}`
@@ -619,11 +673,28 @@ export class BuildingManager {
           : `${tap}; your pack goes in first`
     }
 
-    const unit = unitFor(b.key, b.level)
+    const unit = this.trainsAt(b)
+    let chips: PanelChip[] | undefined
     if (b.level > 0 && unit) {
       const d = SOLDIERS[unit]
       const costStr = RESOURCE_ORDER.filter(k => d.cost[k]).map(k => `${d.cost[k]} ${k}`).join(' · ')
       hint = `stand here → ${d.name} (${costStr})`
+      const roster = this.rosterFor(b)
+      // One option is not a choice, so the stable never grows a chip row.
+      if (roster.length > 1) {
+        chips = roster.map(k => {
+          const sd = SOLDIERS[k]
+          const held = this.scene.army.countOf(k)
+          const shut = sd.tier > b.level
+          return {
+            key: k,
+            label: shut ? `${sd.short} LV.${sd.tier}` : held > 0 ? `${sd.short} ${held}` : sd.short,
+            selected: k === unit,
+            locked: shut,
+            affordable: res.canAfford(sd.cost) && this.scene.popUsed + sd.pop <= this.bonus.pop,
+          }
+        })
+      }
     } else if (b.level > 0 && WORKER_FOR[b.key]) {
       const w = WORKERS[WORKER_FOR[b.key]!]
       const costStr = RESOURCE_ORDER.filter(k => w.cost[k]).map(k => `${w.cost[k]} ${k}`).join(' · ')
@@ -632,8 +703,12 @@ export class BuildingManager {
       hint = `stand here to bank your pack — ${short(res.storedTotal)} in store`
     }
 
-    this.panel.show(b, title, sub, rows, hint,
-      b.level > 0 && !b.isMax, b.committed, !b.isMax && res.canAfford(b.remaining()))
+    this.panel.show(b, {
+      title, sub, rows, hint, chips,
+      upgrade: b.level > 0 && !b.isMax
+        ? { committed: b.committed, affordable: res.canAfford(b.remaining()) }
+        : undefined,
+    })
   }
 
   private upgradeSummary(b: Building): string {
@@ -685,12 +760,17 @@ export class BuildingManager {
   }
 
   // ---- persistence -----------------------------------------------------
-  toJSON() { return this.buildings.map(b => b.toJSON()) }
+  // `trains` is undefined for a pad that has never been given an order, and
+  // JSON.stringify drops undefined values, so old saves round-trip unchanged.
+  toJSON() {
+    return this.buildings.map(b => ({ ...b.toJSON(), trains: this.trains.get(b.padId) }))
+  }
 
   load(data: ReturnType<BuildingManager['toJSON']>) {
     for (const d of data) {
       const b = this.byPad.get(d.padId)
       if (!b) continue
+      if (d.trains && SOLDIERS[d.trains]) this.trains.set(d.padId, d.trains)
       while (b.level < d.level) b.completeLevel()
       b.hp = Math.max(1, d.hp)
       b.progress = d.progress ?? {}
