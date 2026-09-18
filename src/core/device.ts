@@ -15,6 +15,30 @@ const touchPoints = typeof navigator !== 'undefined' ? navigator.maxTouchPoints 
 export const IS_TOUCH = coarse && touchPoints > 0
 
 /**
+ * Whether a real touch has actually happened. The constants above are read once
+ * at module load, and that snapshot is not always right — a page restored from
+ * the back/forward cache, a device that reports itself late, a desktop browser
+ * emulating a phone. A finger on the glass is proof; nothing else is.
+ */
+let touchSeen = false
+if (typeof window !== 'undefined') {
+  window.addEventListener('touchstart', () => { touchSeen = true }, { passive: true, once: true })
+  window.addEventListener('pointerdown', e => {
+    if ((e as PointerEvent).pointerType === 'touch') touchSeen = true
+  }, { passive: true })
+}
+
+/**
+ * Should controls be sized for a thumb? Touch, obviously — but also any narrow
+ * window, where a mouse-sized 30px button is cramped anyway. Erring large costs
+ * a desktop user nothing and is the difference between a working button and a
+ * broken one on a phone.
+ */
+export function wantsTouchTargets(viewportWidth: number) {
+  return IS_TOUCH || touchSeen || viewportWidth < 820
+}
+
+/**
  * iPadOS reports a desktop UA, so sniffing is unreliable; what matters here is
  * only whether we should budget like a phone, which the screen answers.
  */
@@ -22,7 +46,10 @@ const shortSide = typeof screen !== 'undefined'
   ? Math.min(screen.width, screen.height)
   : 1080
 
-export const IS_PHONE = IS_TOUCH && shortSide <= 500
+// Screen size alone, deliberately: a desktop window shrunk to phone width still
+// reports the full monitor here, so this cannot false-positive, and it keeps the
+// horde cap correct even when the pointer-type snapshot above is wrong.
+export const IS_PHONE = shortSide <= 500
 
 /**
  * 0 = phone, 1 = tablet or a weak laptop, 2 = desktop.

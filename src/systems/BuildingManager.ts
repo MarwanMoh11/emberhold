@@ -8,7 +8,7 @@ import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { clamp, dist, rr, short } from '../core/math'
 import { SOLDIERS, WORKER_FOR, WORKERS, type SoldierKey } from '../config/units'
-import { IS_TOUCH } from '../core/device'
+import { wantsTouchTargets } from '../core/device'
 import type { GameScene } from '../scenes/GameScene'
 import { BuildingPanel } from '../ui/BuildingPanel'
 
@@ -610,7 +610,8 @@ export class BuildingManager {
       // to quietly drain every coin you walked past it with, so raising a level
       // is always a deliberate press — which means saying so when you can
       // already afford it and nothing appears to be happening.
-      const tap = IS_TOUCH ? 'tap UPGRADE' : 'press UPGRADE (or hold SHIFT)'
+      const tap = wantsTouchTargets(this.scene.scale.width)
+        ? 'tap UPGRADE' : 'press UPGRADE (or hold SHIFT)'
       hint = b.committed
         ? 'pouring it in…'
         : res.canAfford(b.remaining())

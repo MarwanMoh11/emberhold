@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import { PAL, CSS } from '../config/palette'
 import { short } from '../core/math'
 import type { Building } from '../entities/Building'
-import { IS_TOUCH } from '../core/device'
+import { wantsTouchTargets } from '../core/device'
 
 interface Row {
   icon: Phaser.GameObjects.Image
@@ -35,6 +35,8 @@ export class BuildingPanel {
   private current: Building | null = null
   /** Height of the card as last drawn, for the hit test below. */
   private cardH = 0
+  /** Counter-zoom applied to the card, so hit tests match what is drawn. */
+  private cardScale = 1
 
   constructor(private scene: Phaser.Scene, private onUpgrade: (b: Building) => void) {
     this.root = scene.add.container(0, 0).setDepth(900_000).setVisible(false)
@@ -93,8 +95,9 @@ export class BuildingPanel {
    */
   containsWorldPoint(x: number, y: number) {
     if (!this.shown) return false
-    return x >= this.root.x - W / 2 && x <= this.root.x + W / 2
-      && y >= this.root.y && y <= this.root.y + this.cardH
+    const k = this.cardScale
+    return x >= this.root.x - (W / 2) * k && x <= this.root.x + (W / 2) * k
+      && y >= this.root.y && y <= this.root.y + this.cardH * k
   }
 
 
@@ -147,8 +150,9 @@ export class BuildingPanel {
       // A 30px-tall button is about 5mm on a phone — far under a thumb. Missing
       // it landed on the card background, which is not a control, so the move
       // stick popped up instead and the press looked like it did nothing.
-      const bw = IS_TOUCH ? 200 : 148
-      const bh = IS_TOUCH ? 46 : 30
+      const fat = wantsTouchTargets(this.scene.scale.width)
+      const bw = fat ? 200 : 148
+      const bh = fat ? 46 : 30
       const by = y + bh / 2
       // Breathe when the cost is already banked. "I have the wood and nothing
       // is happening" is the single most confusing moment on a build site, and
@@ -162,13 +166,13 @@ export class BuildingPanel {
       this.btnG.strokeRoundedRect(-bw / 2, y, bw, bh, 7)
       this.btnG.setVisible(true)
       this.btnText.setVisible(true).setText(committed ? 'UPGRADING' : 'UPGRADE')
-        .setPosition(0, by).setFontSize(IS_TOUCH ? 16 : 13)
+        .setPosition(0, by).setFontSize(fat ? 16 : 13)
       // Local coordinates: btnZone is a child of `root`, so setting it to the
       // container's own world position offset it twice and left the tap target
       // far from the drawn button. The button simply never worked.
       // The tap target is deliberately larger than the drawn button: a near
       // miss should still press it rather than grab the movement stick.
-      const slop = IS_TOUCH ? 22 : 6
+      const slop = fat ? 22 : 6
       this.btnZone.setSize(bw + slop * 2, bh + slop).setPosition(0, by)
       y += bh + 6
     } else {
@@ -198,13 +202,23 @@ export class BuildingPanel {
     // of the objective banner and neither is readable.
     const cam = this.scene.cameras.main
     const view = cam.worldView
+
+    // Everything above is laid out in world units, but the camera zooms — at
+    // 0.72 on a phone a 46-unit button is only 33 real pixels, which is how a
+    // "thumb-sized" target ended up thumb-sized in name only. Counter-scaling
+    // the card by 1/zoom makes every number here mean screen pixels.
+    const k = 1 / cam.zoom
+    this.cardScale = k
+    this.root.setScale(k)
+
     const bands = (this.scene as unknown as { uiBands: { top: number; bottom: number } }).uiBands
-    const topBand = (bands?.top ?? 104) / cam.zoom
-    const bottomBand = (bands?.bottom ?? 104) / cam.zoom
-    const sideBand = W / 2 + 10
-    const topY = b.y - b.def.h - 52 - h
+    const topBand = (bands?.top ?? 104) * k
+    const bottomBand = (bands?.bottom ?? 104) * k
+    const sideBand = (W / 2 + 10) * k
+    const cardH = h * k
+    const topY = b.y - b.def.h - 52 * k - cardH
     const minY = view.y + topBand
-    const maxY = Math.max(minY, view.bottom - bottomBand - h)
+    const maxY = Math.max(minY, view.bottom - bottomBand - cardH)
     const minX = view.x + sideBand
     const x = Phaser.Math.Clamp(b.x, minX, Math.max(minX, view.right - sideBand))
     this.root.setPosition(Math.round(x), Math.round(Phaser.Math.Clamp(topY, minY, maxY)))
