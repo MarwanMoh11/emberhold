@@ -40,11 +40,15 @@ export interface PanelView {
   upgrade?: { committed: boolean; affordable: boolean }
   /** who this building trains next; absent unless there is a real choice */
   chips?: PanelChip[]
+  /** the hold-to-demolish bar, and how full the hold is so far (0..1) */
+  demolish?: { salvage: string; hold: number }
 }
 
 export interface PanelHandlers {
   upgrade(b: Building): void
   pickUnit(b: Building, key: string): void
+  /** pressed or released the demolish bar — the hold itself is timed by the caller */
+  raze(b: Building, holding: boolean): void
 }
 
 const W = 268
@@ -56,9 +60,10 @@ const MAX_CHIPS = 3
  * The world-space card that appears over whatever pad you are standing in.
  *
  * Still not a build menu: it never lists things to place, it reports the state
- * of the one site you are physically inside. What it added is the one choice
+ * of the one site you are physically inside. What it added are the two choices
  * standing there cannot express on its own — which unit this muster line turns
- * out next. The deposit itself still happens by standing there.
+ * out next, and whether the pad should come back down. The deposit itself
+ * still happens by standing there.
  */
 export class BuildingPanel {
   private root: Phaser.GameObjects.Container
@@ -76,6 +81,10 @@ export class BuildingPanel {
 
   private chips: Chip[] = []
   private chipKeys: string[] = []
+
+  private razeG: Phaser.GameObjects.Graphics
+  private razeText: Phaser.GameObjects.Text
+  private razeZone: Phaser.GameObjects.Zone
 
   private current: Building | null = null
   /** Height of the card as last drawn, for the hit test below. */
@@ -138,13 +147,38 @@ export class BuildingPanel {
     this.btnZone.on('pointerout', () => { this.btnHover = false })
     this.btnZone.on('pointerdown', () => { if (this.current) this.on.upgrade(this.current) })
     this.root.add([this.btnG, this.btnText, this.btnZone])
+
+    // Demolish. Every other control on this card is a tap; this one is a hold,
+    // its target is exactly the bar with no slop around it, and letting go at
+    // any point empties it. Losing a building you spent a night funding must
+    // never be one stray thumb away.
+    this.razeG = scene.add.graphics().setVisible(false)
+    this.razeText = scene.add.text(0, 0, '', {
+      fontFamily: 'Verdana, Geneva, sans-serif', fontSize: '10px',
+      color: CSS(PAL.danger), fontStyle: 'bold', align: 'center',
+    }).setOrigin(0.5).setVisible(false)
+    this.razeZone = scene.add.zone(0, 0, 1, 1).setInteractive({ useHandCursor: true })
+    this.razeZone.on('pointerdown', () => { if (this.current) this.on.raze(this.current, true) })
+    this.razeZone.on('pointerout', () => this.release())
+    this.root.add([this.razeG, this.razeText, this.razeZone])
+
+    // A finger that slides off the bar, or lifts outside the canvas entirely,
+    // still has to count as letting go.
+    scene.input.on('pointerup', this.release, this)
+    scene.input.on('pointerupoutside', this.release, this)
+  }
+
+  private release() {
+    if (this.current) this.on.raze(this.current, false)
   }
 
   hide() {
     if (!this.shown) return
+    this.release()
     this.shown = false
     this.current = null
     this.btnZone.setSize(1, 1)
+    this.razeZone.setSize(1, 1)
     for (const c of this.chips) c.zone.setSize(1, 1)
     this.root.setVisible(false)
   }
@@ -235,12 +269,16 @@ export class BuildingPanel {
       // miss should still press it rather than grab the movement stick.
       const slop = fat ? 22 : 6
       this.btnZone.setSize(bw + slop * 2, bh + slop).setPosition(0, by)
-      y += bh + 6
+      // Clear of the demolish bar below, so UPGRADE's generous target can
+      // never overlap the one control that must be aimed at exactly.
+      y += bh + slop / 2 + 8
     } else {
       this.btnG.clear().setVisible(false)
       this.btnText.setVisible(false)
       this.btnZone.setSize(1, 1)
     }
+
+    y = this.layoutRaze(v.demolish, y, fat)
 
     const h = y + 6
     this.cardH = h
@@ -320,5 +358,44 @@ export class BuildingPanel {
     return n > 0 ? y + ch + 6 : y
   }
 
-  destroy() { this.root.destroy() }
+  /** Hold-to-demolish: a bar that fills while pressed, and does nothing until it is full. */
+  private layoutRaze(d: PanelView['demolish'], y: number, fat: boolean): number {
+    if (!d) {
+      this.razeG.clear().setVisible(false)
+      this.razeText.setVisible(false)
+      this.razeZone.setSize(1, 1)
+      return y
+    }
+    const bw = W - 44
+    // Two lines inside the bar: what the hold does, and what it pays back.
+    const bh = fat ? 42 : 34
+    const by = y + bh / 2
+    const holding = d.hold > 0
+
+    this.razeG.clear()
+    this.razeG.fillStyle(PAL.uiBg, 0.9)
+    this.razeG.fillRoundedRect(-bw / 2, y, bw, bh, 5)
+    if (holding) {
+      this.razeG.fillStyle(PAL.danger, 0.5)
+      this.razeG.fillRect(-bw / 2 + 2, y + 2, Math.max(1, (bw - 4) * Math.min(1, d.hold)), bh - 4)
+    }
+    this.razeG.lineStyle(holding ? 2 : 1, PAL.danger, holding ? 1 : 0.55)
+    this.razeG.strokeRoundedRect(-bw / 2, y, bw, bh, 5)
+    this.razeG.setVisible(true)
+
+    this.razeText.setVisible(true)
+      .setText(`${holding ? 'KEEP HOLDING…' : 'HOLD TO DEMOLISH'}\nsalvage  +${d.salvage}`)
+      .setPosition(0, by).setFontSize(fat ? 11 : 10)
+      .setColor(CSS(holding ? PAL.uiText : PAL.danger))
+    // No slop, unlike UPGRADE: this is the one control where a near miss must
+    // miss, so the zone is exactly the bar and not a pixel more.
+    this.razeZone.setSize(bw, bh).setPosition(0, by)
+    return y + bh + 6
+  }
+
+  destroy() {
+    this.scene.input.off('pointerup', this.release, this)
+    this.scene.input.off('pointerupoutside', this.release, this)
+    this.root.destroy()
+  }
 }

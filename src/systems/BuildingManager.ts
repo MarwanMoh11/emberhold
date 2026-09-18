@@ -5,7 +5,7 @@ import { PADS, WALL_RING, type PadSpec } from '../config/map'
 import { PAL } from '../config/palette'
 import { POP, PERF } from '../config/balance'
 import { Grid } from '../core/Grid'
-import { RESOURCE_ORDER, type ResourceType } from '../core/types'
+import { RESOURCE_ORDER, type ResourceBag, type ResourceType } from '../core/types'
 import { clamp, dist, rr, short } from '../core/math'
 import { SOLDIERS, WORKER_FOR, WORKERS, type SoldierKey } from '../config/units'
 import { wantsTouchTargets } from '../core/device'
@@ -43,6 +43,17 @@ const ROSTER: Partial<Record<BuildingKey, SoldierKey[]>> = (() => {
 /** How much of a razed site's cost survives as salvage in the rubble. */
 const RUBBLE_REFUND = 0.6
 
+/** How much of everything sunk into a building comes back when you pull it down. */
+const DEMOLISH_REFUND = 0.5
+
+/**
+ * Seconds DEMOLISH must be held without interruption. Long enough that it can
+ * only ever be on purpose: standing somewhere is how everything else in this
+ * game is triggered, so the one destructive act needs a deliberate, sustained
+ * press that letting go at any point throws away.
+ */
+const DEMOLISH_HOLD = 1.6
+
 export class BuildingManager {
   buildings: Building[] = []
   byPad = new Map<string, Building>()
@@ -63,12 +74,20 @@ export class BuildingManager {
   /** Which unit each muster line has been set to train, by pad id. */
   private trains = new Map<string, SoldierKey>()
 
+  /** Pad whose DEMOLISH bar is being held down, and for how long so far. */
+  private razePad: string | null = null
+  private razeT = 0
+
+  /** Farm pads whose crop ring has already been sown, so a rebuild adds none. */
+  private fielded = new Set<string>()
+
   private shiftKey?: Phaser.Input.Keyboard.Key
 
   constructor(private scene: GameScene) {
     this.panel = new BuildingPanel(scene, {
       upgrade: b => this.commitUpgrade(b),
       pickUnit: (b, key) => this.setTrains(b, key as SoldierKey),
+      raze: (b, holding) => this.setRazing(b, holding),
     })
     this.shiftKey = scene.input.keyboard?.addKey('SHIFT')
   }
@@ -237,7 +256,8 @@ export class BuildingManager {
       this.scene.bus.emit('building:built', { key: b.key, level: b.level })
     }
 
-    if (b.key === 'farm' && b.level === 1) {
+    if (b.key === 'farm' && b.level === 1 && !this.fielded.has(b.padId)) {
+      this.fielded.add(b.padId)
       this.scene.nodes.addField(b.x, b.y + 40, b.zone, 5)
     }
     this.recomputeBonuses()
@@ -550,6 +570,7 @@ export class BuildingManager {
       }
     }
 
+    this.tickRaze(nearest, dt)
     this.updatePanel(nearest)
   }
 
@@ -611,6 +632,115 @@ export class BuildingManager {
       this.scene.fx.popup(b.x, b.y - 46, 'STORE FULL', PAL.danger, 15)
       b.recruitCd = 1.4
     }
+  }
+
+  // ---- demolish --------------------------------------------------------
+  /**
+   * The hall is the run itself and the depot is the only drop-off, so neither
+   * can come down. Every other pad is a slot the player is allowed to take
+   * back, because placement is otherwise permanent for the rest of the save.
+   */
+  canDemolish(b: Building) {
+    return b.level > 0 && b.state === 'done' && b.key !== 'townHall' && b.key !== 'depot'
+  }
+
+  /** What tearing this down puts back into the bank. */
+  private salvage(b: Building): ResourceBag {
+    const out: ResourceBag = {}
+    const add = (bag: ResourceBag) => {
+      for (const k of RESOURCE_ORDER) {
+        const v = bag[k] ?? 0
+        if (v > 0) out[k] = (out[k] ?? 0) + Math.floor(v * DEMOLISH_REFUND)
+      }
+    }
+    for (let l = 0; l < b.level; l++) add(b.def.levels[l].cost)
+    // Anything already banked toward the next level comes back at the same
+    // rate, so half-funding an upgrade is never a reason to keep a bad pad.
+    add(b.progress)
+    return out
+  }
+
+  private salvageLabel(b: Building) {
+    const bag = this.salvage(b)
+    const parts = RESOURCE_ORDER.filter(k => (bag[k] ?? 0) > 0).map(k => `${short(bag[k]!)} ${k}`)
+    return parts.slice(0, 3).join(' · ') || 'nothing'
+  }
+
+  /** The DEMOLISH bar was pressed or released. Pressing alone does nothing. */
+  private setRazing(b: Building, holding: boolean) {
+    if (!holding) {
+      this.razePad = null
+      this.razeT = 0
+      return
+    }
+    if (!this.canDemolish(b)) return
+    this.razePad = b.padId
+    this.razeT = 0
+  }
+
+  /** Fill the hold while the bar stays pressed and the hero stays in the pad. */
+  private tickRaze(nearest: Building | null, dt: number) {
+    if (!this.razePad) return
+    const b = this.byPad.get(this.razePad)
+    if (!b || b !== nearest || !this.canDemolish(b)) {
+      this.razePad = null
+      this.razeT = 0
+      return
+    }
+    const was = this.razeT
+    this.razeT += dt
+    // A rising tick while the bar fills, so a hold nobody meant is audible
+    // well before it costs anything.
+    if (Math.floor(this.razeT / 0.28) !== Math.floor(was / 0.28)) {
+      this.scene.audio.play('ui', 0.7 + (this.razeT / DEMOLISH_HOLD) * 0.6, 0.4)
+    }
+    if (this.razeT >= DEMOLISH_HOLD) {
+      this.razePad = null
+      this.razeT = 0
+      this.demolish(b)
+    }
+  }
+
+  /** Pull a building down: half of everything it cost, and the pad back. */
+  demolish(b: Building) {
+    if (!this.canDemolish(b)) return
+    const bag = this.salvage(b)
+    const label = this.salvageLabel(b)
+
+    for (const id of b.workers) this.scene.workers.dismiss(id)
+    b.workers.length = 0
+    // Unlike a razing, this was on purpose — the crew is not coming back on
+    // its own the moment the pad is rebuilt.
+    b.peakWorkers = 0
+    b.level = 0
+    b.hp = 0
+    b.maxHp = 0
+    b.alive = false
+    b.state = 'empty'
+    b.progress = {}
+    b.committed = false
+    b.dwellT = 0
+    b.recruitCd = 0
+    this.trains.delete(b.padId)
+    b.applyTexture()
+    b.sprite.setScale(1, 1)
+
+    for (const k of RESOURCE_ORDER) {
+      const v = bag[k] ?? 0
+      if (v <= 0) continue
+      // Salvage is returned, not earned: it must not inflate the lifetime
+      // gathered totals the quests read.
+      this.scene.res.addStored(k, v, false)
+      this.scene.fx.flyResource(b.x, b.y - b.def.h * 0.4, this.depot.x, this.depot.y - 20, TEX[k], 0, undefined, 0.9)
+    }
+
+    this.scene.fx.dust(b.x, b.y, 16)
+    this.scene.fx.smoke(b.x, b.y - 20, 8)
+    this.scene.fx.shake(0.01, 0.25)
+    this.scene.audio.play('boom', 0.9, 0.65)
+    this.scene.fx.popup(b.x, b.y - 44, `${b.def.short} DEMOLISHED`, PAL.gold, 18)
+    this.scene.fx.popup(b.x, b.y - 22, `salvaged ${label}`, PAL.uiDim, 12)
+    this.recomputeBonuses()
   }
 
   // ---- world panel -----------------------------------------------------
@@ -708,6 +838,12 @@ export class BuildingManager {
       upgrade: b.level > 0 && !b.isMax
         ? { committed: b.committed, affordable: res.canAfford(b.remaining()) }
         : undefined,
+      demolish: this.canDemolish(b)
+        ? {
+          salvage: this.salvageLabel(b),
+          hold: this.razePad === b.padId ? this.razeT / DEMOLISH_HOLD : 0,
+        }
+        : undefined,
     })
   }
 
@@ -774,7 +910,10 @@ export class BuildingManager {
       while (b.level < d.level) b.completeLevel()
       b.hp = Math.max(1, d.hp)
       b.progress = d.progress ?? {}
-      if (b.key === 'farm' && b.level > 0) this.scene.nodes.addField(b.x, b.y + 40, b.zone, 5)
+      if (b.key === 'farm' && b.level > 0 && !this.fielded.has(b.padId)) {
+        this.fielded.add(b.padId)
+        this.scene.nodes.addField(b.x, b.y + 40, b.zone, 5)
+      }
     }
     this.recomputeBonuses()
   }
