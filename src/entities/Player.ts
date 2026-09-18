@@ -97,7 +97,7 @@ export class Player implements Targetable {
     const gain = this.stats.maxHp - this.maxHp
     this.maxHp = this.stats.maxHp
     if (gain > 0) this.hp = Math.min(this.maxHp, this.hp + gain)
-    this.scene.res.setCarryCapacity(this.stats.carryCapacity)
+    this.scene.res.setHeroCarryMult(this.stats.carryCapacity / PLAYER.carryCapacity)
   }
 
   addXp(amount: number) {

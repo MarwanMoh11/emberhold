@@ -19,8 +19,23 @@ export class ResourceManager {
   stored = zero()
   totalGathered = zero()
 
-  carryCapacity = 50
+  /**
+   * Carry comes from two places that now compose instead of fighting.
+   *
+   * Both used to feed one setter that took a Math.max, so the hero's own
+   * number and the warehouse's flat value were rivals: Pack Mule's +60% on a
+   * 120 base lost to a level-1 warehouse's 260 and silently did nothing, and
+   * after a second upgrade the first three picks were all dead. The carts give
+   * flat space; the hero multiplies the whole load, which is what the pick has
+   * always claimed to do.
+   */
+  buildingCarry = 0
+  heroCarryMult = 1
   storageCapacity = STORAGE.base
+
+  get carryCapacity(): number {
+    return Math.round((PLAYER_CARRY_MIN + this.buildingCarry) * this.heroCarryMult)
+  }
 
   /** resources the player has seen at least once — drives progressive HUD reveal */
   discovered = new Set<ResourceType>(['coins'])
@@ -49,6 +64,11 @@ export class ResourceManager {
 
   /** Pick up from the world. Returns how much actually fit. */
   pickUp(type: ResourceType, amount: number): number {
+    // Coins are currency, not cargo. They have no node, no worker and no
+    // hauling verb, they rain from every kill, and the pack is one pool shared
+    // across all six resources — so incidental loot crowded out the stone you
+    // walked across the map for. They bank on contact instead.
+    if (type === 'coins') return this.addStored(type, amount)
     const fit = Math.min(amount, this.carryFree)
     if (fit <= 0) {
       this.bus.emit('carry:full', undefined)
@@ -163,7 +183,10 @@ export class ResourceManager {
   /** Force a HUD refresh after a direct pool edit. */
   bumpChanged() { this.bus.emit('res:changed', undefined) }
 
-  setCarryCapacity(v: number) { this.carryCapacity = Math.max(this.carryCapacity, v) }
+  /** Flat space from the settlement's carts. */
+  setBuildingCarry(v: number) { this.buildingCarry = Math.max(0, v) }
+  /** The hero's own multiplier on the whole load, from Pack Mule picks. */
+  setHeroCarryMult(v: number) { this.heroCarryMult = Math.max(1, v) }
   setStorageCapacity(_v: number) { /* stores are uncapped */ }
 
   toJSON() {
@@ -178,8 +201,17 @@ export class ResourceManager {
     this.carried = { ...zero(), ...d.carried }
     this.stored = { ...zero(), ...d.stored }
     this.totalGathered = { ...zero(), ...d.totalGathered }
-    this.carryCapacity = Math.max(PLAYER_CARRY_MIN, d.carryCapacity)
+    // Both carry sources are derived, and the loader re-applies the upgrade
+    // picks and rebuilds the building bonuses right after this — so they are
+    // reset here rather than trusted from the blob.
+    this.buildingCarry = 0
+    this.heroCarryMult = 1
     this.storageCapacity = STORAGE.base
     this.discovered = new Set(d.discovered as ResourceType[])
+    // coins banked straight to stores now; fold any legacy carried ones over
+    if (this.carried.coins > 0) {
+      this.stored.coins += this.carried.coins
+      this.carried.coins = 0
+    }
   }
 }

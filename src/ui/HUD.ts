@@ -63,6 +63,7 @@ export class HUD {
   private padR = 16
   private toastT = 0
   private hintT = 0
+  private lastCarryHint = -9999
   private flashCarry = 0
 
   showStats = false
@@ -103,7 +104,14 @@ export class HUD {
     this.ultBtn = this.makeButton(-1)
 
     this.game.bus.on('achievement', p => this.toast(`ACHIEVEMENT — ${p.title}`))
-    this.game.bus.on('carry:full', () => { this.flashCarry = 0.5 })
+    this.game.bus.on('carry:full', () => {
+      this.flashCarry = 0.5
+      // The bar going red does not explain why loot stopped coming to you.
+      if (this.game.time.now - this.lastCarryHint > 6000) {
+        this.lastCarryHint = this.game.time.now
+        this.hint('PACK FULL — DUMP AT THE DEPOT')
+      }
+    })
     this.game.bus.on('zone:unlocked', () => this.toast('NEW TERRITORY CLAIMED'))
 
     this.layout()

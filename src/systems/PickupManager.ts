@@ -114,7 +114,12 @@ export class PickupManager {
     const depotR2 = depotR * depotR
 
     this.pool.forEachActive(p => {
-      p.life -= dt
+      // A haul you cannot lift right now should still be there when you come
+      // back for it. Ore mined with a full pack used to sit untouched and rot
+      // out on the 60s timer, which reads as the game eating your work.
+      const stranded = !canCarry && p.kind !== 'xp' && p.kind !== 'heart'
+        && p.kind !== 'chest' && p.kind !== 'coins' && !p.toDepot
+      if (!stranded) p.life -= dt
       if (p.life <= 0) {
         p.active = false
         p.sprite.setVisible(false)
@@ -157,8 +162,8 @@ export class PickupManager {
       if (player.alive) {
         const dx = player.x - p.x, dy = player.y - p.y
         const d2 = dx * dx + dy * dy
-        // xp and hearts always come to you; resources need pack space
-        const allowed = p.kind === 'xp' || p.kind === 'heart' || canCarry
+        // xp, hearts and coins always come to you; cargo needs pack space
+        const allowed = p.kind === 'xp' || p.kind === 'heart' || p.kind === 'coins' || canCarry
         if (!p.magnet && allowed && d2 < pr2) {
           p.magnet = true
           p.toDepot = false

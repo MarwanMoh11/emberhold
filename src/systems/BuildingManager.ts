@@ -167,7 +167,7 @@ export class BuildingManager {
       bo.repair += s.repair ?? 0
       if ((s.heal ?? 0) > bo.heal) { bo.heal = s.heal ?? 0; bo.healRadius = s.radius ?? 0 }
     }
-    if (bo.carry > 0) this.scene.res.setCarryCapacity(bo.carry)
+    this.scene.res.setBuildingCarry(bo.carry)
     this.scene.applyBuildingBonuses()
   }
 

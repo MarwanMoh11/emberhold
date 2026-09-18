@@ -113,11 +113,19 @@ export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
   ], 'Shelters survivors. Raises the population cap for workers and troops.',
     { requiresTownHall: 1, blocking: true }),
 
+  /**
+   * Carry has to keep pace with what the next border costs, because the pack
+   * is one pool shared across every resource. Level 3 used to want 90 metal —
+   * which only comes from Deepvein, which costs 1250 units to claim, against a
+   * pack stuck at 520. The rung you needed was locked behind the thing it was
+   * meant to help you reach, so the metal is gone from it and the curve now
+   * tracks the unlock costs: 120, 550, 650, 1250, 2550.
+   */
   warehouse: B('warehouse', 'Warehouse', 'STORE', 'support', 74, 58, [
-    { cost: { coins: 140, wood: 120 }, hp: 560, stats: { prod: 0.15, carry: 260 } },
-    { cost: { coins: 500, wood: 380, stone: 160 }, hp: 820, stats: { prod: 0.35, carry: 520 } },
-    { cost: { coins: 1200, wood: 700, stone: 420, metal: 90 }, hp: 1200, stats: { prod: 0.6, carry: 1100 } },
-    { cost: { coins: 2800, stone: 900, metal: 320 }, hp: 1700, stats: { prod: 0.95, carry: 2400 } },
+    { cost: { coins: 140, wood: 120 }, hp: 560, stats: { prod: 0.15, carry: 420 } },
+    { cost: { coins: 500, wood: 380, stone: 160 }, hp: 820, stats: { prod: 0.35, carry: 900 } },
+    { cost: { coins: 1200, wood: 700, stone: 420 }, hp: 1200, stats: { prod: 0.6, carry: 1800 } },
+    { cost: { coins: 2800, stone: 900, metal: 320 }, hp: 1700, stats: { prod: 0.95, carry: 3200 } },
     { cost: { coins: 6000, stone: 1800, metal: 800, crystal: 30 }, hp: 2400, stats: { prod: 1.5, carry: 6000 } },
   ], 'Carts, cranes and a bigger pack. Every crew works faster and you haul far more.',
     { requiresTownHall: 1, blocking: true }),
