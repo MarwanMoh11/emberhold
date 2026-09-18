@@ -1,4 +1,5 @@
 import { Overlay } from './Overlay'
+import { ABILITY_KEYS } from '../config/abilities'
 import { PAL } from '../config/palette'
 import { SaveManager } from '../systems/SaveManager'
 import type { GameScene } from '../scenes/GameScene'
@@ -97,7 +98,7 @@ export class PauseMenu extends Overlay {
     }
 
     this.controls.setText(
-      'WASD / arrows move   ·   auto-attack   ·   SPACE Q E F abilities   ·   R ultimate\n' +
+      `WASD / arrows move   ·   auto-attack   ·   ${ABILITY_KEYS.join(' ')} abilities   ·   R ultimate\n` +
       'H hold or follow   ·   ESC pause   ·   F2 debug   ·   stand in a site to build',
     ).setPosition(this.W / 2, y + h - 34)
   }

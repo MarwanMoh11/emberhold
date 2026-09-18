@@ -142,7 +142,11 @@ export class UIScene extends Phaser.Scene {
       this.gs.moveInput.x = 0
       this.gs.moveInput.y = 0
     }
-    this.joystick.enabled = !this.anyModalOpen()
+    const modal = this.anyModalOpen()
+    this.joystick.enabled = !modal
+    // A modal owns the screen: the HUD's own buttons stop answering taps that
+    // land beside the card rather than on it.
+    this.hud.blocked = modal
 
     this.hud.update(dt)
     this.debug.update()

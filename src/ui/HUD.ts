@@ -29,6 +29,18 @@ interface AbilityBtn {
   r: number
 }
 
+/** A labelled rectangular control: pause, army stance. */
+interface Chip {
+  label: Phaser.GameObjects.Text
+  key: Phaser.GameObjects.Text
+  zone: Phaser.GameObjects.Zone
+  hover: boolean
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
 /**
  * Fixed HUD. Everything is positioned from the four corners in `layout()` so
  * the same code serves a phone in landscape and a desktop window.
@@ -46,7 +58,6 @@ export class HUD {
   private popText!: Phaser.GameObjects.Text
   private carryText!: Phaser.GameObjects.Text
   private comboText!: Phaser.GameObjects.Text
-  private holdText!: Phaser.GameObjects.Text
   private toastText!: Phaser.GameObjects.Text
   private statsText!: Phaser.GameObjects.Text
   private hintText!: Phaser.GameObjects.Text
@@ -54,6 +65,10 @@ export class HUD {
   private rows: ResRow[] = []
   private buttons: AbilityBtn[] = []
   private ultBtn!: AbilityBtn
+  private pauseChip!: Chip
+  private holdChip!: Chip
+  /** Bottom of the top-left cluster: health bar plus the two chips under it. */
+  private leftStackH = 46
 
   private W = 0
   private H = 0
@@ -67,6 +82,8 @@ export class HUD {
   private flashCarry = 0
 
   showStats = false
+  /** True while a modal owns the screen: every HUD tap target goes dead. */
+  blocked = false
 
   constructor(private ui: Phaser.Scene, private game: GameScene) {
     this.g = ui.add.graphics().setScrollFactor(0).setDepth(1_000_000)
@@ -87,7 +104,6 @@ export class HUD {
     this.popText = t(12, PAL.uiText, true).setOrigin(1, 0)
     this.carryText = t(12, PAL.uiText, true).setOrigin(1, 0)
     this.comboText = t(22, PAL.gold, true).setOrigin(0.5, 0.5)
-    this.holdText = t(11, PAL.uiDim).setOrigin(0, 1)
     this.toastText = t(16, PAL.gold, true).setOrigin(0.5, 0)
     this.statsText = t(10, PAL.uiDim).setOrigin(0, 1)
     this.hintText = t(13, PAL.uiText, true).setOrigin(0.5, 1)
@@ -104,6 +120,12 @@ export class HUD {
     // whether or not the ability behind it exists yet, so nothing ever shuffles.
     for (let i = 0; i < ABILITY_SLOTS.length; i++) this.buttons.push(this.makeButton(i))
     this.ultBtn = this.makeButton(-1)
+
+    // A finger has no ESC and no H. Without these two, everything behind the
+    // pause menu — every volume, the quality switch, SAVE NOW, RESET PROGRESS —
+    // and the army's standing order are unreachable on a phone.
+    this.pauseChip = this.makeChip('ESC', () => this.ui.events.emit('togglePause'))
+    this.holdChip = this.makeChip('H', () => this.game.toggleHold())
 
     this.game.bus.on('achievement', p => this.toast(`ACHIEVEMENT — ${p.title}`))
     this.game.bus.on('carry:full', () => {
@@ -135,6 +157,47 @@ export class HUD {
     })
     return { index, ring, glyph, key, zone, x: 0, y: 0, r: 30 }
   }
+
+  private makeChip(keyLabel: string, onTap: () => void): Chip {
+    const label = this.ui.add.text(0, 0, '', {
+      fontFamily: FONT, fontSize: '11px', color: CSS(PAL.uiText), fontStyle: 'bold',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(1_000_005)
+    const key = this.ui.add.text(0, 0, keyLabel, {
+      fontFamily: FONT, fontSize: '9px', color: CSS(PAL.uiDim),
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(1_000_005)
+    const zone = this.ui.add.zone(0, 0, 10, 10).setScrollFactor(0).setInteractive({ useHandCursor: true })
+    const chip: Chip = { label, key, zone, hover: false, x: 0, y: 0, w: 10, h: 10 }
+    zone.on('pointerover', () => { chip.hover = true })
+    zone.on('pointerout', () => { chip.hover = false })
+    zone.on('pointerdown', onTap)
+    return chip
+  }
+
+  /**
+   * One rectangle decides where the chip is drawn *and* where it can be
+   * pressed, so the two can never drift apart — which is how tap targets in
+   * this HUD have gone wrong before.
+   */
+  private placeChip(c: Chip, x: number, y: number, w: number, h: number) {
+    c.x = x; c.y = y; c.w = w; c.h = h
+    c.zone.setPosition(x + w / 2, y + h / 2).setSize(w, h)
+    // Label over key hint, the same way the hotbar buttons read.
+    c.label.setPosition(x + w / 2, y + h / 2 - 6)
+    c.key.setPosition(x + w / 2, y + h - 11)
+  }
+
+  private drawChip(c: Chip, text: string, colour: number, live: boolean) {
+    const g = this.g
+    g.fillStyle(PAL.uiBg, c.hover ? 0.95 : 0.8)
+    g.fillRoundedRect(c.x, c.y, c.w, c.h, 8)
+    g.lineStyle(1.5, PAL.uiEdge, c.hover ? 1 : 0.9)
+    g.strokeRoundedRect(c.x, c.y, c.w, c.h, 8)
+    c.label.setText(text).setColor(CSS(colour))
+    c.zone.setSize(live ? c.w : 1, live ? c.h : 1)
+  }
+
+  /** Width of the health panel; the chips under it line up with its edges. */
+  private get barW() { return this.W < 720 ? 168 : 224 }
 
   toast(msg: string) {
     this.toastText.setText(msg)
@@ -183,8 +246,20 @@ export class HUD {
       this.rows[i].text.setPosition(this.W - padR - 80, y)
     }
 
-    this.holdText.setPosition(padL + 4, this.H - padB - 2)
-    this.statsText.setPosition(padL + 4, this.H - padB - 22)
+    this.statsText.setPosition(padL + 4, this.H - padB - 2)
+
+    // Pause and army stance, side by side under the health bar and lined up
+    // with it. The bottom-right is spoken for by the hotbar and the top-right
+    // by the resources, and here they are nowhere near a resting thumb.
+    const chipH = wantsTouchTargets(this.W) ? 44 : 34
+    // PAUSE is a short word and the stance is a long one, so the row is split
+    // to suit rather than down the middle, and the labels always fit.
+    const chipRow = this.barW + 20 - 6
+    const pauseW = Math.floor(chipRow * 0.4)
+    const chipY = padT + 46 + 6
+    this.placeChip(this.pauseChip, padL, chipY, pauseW, chipH)
+    this.placeChip(this.holdChip, padL + pauseW + 6, chipY, chipRow - pauseW, chipH)
+    this.leftStackH = chipY + chipH - padT
 
     // ability hotbar bottom-right, thumb reachable.
     // Six circles — five slots plus the larger ultimate — do not fit across a
@@ -234,8 +309,12 @@ export class HUD {
     this.g.clear()
     this.gTop.clear()
 
+    // Every HUD tap target goes dead behind a modal, so a thumb aimed at the
+    // pause menu cannot fire an ability or flip the army through the dim.
+    const live = !this.blocked
+
     // ---- top-left: health, xp ------------------------------------------
-    const barW = this.W < 720 ? 168 : 224
+    const barW = this.barW
     const hx = padL, hy = padT
     this.panel(this.g, hx, hy, barW + 20, 46)
     const hp = clamp(p.hp / p.maxHp, 0, 1)
@@ -247,6 +326,12 @@ export class HUD {
     this.lvlText.setText(`LV ${p.level}`).setPosition(hx + 10 + barW - 44, hy + 30)
     this.hpText.setPosition(hx + 10, hy + 4)
 
+    // ---- top-left: pause + army stance -----------------------------------
+    this.drawChip(this.pauseChip, 'PAUSE', PAL.uiText, live)
+    const holding = g.army.holding
+    this.drawChip(this.holdChip, holding ? 'HOLDING' : 'FOLLOWING',
+      holding ? PAL.heroTrim : PAL.uiText, live)
+
     // ---- objective + phase ---------------------------------------------
     // Three panels do not fit across a phone in portrait, so below NARROW the
     // objective drops to its own full-width row under health and resources
@@ -256,7 +341,9 @@ export class HUD {
     const narrow = this.W < NARROW
     const objW = narrow ? this.W - padL - padR : this.W < 720 ? 240 : 320
     const objX = narrow ? padL : this.W / 2 - objW / 2
-    const objY = narrow ? padT + Math.max(46, resPanelH) + 6 : padT
+    // Below NARROW the objective clears whichever top column is taller — the
+    // health bar with the two chips under it, or the resource panel.
+    const objY = narrow ? padT + Math.max(this.leftStackH, resPanelH) + 6 : padT
     const resW = narrow ? 138 : 158
     // tell world-space cards how much of the screen we are covering
     g.uiBands.top = objY + 66 + 8
@@ -355,7 +442,7 @@ export class HUD {
       const ready = slot.cd <= 0
       this.drawButton(btn, def.glyph, def.colour, ready ? 1 : 1 - slot.cd / def.cooldown, ready)
       btn.key.setVisible(true).setText(ABILITY_KEYS[b] ?? '')
-      btn.zone.setSize(btn.r * 2, btn.r * 2)
+      btn.zone.setSize(live ? btn.r * 2 : 1, live ? btn.r * 2 : 1)
     }
     if (g.abilities.ultimate.unlocked) {
       const def = ABILITIES[g.abilities.ultimate.key]
@@ -363,6 +450,7 @@ export class HUD {
       this.drawButton(this.ultBtn, def.glyph, def.colour,
         ready ? 1 : 1 - g.abilities.ultimate.cd / def.cooldown, ready, true)
       this.ultBtn.key.setVisible(true).setText('R')
+      this.ultBtn.zone.setSize(live ? this.ultBtn.r * 2 : 1, live ? this.ultBtn.r * 2 : 1)
     } else {
       this.ultBtn.ring.clear()
       this.ultBtn.glyph.setVisible(false)
@@ -371,10 +459,6 @@ export class HUD {
     }
 
     // ---- misc ------------------------------------------------------------
-    this.holdText.setText(
-      g.army.holding ? 'H · army holding the hold' : 'H · army following you',
-    ).setColor(g.army.holding ? CSS(PAL.heroTrim) : CSS(PAL.uiDim))
-
     const combo = g.fx.combo
     if (combo >= 5) {
       this.comboText.setVisible(true).setText(`${combo} KILL STREAK`)

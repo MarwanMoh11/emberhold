@@ -49,12 +49,16 @@ export class Joystick {
   }
 
   /**
-   * World-space controls — the build card's UPGRADE button — sit wherever the
-   * structure is, which on a phone is usually inside the movement half. Without
-   * this a thumb pressing UPGRADE also drags the hero, and walking off the pad
-   * cancels the very upgrade it just asked for.
+   * Controls sit inside the movement half all the time: the build card's
+   * UPGRADE button lands wherever the structure is, and on a phone the HUD's
+   * own buttons reach well past the halfway line — the hotbar spans nearly the
+   * full width in portrait, and pause and the army stance live under the health
+   * bar. Without this a thumb pressing one of them also drags the hero, and
+   * walking off the pad cancels the very thing it just asked for.
    */
-  private overWorldControl(p: Phaser.Input.Pointer) {
+  private overControl(p: Phaser.Input.Pointer) {
+    // The HUD is a scene of its own, so it needs its own hit test.
+    if (this.scene.input.hitTestPointer(p).length > 0) return true
     const game = this.scene.scene.get('Game') as Phaser.Scene & {
       buildings?: { panelContains(x: number, y: number): boolean }
     }
@@ -71,7 +75,7 @@ export class Joystick {
   private onDown(p: Phaser.Input.Pointer) {
     if (!this.enabled || this.pointerId !== -1) return
     if (!this.isMoveZone(p)) return
-    if (this.overWorldControl(p)) return
+    if (this.overControl(p)) return
     this.pointerId = p.id
     this.originX = p.x
     this.originY = p.y

@@ -25,13 +25,14 @@ Then open <http://localhost:5180>.
 | Build / upgrade | walk into a build site; hold `SHIFT` to fund an upgrade |
 | Hire, recruit | stand on the camp or barracks |
 | Abilities | `SPACE`, `Q`, `E`, `F`, `G`, ultimate on `R` |
-| Army follow / hold | `H` |
-| Pause | `ESC` or `P` |
+| Army follow / hold | `H`, or the stance button under the health bar |
+| Pause | `ESC` or `P`, or PAUSE under the health bar |
 | Debug panel | `F2` |
 
 On a phone it plays in either orientation: drag the left half of the screen to
-move, tap the buttons bottom-right for abilities, and everything else happens by
-walking into it. Add it to your home screen and it opens without browser chrome.
+move, tap the buttons bottom-right for abilities, tap PAUSE or the army's
+standing order under the health bar, and everything else happens by walking
+into it. Add it to your home screen and it opens without browser chrome.
 The horde is capped lower on a phone so the frame rate holds.
 
 The loop: sweep up coins and wood by hand → walk the load to the depot or a
