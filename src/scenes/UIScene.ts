@@ -6,6 +6,7 @@ import { LevelUpOverlay } from '../ui/LevelUpOverlay'
 import { PauseMenu, type ScreenName } from '../ui/PauseMenu'
 import { QuestLog } from '../ui/QuestLog'
 import { AchievementsPanel } from '../ui/AchievementsPanel'
+import { RespecOverlay } from '../ui/RespecOverlay'
 import { DebugPanel } from '../ui/DebugPanel'
 import { Overlay } from '../ui/Overlay'
 import { PAL } from '../config/palette'
@@ -48,6 +49,7 @@ export class UIScene extends Phaser.Scene {
   private coreLost!: CoreLostOverlay
   private questLog!: QuestLog
   private deeds!: AchievementsPanel
+  private respec!: RespecOverlay
   private pendingUpgrades = 0
   private stickWasActive = false
 
@@ -65,6 +67,7 @@ export class UIScene extends Phaser.Scene {
     this.coreLost = new CoreLostOverlay(this, () => this.restartWave())
     this.questLog = new QuestLog(this, this.gs)
     this.deeds = new AchievementsPanel(this, this.gs)
+    this.respec = new RespecOverlay(this, this.gs)
 
     const ge = this.gs.events
     ge.on('offerUpgrades', () => { this.pendingUpgrades++ })
@@ -77,6 +80,7 @@ export class UIScene extends Phaser.Scene {
     this.events.on('upgradeChosen', () => this.resumeGame())
     this.events.on('openScreen', (n: ScreenName) => this.openScreen(n))
     this.events.on('closeScreen', () => this.closeScreen())
+    this.events.on('respecDone', () => this.afterRespec())
 
     this.input.keyboard?.on('keydown-ESC', () => this.togglePause())
     this.input.keyboard?.on('keydown-F2', () => this.toggleDebug())
@@ -88,7 +92,7 @@ export class UIScene extends Phaser.Scene {
 
   /** The pause menu's sub-screens, which open over it and return to it. */
   private screens(): Overlay[] {
-    return [this.questLog, this.deeds]
+    return [this.questLog, this.deeds, this.respec]
   }
 
   private anyModalOpen() {
@@ -101,12 +105,23 @@ export class UIScene extends Phaser.Scene {
     for (const s of this.screens()) s.hide()
     if (name === 'quests') this.questLog.show()
     else if (name === 'deeds') this.deeds.show()
+    else if (name === 'respec') this.respec.show()
   }
 
   /** Back out of a sub-screen to the menu it was opened from, still paused. */
   private closeScreen() {
     for (const s of this.screens()) s.hide()
     this.pause.show()
+  }
+
+  /**
+   * The picks were handed back as pending level-ups, so every card closes and
+   * the choices start immediately rather than behind two menus.
+   */
+  private afterRespec() {
+    for (const s of this.screens()) s.hide()
+    this.pause.hide()
+    if (this.pendingUpgrades <= 0) this.resumeGame()
   }
 
   private pauseGame() {

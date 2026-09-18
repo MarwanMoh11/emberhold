@@ -1,3 +1,5 @@
+import type { ResourceBag } from '../core/types'
+
 /** Roguelite level-up picks. Applied to the player's live stat block. */
 export type UpgradeId =
   | 'rapidFire' | 'heavyShots' | 'magnet' | 'swiftBoots' | 'vitality'
@@ -71,3 +73,34 @@ export const UPGRADES: UpgradeDef[] = [
 ]
 
 export const UPGRADE_BY_ID = new Map(UPGRADES.map(u => [u.id, u]))
+
+/**
+ * What it costs to unmake every pick you have taken and choose again.
+ *
+ * Priced per pick undone, not per respec, and it reaches for a rarer material
+ * the deeper the rebuild goes — which lines up with where you would be when you
+ * needed it. A handful of early picks is paid for in coins and food, both of
+ * which the hold already makes. Stone joins once you are past a few. Iron only
+ * appears once the rebuild is big enough that Deepvein is already yours, and
+ * crystal only for throwing away a whole campaign's worth of choices. The coin
+ * term is quadratic so a second thought is cheap and a tenth one is a project.
+ */
+export const RESPEC_COST: Record<string, (picks: number) => number> = {
+  coins: p => 150 * p + 25 * p * p,
+  food: p => 50 * p,
+  stone: p => (p > 3 ? 40 * (p - 3) : 0),
+  metal: p => (p > 8 ? 12 * (p - 8) : 0),
+  crystal: p => (p > 16 ? Math.floor((p - 16) / 4) : 0),
+}
+
+/** The bill for undoing `picks` picks, with the zero entries left out. */
+export function respecCost(picks: number): ResourceBag {
+  const n = Math.max(0, Math.floor(picks))
+  const out: ResourceBag = {}
+  if (n <= 0) return out
+  for (const k of Object.keys(RESPEC_COST)) {
+    const v = Math.round(RESPEC_COST[k](n))
+    if (v > 0) out[k as keyof ResourceBag] = v
+  }
+  return out
+}

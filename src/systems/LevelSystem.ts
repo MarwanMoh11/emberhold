@@ -1,5 +1,7 @@
-import { UPGRADES, UPGRADE_BY_ID, type UpgradeDef, type UpgradeId } from '../config/upgrades'
+import { UPGRADES, UPGRADE_BY_ID, respecCost, type UpgradeDef, type UpgradeId } from '../config/upgrades'
+import { freshStats } from '../entities/Player'
 import { rnd } from '../core/math'
+import type { ResourceBag } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'
 
 /**
@@ -54,6 +56,44 @@ export class LevelSystem {
     this.scene.player.syncStats()
     this.scene.abilities.refreshUnlocks()
     this.scene.audio.play('levelup')
+  }
+
+  /** Every stack of every pick — what a respec unmakes, and what it bills for. */
+  get pickCount() {
+    let n = 0
+    for (const v of this.taken.values()) n += v
+    return n
+  }
+
+  respecCost(): ResourceBag { return respecCost(this.pickCount) }
+
+  canRespec() { return this.pickCount > 0 && this.scene.res.canAfford(this.respecCost()) }
+
+  /**
+   * Unmake every pick and hand the choices straight back.
+   *
+   * A save spans weeks, the picks stack up to eight deep and they are permanent,
+   * so an early run of bad calls used to be a wall you could never climb back
+   * over. This wipes the stat block back to the hero's base numbers and queues
+   * one level-up card per pick refunded, so nothing is lost but the bill —
+   * levels, abilities and the settlement are untouched.
+   */
+  respec(): number {
+    const picks = this.pickCount
+    if (picks <= 0) return 0
+    if (!this.scene.res.spend(this.respecCost())) return 0
+
+    this.taken.clear()
+    const p = this.scene.player
+    // Mutated in place rather than replaced: other systems hold this object.
+    Object.assign(p.stats, freshStats())
+    p.syncStats()
+    // syncStats only ever heals upward, and max health just fell.
+    p.hp = Math.min(p.hp, p.maxHp)
+    this.scene.abilities.refreshUnlocks()
+    this.scene.audio.play('levelup')
+    for (let i = 0; i < picks; i++) this.scene.events.emit('offerUpgrades')
+    return picks
   }
 
   toJSON() { return [...this.taken.entries()] }
