@@ -36,6 +36,8 @@ export interface PanelView {
   sub: string
   rows: PanelRow[]
   hint: string
+  /** gold hint text turns red when it is a refusal rather than an invitation */
+  hintBad?: boolean
   /** the UPGRADE button; absent when there is nothing to raise */
   upgrade?: { committed: boolean; affordable: boolean }
   /** who this building trains next; absent unless there is a real choice */
@@ -206,7 +208,7 @@ export class BuildingPanel {
 
     this.title.setText(v.title)
     this.sub.setText(v.sub)
-    this.hint.setText(v.hint)
+    this.hint.setText(v.hint).setColor(CSS(v.hintBad ? PAL.danger : PAL.gold))
 
     const n = Math.min(v.rows.length, this.rows.length)
     let y = 26

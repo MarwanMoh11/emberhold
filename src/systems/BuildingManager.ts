@@ -177,6 +177,11 @@ export class BuildingManager {
     return hp
   }
 
+  /** Hall level this pad waits on, or 0 when nothing gates it. */
+  hallGate(b: Building) {
+    return Math.max(b.requiresTownHall, b.def.requiresTownHall ?? 0)
+  }
+
   /** Every unit this building will ever muster, locked ones included. */
   rosterFor(b: Building): SoldierKey[] { return ROSTER[b.key] ?? [] }
 
@@ -478,14 +483,27 @@ export class BuildingManager {
     let nearestD = Infinity
 
     for (const b of this.buildings) {
-      const available = this.isPadAvailable(b)
-      const shouldShow = available || b.level > 0
+      const rampart = b.key === 'wall' || b.key === 'gate'
+      const zoneOpen = this.scene.zones.isUnlocked(b.zone)
+      const hallNeed = this.hallGate(b)
+      const hallShort = this.townHallLevel < hallNeed
+      const available = zoneOpen && !hallShort
+      // A hall-gated pad used to stay invisible until the day it became
+      // eligible, so new structures simply appeared with nothing to say what
+      // had unlocked them. It stands there greyed out instead, and walking
+      // into it names the hall level it is waiting for.
+      const gated = zoneOpen && hallShort && !rampart
+      const shouldShow = available || b.level > 0 || gated
+      // Anything already standing keeps working even if the hall is wrecked
+      // back below the level that unlocked it.
+      const usable = available || b.level > 0
 
       // cull far-away blueprints so the map is not a sea of ghost outlines.
       // Ramparts are the worst offender (dozens of segments), so they only
-      // appear once you are close enough to actually raise one.
+      // appear once you are close enough to actually raise one. Locked
+      // previews are held closer still: they are a promise, not a to-do list.
       const d = dist(player.x, player.y, b.x, b.y)
-      const ghostRange = b.key === 'wall' || b.key === 'gate' ? 300 : 620
+      const ghostRange = rampart ? 300 : gated ? 380 : 620
       const vis = shouldShow && (b.level > 0 || d < ghostRange)
       if (vis !== b.visible) {
         b.visible = vis
@@ -494,9 +512,18 @@ export class BuildingManager {
       }
       if (vis && b.level === 0) {
         const fade = Math.max(0.3, Math.min(1, 1 - d / ghostRange))
-        b.sprite.setAlpha(fade)
-        // the preview breathes gently so a build site reads as an invitation
-        b.ghost.setAlpha(fade * (0.24 + Math.sin(this.scene.now * 0.0022 + b.x) * 0.06))
+        // Locked sites read as stone-cold rather than inviting: grey, dimmer,
+        // and they do not breathe.
+        b.sprite.setAlpha(fade * (gated ? 0.7 : 1))
+        if (gated) {
+          b.sprite.setTint(0x8a94a2)
+          b.ghost.setTint(0x6d7a8a).setAlpha(fade * 0.16)
+        } else {
+          b.sprite.clearTint()
+          b.ghost.setTint(0x8fd0ff)
+          // the preview breathes gently so a build site reads as an invitation
+          b.ghost.setAlpha(fade * (0.24 + Math.sin(this.scene.now * 0.0022 + b.x) * 0.06))
+        }
       }
       if (!shouldShow) continue
 
@@ -534,7 +561,7 @@ export class BuildingManager {
       const inPad = player.alive && d < Math.max(b.halfW, b.halfH) + 38
       if (inPad && d < nearestD) { nearestD = d; nearest = b }
 
-      if (inPad) {
+      if (inPad && usable) {
         b.dwellT += dt
         // holding shift is the desktop shortcut for "pour it in"
         if (this.shiftKey?.isDown && b.level > 0 && !b.isMax) b.committed = true
@@ -769,6 +796,18 @@ export class BuildingManager {
         if (need <= 0) continue
         rows.push({ tex: TEX[k], have: Math.min(need, b.progress[k] ?? 0), need })
       }
+    }
+
+    // A pad the hall has not earned yet says so, and says nothing else: no
+    // button, no chips, no way to pour resources into something inert.
+    const hallNeed = this.hallGate(b)
+    if (b.level === 0 && this.townHallLevel < hallNeed) {
+      this.panel.show(b, {
+        title, sub, rows,
+        hint: `LOCKED — RAISE THE COMMAND HALL TO LV.${hallNeed}`,
+        hintBad: true,
+      })
+      return
     }
 
     let hint = ''
