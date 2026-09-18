@@ -6,6 +6,7 @@ import { LevelUpOverlay } from '../ui/LevelUpOverlay'
 import { PauseMenu, type ScreenName } from '../ui/PauseMenu'
 import { QuestLog } from '../ui/QuestLog'
 import { AchievementsPanel } from '../ui/AchievementsPanel'
+import { RunSummary } from '../ui/RunSummary'
 import { RespecOverlay } from '../ui/RespecOverlay'
 import { DebugPanel } from '../ui/DebugPanel'
 import { Overlay } from '../ui/Overlay'
@@ -49,6 +50,7 @@ export class UIScene extends Phaser.Scene {
   private coreLost!: CoreLostOverlay
   private questLog!: QuestLog
   private deeds!: AchievementsPanel
+  private summary!: RunSummary
   private respec!: RespecOverlay
   private pendingUpgrades = 0
   private stickWasActive = false
@@ -67,6 +69,7 @@ export class UIScene extends Phaser.Scene {
     this.coreLost = new CoreLostOverlay(this, () => this.restartWave())
     this.questLog = new QuestLog(this, this.gs)
     this.deeds = new AchievementsPanel(this, this.gs)
+    this.summary = new RunSummary(this, this.gs)
     this.respec = new RespecOverlay(this, this.gs)
 
     const ge = this.gs.events
@@ -74,6 +77,7 @@ export class UIScene extends Phaser.Scene {
     ge.on('togglePause', () => this.togglePause())
     ge.on('toggleDebug', () => this.toggleDebug())
     ge.on('coreLost', () => this.showCoreLost())
+    this.gs.bus.on('campaign:complete', () => this.celebrateVictory())
 
     this.events.on('togglePause', () => this.togglePause())
     this.events.on('toggleStats', () => { this.hud.showStats = !this.hud.showStats })
@@ -92,7 +96,7 @@ export class UIScene extends Phaser.Scene {
 
   /** The pause menu's sub-screens, which open over it and return to it. */
   private screens(): Overlay[] {
-    return [this.questLog, this.deeds, this.respec]
+    return [this.questLog, this.deeds, this.summary, this.respec]
   }
 
   private anyModalOpen() {
@@ -106,12 +110,41 @@ export class UIScene extends Phaser.Scene {
     if (name === 'quests') this.questLog.show()
     else if (name === 'deeds') this.deeds.show()
     else if (name === 'respec') this.respec.show()
+    else this.summary.showSummary()
   }
 
-  /** Back out of a sub-screen to the menu it was opened from, still paused. */
+  /**
+   * Back out of a sub-screen. Everything opened from the pause menu goes back
+   * to it; the victory card is the one that arrived on its own, so it hands the
+   * game straight back instead — finishing the campaign is a milestone, and a
+   * milestone that dumps you in a menu is a game over wearing a hat.
+   */
   private closeScreen() {
+    const wasVictory = this.summary.open && this.summary.victory
     for (const s of this.screens()) s.hide()
-    this.pause.show()
+    if (wasVictory) this.resumeGame()
+    else this.pause.show()
+  }
+
+  /**
+   * Twenty quests of tutorial and campaign used to end in a floating toast.
+   * The fanfare goes off in the world first, while the game is still running,
+   * and the card lands once it has played.
+   */
+  private celebrateVictory() {
+    const g = this.gs
+    g.fx.flash(PAL.gold, 0.35)
+    g.fx.ring(g.player.x, g.player.y, 520, PAL.gold, 0.9)
+    g.fx.coinBurst(g.player.x, g.player.y - 20, 24)
+    g.audio.play('quest', 0.85)
+    this.time.delayedCall(1600, () => {
+      if (this.coreLost.open) return
+      this.pause.hide()
+      for (const s of this.screens()) s.hide()
+      this.summary.showVictory()
+      this.pauseGame()
+      g.audio.play('levelup')
+    })
   }
 
   /**

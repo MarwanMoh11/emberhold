@@ -20,6 +20,8 @@ export interface GameEvents {
   'boss:spawned': { name: string }
   'boss:killed': { name: string }
   'achievement': { id: string; title: string }
+  /** The last quest in the chain just landed. Not an ending — a milestone. */
+  'campaign:complete': { wave: number }
 }
 
 /** Thin typed wrapper so systems can talk without importing each other. */

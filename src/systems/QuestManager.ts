@@ -33,6 +33,15 @@ export class QuestManager {
   done = new Set<string>()
   unlockedAchievements = new Set<string>()
 
+  /**
+   * Stamped the moment the last quest lands, and kept for good. The run summary
+   * reads it back so a save opened weeks later can still name the night the
+   * frontier was secured.
+   */
+  victoryAt = 0
+  victoryWave = 0
+  victoryPlaytime = 0
+
   private kills = 0
   private bossKills = 0
   private campsCleared = 0
@@ -48,6 +57,9 @@ export class QuestManager {
   get current(): QuestDef | null {
     return this.index < QUESTS.length ? QUESTS[this.index] : null
   }
+
+  /** The whole chain is behind you. The nights, deliberately, are not. */
+  get campaignComplete() { return this.index >= QUESTS.length }
 
   private progress(q: QuestDef): { have: number; need: number } {
     const s = this.scene
@@ -199,6 +211,15 @@ export class QuestManager {
     if (parts.length) s.fx.popup(s.player.x, s.player.y - 74, parts.join('   '), PAL.gold, 16)
     s.fx.ring(s.player.x, s.player.y, 200, PAL.good, 0.6)
     s.bus.emit('quest:complete', { id: q.id })
+
+    // The chain is the campaign. Finishing it used to produce one toast and
+    // nothing else; now it is a moment, and the game carries on after it.
+    if (this.campaignComplete && !this.victoryAt) {
+      this.victoryAt = Date.now()
+      this.victoryWave = s.waves.wave
+      this.victoryPlaytime = s.saves.playtime
+      s.bus.emit('campaign:complete', { wave: this.victoryWave })
+    }
   }
 
   /** The live numbers every achievement is measured against. */
@@ -237,6 +258,7 @@ export class QuestManager {
       index: this.index, done: [...this.done], achievements: [...this.unlockedAchievements],
       kills: this.kills, bossKills: this.bossKills,
       campsCleared: this.campsCleared, zonesClaimed: this.zonesClaimed,
+      victoryAt: this.victoryAt, victoryWave: this.victoryWave, victoryPlaytime: this.victoryPlaytime,
     }
   }
 
@@ -248,5 +270,9 @@ export class QuestManager {
     this.bossKills = d.bossKills
     this.campsCleared = d.campsCleared
     this.zonesClaimed = d.zonesClaimed
+    // Saves written before the campaign had an ending carry none of these.
+    this.victoryAt = d.victoryAt ?? 0
+    this.victoryWave = d.victoryWave ?? 0
+    this.victoryPlaytime = d.victoryPlaytime ?? 0
   }
 }
