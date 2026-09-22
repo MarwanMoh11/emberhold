@@ -1,4 +1,3 @@
-import Phaser from 'phaser'
 import { waveDef, directorAdjust, type WaveDef, type GateId } from '../config/waves'
 import { SPAWN_GATES, GATE_BY_ID } from '../config/map'
 import { DAYNIGHT, WORLD } from '../config/balance'
@@ -29,25 +28,19 @@ export class WaveManager {
   private queueHead = 0
   private remaining = 0
   private current: WaveDef | null = null
-  private nightOverlay!: Phaser.GameObjects.Rectangle
+  /**
+   * How far toward night the light has gone: 0 is full day, 1 is the dark.
+   * Eased rather than stepped, and dusk starts before the warning so the
+   * evening arrives on its own; the lighting pass reads this every frame.
+   */
+  darkness = 0
   private bossName: string | null = null
 
   wavesCleared = 0
   /** set while the player is being told a wave is coming */
   bannerText = ''
 
-  constructor(private scene: GameScene) {
-    this.nightOverlay = scene.add
-      .rectangle(0, 0, 10, 10, PAL.night, 0)
-      .setOrigin(0, 0).setScrollFactor(0).setDepth(850_000)
-    this.resizeOverlay()
-    scene.scale.on('resize', () => this.resizeOverlay())
-  }
-
-  private resizeOverlay() {
-    const c = this.scene.cameras.main
-    this.nightOverlay.setSize(c.width + 8, c.height + 8)
-  }
+  constructor(private scene: GameScene) {}
 
   get isNight() { return this.phase === 'night' }
   get enemiesRemaining() { return this.remaining }
@@ -80,10 +73,13 @@ export class WaveManager {
       }
     }
 
-    // gentle darkening ramp so night reads without killing readability
-    const targetAlpha = this.phase === 'night' ? 0.34 : this.phase === 'warning' ? 0.16 : 0
-    const a = this.nightOverlay.alpha
-    this.nightOverlay.setAlpha(a + (targetAlpha - a) * Math.min(1, dt * 1.6))
+    // Dusk gathers over the last stretch of the day, deepens through the
+    // warning, and the night itself is dark enough that the hearths matter.
+    const dusk = DAYNIGHT.warningSeconds + 10
+    const target = this.phase === 'night' ? 1
+      : this.phase === 'warning' ? 0.45 + 0.35 * (1 - this.phaseT / DAYNIGHT.warningSeconds)
+        : this.phaseT < dusk ? 0.45 * (1 - (this.phaseT - DAYNIGHT.warningSeconds) / 10) : 0
+    this.darkness += (target - this.darkness) * Math.min(1, dt * 1.2)
   }
 
   private beginWarning() {

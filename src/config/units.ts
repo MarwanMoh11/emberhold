@@ -43,13 +43,13 @@ export const SOLDIERS: Record<SoldierKey, SoldierDef> = {
   },
   spearman: {
     key: 'spearman', name: 'Spearman', short: 'SPEAR', hp: 130, damage: 13, attackRate: 0.85, range: 54,
-    speed: 160, radius: 13, scale: 1.04, colour: 0x3d94a8, accent: 0x1f5566, pop: 1,
+    speed: 160, radius: 13, scale: 1.04, colour: 0x2f7a8e, accent: 0x1f5566, pop: 1,
     cost: { food: 48, coins: 26, wood: 15 }, from: 'barracks', tier: 2, vsHeavy: 2.1,
     desc: 'Longer reach. Tears through brutes and elites.',
   },
   guard: {
     key: 'guard', name: 'Heavy Guard', short: 'GUARD', hp: 300, damage: 14, attackRate: 0.8, range: 36,
-    speed: 132, radius: 16, scale: 1.24, colour: 0x5f6f8c, accent: 0x2e384a, pop: 2,
+    speed: 132, radius: 16, scale: 1.24, colour: 0x5a6a86, accent: 0x2e384a, pop: 2,
     cost: { food: 85, coins: 60, metal: 10 }, from: 'barracks', tier: 3,
     desc: 'Soaks the charge so the rest of the line lives.',
   },
@@ -62,14 +62,14 @@ export const SOLDIERS: Record<SoldierKey, SoldierDef> = {
   },
   crossbow: {
     key: 'crossbow', name: 'Crossbowman', short: 'BOLT', hp: 90, damage: 26, attackRate: 0.6, range: 300,
-    speed: 148, radius: 12, scale: 1.02, colour: 0x8a9f4f, accent: 0x4c5c25, pop: 1,
+    speed: 148, radius: 12, scale: 1.02, colour: 0x6f8440, accent: 0x4c5c25, pop: 1,
     cost: { food: 65, coins: 62, metal: 10 }, from: 'archeryRange', tier: 2,
     ranged: true, projectileSpeed: 700,
     desc: 'Slow, punishing bolts with real punch.',
   },
   outrider: {
     key: 'outrider', name: 'Outrider', short: 'RIDER', hp: 160, damage: 22, attackRate: 1.3, range: 40,
-    speed: 250, radius: 14, scale: 1.1, colour: 0xc08a4a, accent: 0x6d4620, pop: 2,
+    speed: 250, radius: 14, scale: 1.1, colour: 0x3c4f96, accent: 0x6d4620, pop: 2,
     cost: { food: 105, coins: 105, metal: 20 }, from: 'stable', tier: 1,
     desc: 'Fast flanker that runs down stragglers.',
   },

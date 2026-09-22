@@ -1,13 +1,22 @@
 import Phaser from 'phaser'
+import '@fontsource/grenze-gotisch/latin-600.css'
+import '@fontsource/grenze-gotisch/latin-800.css'
+import '@fontsource/alegreya-sans/latin-500.css'
+import '@fontsource/alegreya-sans/latin-500-italic.css'
+import '@fontsource/alegreya-sans/latin-700.css'
+import '@fontsource/alegreya-sans/latin-800.css'
+import '@fontsource/alegreya-sans-sc/latin-700.css'
+import '@fontsource/alegreya-sans-sc/latin-800.css'
 import { BootScene } from './scenes/BootScene'
 import { GameScene } from './scenes/GameScene'
 import { UIScene } from './scenes/UIScene'
 import { PAL, CSS } from './config/palette'
+import { FONT_FACES } from './ui/theme'
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'app',
-  backgroundColor: CSS(PAL.grassC),
+  backgroundColor: CSS(PAL.uiBg),
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -111,10 +120,25 @@ function launch() {
  */
 function whenSized() {
   if ((parent?.clientWidth ?? 0) > 0 && (parent?.clientHeight ?? 0) > 0) {
-    launch()
+    fontsReady().then(launch)
     return
   }
   window.setTimeout(whenSized, 250)
+}
+
+/**
+ * Phaser rasterises a Text once, when it is set, so a face that lands a moment
+ * after the title is drawn never shows up on it — the title would sit in a
+ * fallback serif until something happened to change the words. Wait for the
+ * faces first. They are bundled, so this is a local fetch; the cap is only for
+ * a browser that refuses web fonts outright, which then gets the fallbacks.
+ */
+function fontsReady(): Promise<void> {
+  const fonts = (document as Document & { fonts?: FontFaceSet }).fonts
+  if (!fonts?.load) return Promise.resolve()
+  const all = Promise.all(FONT_FACES.map(f => fonts.load(f).catch(() => [])))
+  const cap = new Promise<void>(resolve => window.setTimeout(resolve, 3500))
+  return Promise.race([all.then(() => undefined), cap])
 }
 
 // Generous: baking a few hundred textures takes a real beat on a slow phone,

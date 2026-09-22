@@ -98,7 +98,7 @@ export const ENEMIES: Record<EnemyKey, EnemyDef> = {
   siegeBeast: {
     key: 'siegeBeast', name: 'SIEGE BEAST',
     hp: 2600, damage: 34, speed: 44, range: 62, attackRate: 0.6, radius: 42, scale: 2.9,
-    colour: 0x7a4a2a, accent: 0x3f2415, xp: 260, coins: 420, prefers: 'structures',
+    colour: 0xff8a34, accent: 0x3f2415, xp: 260, coins: 420, prefers: 'structures',
     boss: true, knockbackResist: 1, healthbar: true,
     drops: [
       { type: 'stone', chance: 1, amount: 120 },
@@ -109,7 +109,7 @@ export const ENEMIES: Record<EnemyKey, EnemyDef> = {
   camp: {
     key: 'camp', name: 'Warcamp',
     hp: 1400, damage: 0, speed: 0, range: 0, attackRate: 0.01, radius: 46, scale: 1,
-    colour: 0x7a3a2a, accent: 0x3f1c14, xp: 120, coins: 200, prefers: 'player',
+    colour: 0xff6a2e, accent: 0x3f1c14, xp: 120, coins: 200, prefers: 'player',
     knockbackResist: 1, healthbar: true, structure: true,
   },
   warlord: {
@@ -127,7 +127,7 @@ export const ENEMIES: Record<EnemyKey, EnemyDef> = {
   cinderRegent: {
     key: 'cinderRegent', name: 'THE CINDER REGENT',
     hp: 9400, damage: 42, speed: 76, range: 68, attackRate: 0.8, radius: 44, scale: 3.1,
-    colour: 0x9f3425, accent: 0xffb64c, xp: 1200, coins: 1800, prefers: 'player',
+    colour: 0xffa03a, accent: 0xffb64c, xp: 1200, coins: 1800, prefers: 'player',
     boss: true, knockbackResist: 1, healthbar: true,
     drops: [
       { type: 'crystal', chance: 1, amount: 120 },

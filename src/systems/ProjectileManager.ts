@@ -70,6 +70,16 @@ export class ProjectileManager {
 
   get activeCount() { return this.pool.activeCount }
 
+  /** Shots that give off light — the hero's blade waves, shells, magic, cinders. */
+  forEachGlow(fn: (x: number, y: number, colour: number, radius: number) => void) {
+    this.pool.forEachActive(p => {
+      const key = p.sprite.texture.key
+      if (key === 'proj_wave') fn(p.x, p.y, p.tint, 90)
+      else if (key === 'proj_shell' || key === 'proj_magic') fn(p.x, p.y - p.lobZ, p.tint, 110)
+      else if (key === 'proj_rock' && p.tint !== 0xffffff) fn(p.x, p.y - p.lobZ, p.tint, 130)
+    })
+  }
+
   fire(x: number, y: number, angle: number, o: FireOpts) {
     if (this.pool.activeCount >= PERF.maxProjectiles) return
     const p = this.pool.obtain()

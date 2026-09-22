@@ -28,11 +28,15 @@ import { AbilitySystem } from '../systems/AbilitySystem'
 import { LevelSystem } from '../systems/LevelSystem'
 import { QuestManager } from '../systems/QuestManager'
 import { SaveManager, type Settings } from '../systems/SaveManager'
+import { LightingManager } from '../systems/LightingManager'
 
 export const DEPTH = {
   terrain: -100_000,
   zone: 480_000,
   fog: 500_000,
+  /** the lightmap: everything below is lit, everything above is read */
+  light: 740_000,
+  labels: 780_000,
   bars: 760_000,
   fx: 800_000,
   night: 850_000,
@@ -61,6 +65,7 @@ export class GameScene extends Phaser.Scene {
   levels!: LevelSystem
   quests!: QuestManager
   saves!: SaveManager
+  lighting!: LightingManager
 
   player!: Player
   allyGrid = new Grid<Targetable>(72)
@@ -136,6 +141,9 @@ export class GameScene extends Phaser.Scene {
     this.levels = new LevelSystem(this)
     this.quests = new QuestManager(this)
     this.saves = new SaveManager(this)
+    this.lighting = new LightingManager(this, DEPTH.light)
+    this.lighting.quality = this.settings.quality
+    this.fx.lights = this.lighting
     this.bus.on('camp:destroyed', ({ id }) => {
       if (id === 'campAshgate') this.scheduleFinalBoss()
     })
@@ -245,6 +253,7 @@ export class GameScene extends Phaser.Scene {
     this.audio.musicVolume = s.music
     this.audio.muted = s.muted
     this.audio.applyVolumes()
+    if (this.lighting) this.lighting.quality = s.quality
     if (this.fx) {
       this.fx.quality = s.quality
       this.fx.showDamage = s.showDamage
@@ -590,6 +599,7 @@ export class GameScene extends Phaser.Scene {
     this.quests.update()
     this.res.tickRates(dt)
     this.fx.update(dt)
+    this.lighting.update(dt)
     this.saves.update(dt)
     this.audio.updateMusic(dt, Math.max(this.waves.tension, this.enemies.bossRef?.alive ? 1 : 0))
 

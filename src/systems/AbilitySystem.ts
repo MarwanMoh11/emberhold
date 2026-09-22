@@ -161,6 +161,11 @@ export class AbilitySystem {
     return true
   }
 
+  /** Burning ground, for the lighting pass. */
+  forEachFire(fn: (x: number, y: number, radius: number, life: number) => void) {
+    for (const f of this.fires) fn(f.x, f.y, f.radius, f.life)
+  }
+
   private dropFire(x: number, y: number, radius: number, dps: number, duration: number) {
     const sprite = this.scene.add.image(x, y, 'fx_fire_patch')
       .setDisplaySize(radius * 2, radius * 2).setDepth(y - 2).setAlpha(0.8)

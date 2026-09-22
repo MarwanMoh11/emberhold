@@ -1,64 +1,86 @@
-/** Central colour vocabulary. Keep every hue here so the game reads as one world. */
+/**
+ * Central colour vocabulary. Keep every hue here so the game reads as one world.
+ *
+ * The look is "ink and ember": a frontier chronicle drawn in warm gouache over
+ * paper, inked in a brown-black, and fought over by two heraldries. The hold
+ * wears lapis and bone; the horde is soot, lit from inside by ember. Colour is
+ * rationed so it can carry meaning — gold is reward, vermilion is danger, lapis
+ * is yours — and the ground stays muted so everything that matters stands on it.
+ */
 export const PAL: Record<string, number> = {
-  // terrain
-  grassA: 0x4a7c43,
-  grassB: 0x558a4b,
-  grassC: 0x416d3b,
-  dirt: 0x8a6a45,
-  path: 0xa8916b,
-  stoneGround: 0x6f7680,
-  ruins: 0x5d5f68,
-  sand: 0xc2ab72,
-  water: 0x3f7fa8,
+  // terrain — sage and ochre gouache, never lime
+  grassA: 0x7d8b4c,
+  grassB: 0x97a45c,
+  grassC: 0x5d6c3b,
+  dirt: 0xa27d52,
+  path: 0xc6a978,
+  stoneGround: 0x8f8a7b,
+  ruins: 0x7c766a,
+  sand: 0xd4bd88,
+  water: 0x4e7f93,
 
-  // player faction (cool steel-blue)
-  heroBody: 0x3f6fd0,
-  heroTrim: 0x8fd0ff,
-  heroSkin: 0xf0c49a,
-  allyBody: 0x4a86d8,
-  allyAlt: 0x58a86a,
-  workerBody: 0xc8a25c,
+  // the hold: lapis and bone
+  heroBody: 0x2c5aa0,
+  heroTrim: 0x8ec2ff,
+  heroSkin: 0xf0c9a0,
+  allyBody: 0x3a68b0,
+  allyAlt: 0x4f8a4a,
+  workerBody: 0xc49a5a,
 
-  // horde faction (hot red-orange)
-  enemyBody: 0xd0453c,
-  enemyRunner: 0xe0813a,
-  enemyBrute: 0x9c3b30,
-  enemyArcher: 0xc85f8e,
-  enemyShield: 0x8a6a50,
-  enemyBomber: 0xe8a13a,
-  enemySwarm: 0xb4566a,
-  enemyElite: 0x8e3fa8,
-  enemyCommander: 0x6f4bd0,
-  enemyBoss: 0x7a2630,
+  // the horde: soot bodies, and these are the embers that burn inside them
+  enemyBody: 0xff6a2e,
+  enemyRunner: 0xffa23c,
+  enemyBrute: 0xe8492b,
+  enemyArcher: 0xff5a9e,
+  enemyShield: 0xd99a58,
+  enemyBomber: 0xffcf3e,
+  enemySwarm: 0xff7d6a,
+  enemyElite: 0xb46cff,
+  enemyCommander: 0x7f8cff,
+  enemyBoss: 0xff3b2a,
 
   // resources
-  coins: 0xffd24a,
-  wood: 0xa4703c,
-  food: 0x7fc44f,
-  stone: 0x9aa4ad,
-  metal: 0xd4dbe6,
-  crystal: 0xa878f0,
-  xp: 0x6ee8ff,
+  coins: 0xf2c24e,
+  wood: 0xae7a42,
+  food: 0xb3c95a,
+  stone: 0xb5ae9f,
+  metal: 0xcfd8e2,
+  crystal: 0xb98cff,
+  xp: 0x8ee6ff,
 
   // structures
-  woodLight: 0xb98551,
-  woodDark: 0x7d5433,
-  stoneLight: 0xb0b7c0,
-  stoneDark: 0x767e8a,
-  roofA: 0xc4553f,
-  roofB: 0x4f7fb5,
-  banner: 0x3f6fd0,
+  woodLight: 0xc6955e,
+  woodDark: 0x7c5436,
+  stoneLight: 0xd0c8b3,
+  stoneDark: 0x8e8776,
+  roofA: 0xb4553b,
+  roofB: 0x3b64a0,
+  banner: 0x2c5aa0,
 
-  // ui
-  uiBg: 0x121b28,
-  uiPanel: 0x1b2739,
-  uiEdge: 0x33506f,
-  uiText: 0xe9f1ff,
-  uiDim: 0x8ba0bb,
-  gold: 0xffc93c,
-  danger: 0xff5a4a,
-  good: 0x5ce08a,
-  night: 0x0d1a3a,
+  // ui — walnut, bone and gilt
+  uiBg: 0x16100c,
+  uiPanel: 0x241a13,
+  uiEdge: 0x7a5f3a,
+  uiText: 0xf4e9cf,
+  uiDim: 0xbba98a,
+  gold: 0xf0c050,
+  danger: 0xf2573c,
+  good: 0x9dd46c,
+  night: 0x1b1a3a,
+
+  // the ink and paper everything is drawn with
+  ink: 0x22160e,
+  inkSoft: 0x4a3526,
+  parchment: 0xecdcb4,
+  parchmentDark: 0xcdb485,
+  vellum: 0xe4d2a6,
+  soot: 0x2b2225,
+  char: 0x44352f,
+  ember: 0xff7a2e,
+  lapis: 0x2c5aa0,
+  bone: 0xf1e4c3,
+  gilt: 0xdcaa45,
+  wax: 0xa8302a,
 }
 
 export const CSS = (n: number) => '#' + n.toString(16).padStart(6, '0')

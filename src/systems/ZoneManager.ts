@@ -5,6 +5,7 @@ import { PAL, CSS } from '../config/palette'
 import { RESOURCE_ORDER } from '../core/types'
 import { clamp, short } from '../core/math'
 import { FogMemory } from '../core/FogMemory'
+import { buildVellumTexture } from '../world/Terrain'
 import type { GameScene } from '../scenes/GameScene'
 
 /** World px per fog texel. */
@@ -89,8 +90,11 @@ export class ZoneManager {
     const w = Math.ceil(WORLD.width / FOG_SCALE)
     const h = Math.ceil(WORLD.height / FOG_SCALE)
     this.fog = this.scene.add.renderTexture(0, 0, w, h)
-      .setOrigin(0, 0).setScale(FOG_SCALE).setDepth(depth).setAlpha(0.62)
-    this.fog.fill(0x050a14, 1)
+      .setOrigin(0, 0).setScale(FOG_SCALE).setDepth(depth).setAlpha(0.9)
+    // Unwalked ground is the blank page with the surveyor's sketch on it,
+    // not a black void: see buildVellumTexture.
+    if (!this.scene.textures.exists('fog_vellum')) buildVellumTexture(this.scene, FOG_SCALE)
+    this.fog.draw('fog_vellum', 0, 0)
     this.brush = this.scene.make.image({ key: 'fx_fogbrush', add: false })
     this.brush.setOrigin(0.5, 0.5)
     // 480px source art drawn at half size in fog space -> ~960 world px reveal

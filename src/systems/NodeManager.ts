@@ -56,11 +56,10 @@ export class NodeManager {
       : type === 'rock' ? `rock${ri(0, 1)}`
       : type === 'ore' ? 'ore0'
       : type === 'crystal' ? 'crystal0'
-      : 'res_food'
+      : 'crop'
     const sprite = this.scene.add.image(x, y, tex)
     sprite.setOrigin(0.5, 1 - 8 / sprite.height)
     sprite.setDepth(y)
-    if (type === 'crop') sprite.setScale(1.1)
     const node: ResourceNode = {
       id: this.nextNodeId++, type, resource: d.resource, x, y,
       hp: d.hp, maxHp: d.hp, yield: d.yield, respawnIn: 0, alive: true,
@@ -118,7 +117,7 @@ export class NodeManager {
             this.scene.tweens.add({ targets: n.sprite, scale: 1, duration: 420, ease: 'Back.easeOut' })
           } else {
             n.sprite.setVisible(true).setScale(0.3)
-            this.scene.tweens.add({ targets: n.sprite, scale: n.type === 'crop' ? 1.1 : 1, duration: 380, ease: 'Back.easeOut' })
+            this.scene.tweens.add({ targets: n.sprite, scale: 1, duration: 380, ease: 'Back.easeOut' })
           }
         }
         continue

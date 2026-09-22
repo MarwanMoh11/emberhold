@@ -81,5 +81,34 @@ export function installHarness(game: Phaser.Game) {
     }
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game }
+  /**
+   * Lay every texture whose key starts with one of `prefixes` out on a
+   * full-window canvas, magnified. Click it to dismiss. The art is all baked
+   * at boot, so this is the quickest way to look at a change to it.
+   */
+  const gallery = (prefixes: string[], zoom = 3, bg = '#8a9454') => {
+    document.getElementById('gal')?.remove()
+    const tm = game.textures
+    const keys = tm.getTextureKeys().filter(k => prefixes.some(p => k.startsWith(p)))
+    const c = document.createElement('canvas')
+    c.id = 'gal'
+    c.width = innerWidth; c.height = innerHeight
+    Object.assign(c.style, { position: 'fixed', inset: '0', zIndex: '99', background: bg })
+    const x = c.getContext('2d')!
+    x.imageSmoothingEnabled = false
+    let px = 8, py = 8, rowH = 0
+    for (const k of keys) {
+      const img = tm.get(k).getSourceImage() as CanvasImageSource & { width: number; height: number }
+      const w = img.width * zoom, h = img.height * zoom
+      if (px + w > c.width) { px = 8; py += rowH + 14; rowH = 0 }
+      x.drawImage(img, px, py, w, h)
+      x.fillStyle = '#000'; x.font = '10px sans-serif'; x.fillText(k, px, py + h + 10)
+      px += w + 10; rowH = Math.max(rowH, h)
+    }
+    document.body.appendChild(c)
+    c.onclick = () => c.remove()
+    return keys.length
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery }
 }

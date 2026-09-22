@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { PAL, CSS } from '../config/palette'
 import { COMBAT } from '../config/balance'
 import { rr, ri, short } from '../core/math'
+import { FONT, TEXT_INK, titleCase } from '../ui/theme'
 
 interface FloatText {
   active: boolean
@@ -28,6 +29,8 @@ export class EffectsManager {
 
   /** 0 = low, 1 = medium, 2 = high */
   quality = 2
+  /** The lighting pass, when there is one: bursts here also light the dark. */
+  lights?: { flash(x: number, y: number, radius: number, colour: number, seconds?: number): void }
   showDamage = true
   reducedMotion = false
 
@@ -40,16 +43,20 @@ export class EffectsManager {
 
     for (let i = 0; i < COMBAT.floatingTextMax; i++) {
       const txt = scene.add.text(0, 0, '', {
-        fontFamily: 'Verdana, Geneva, sans-serif',
+        fontFamily: FONT.ui, fontStyle: '800',
         fontSize: '15px', color: '#ffffff',
-        stroke: '#0a1018', strokeThickness: 4,
+        stroke: TEXT_INK, strokeThickness: 4,
       }).setOrigin(0.5).setVisible(false)
       this.layer.add(txt)
       this.texts.push({ active: false, txt, vx: 0, vy: 0, life: 0, maxLife: 1 })
     }
 
-    const mk = (tex: string, cfg: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig) =>
-      scene.add.particles(0, 0, tex, { emitting: false, ...cfg }).setDepth(depth - 1)
+    // Two heights. Earthy stuff — dust, smoke, ash — sits under the lightmap
+    // and darkens with the night; anything that burns sits above it and glows.
+    const lit = depth - 1
+    const unlit = depth - 65_000
+    const mk = (tex: string, cfg: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig, d = lit) =>
+      scene.add.particles(0, 0, tex, { emitting: false, ...cfg }).setDepth(d)
 
     this.sparks = mk('fx_dot', {
       lifespan: { min: 180, max: 380 }, speed: { min: 60, max: 260 },
@@ -59,17 +66,17 @@ export class EffectsManager {
       lifespan: { min: 300, max: 620 }, speed: { min: 70, max: 300 },
       scale: { start: 1, end: 0.2 }, alpha: { start: 1, end: 0 },
       gravityY: 460, rotate: { start: 0, end: 360 },
-    })
+    }, unlit)
     this.dustP = mk('fx_smoke', {
       lifespan: { min: 320, max: 700 }, speed: { min: 20, max: 90 },
-      scale: { start: 0.35, end: 1.1 }, alpha: { start: 0.42, end: 0 },
-      tint: 0xd8c9a8,
-    })
+      scale: { start: 0.35, end: 1.1 }, alpha: { start: 0.5, end: 0 },
+      tint: 0xc8b48c,
+    }, unlit)
     this.smokeP = mk('fx_smoke', {
       lifespan: { min: 500, max: 1000 }, speed: { min: 10, max: 60 },
-      scale: { start: 0.4, end: 1.6 }, alpha: { start: 0.5, end: 0 },
-      tint: 0x4a4a4a, gravityY: -40,
-    })
+      scale: { start: 0.4, end: 1.6 }, alpha: { start: 0.55, end: 0 },
+      tint: 0x4a403c, gravityY: -40,
+    }, unlit)
     this.coinsP = mk('res_coins', {
       lifespan: { min: 380, max: 700 }, speed: { min: 110, max: 320 },
       scale: { start: 0.9, end: 0.2 }, alpha: { start: 1, end: 0 },
@@ -98,8 +105,9 @@ export class EffectsManager {
     t.active = true
     t.txt.setText(crit ? `${short(amount)}!` : short(amount))
       .setColor(crit ? CSS(PAL.gold) : tint)
-      .setFontSize(crit ? 24 : 15)
-      .setStroke('#0a1018', crit ? 6 : 4)
+      .setFontFamily(FONT.ui)
+      .setFontSize(crit ? 26 : 16)
+      .setStroke(TEXT_INK, crit ? 6 : 4)
       .setPosition(x + rr(-8, 8), y)
       .setScale(crit ? 0.4 : 1)
       .setAlpha(1)
@@ -112,12 +120,20 @@ export class EffectsManager {
     }
   }
 
+  /**
+   * Words in the world. Headlines — a level, a claim, a boss rising — are set
+   * in the chronicle's blackletter; everything smaller is small caps. Callers
+   * still pass shouty capitals, and both voices recase them.
+   */
   popup(x: number, y: number, text: string, colour = PAL.uiText, size = 20, rise = -70) {
     const t = this.obtainText()
     if (!t) return
     t.active = true
-    t.txt.setText(text).setColor(CSS(colour)).setFontSize(size)
-      .setStroke('#0a1018', 5).setPosition(x, y).setScale(0.5).setAlpha(1).setVisible(true)
+    const headline = size >= 22
+    t.txt.setText(titleCase(text))
+      .setFontFamily(headline ? FONT.display : FONT.caps)
+      .setColor(CSS(colour)).setFontSize(headline ? Math.round(size * 1.18) : size)
+      .setStroke(TEXT_INK, headline ? 6 : 5).setPosition(x, y).setScale(0.5).setAlpha(1).setVisible(true)
     t.vx = 0
     t.vy = rise
     t.maxLife = t.life = 1.25
@@ -176,6 +192,7 @@ export class EffectsManager {
   }
 
   explosion(x: number, y: number, radius: number, tint = 0xff9840) {
+    this.lights?.flash(x, y, radius * 2.2, tint, 0.5)
     this.ring(x, y, radius, tint, 0.34)
     this.sparks.setParticleTint(tint)
     this.sparks.explode(Math.round(18 * this.budget), x, y)
@@ -190,6 +207,7 @@ export class EffectsManager {
   }
 
   ring(x: number, y: number, radius: number, tint: number, dur = 0.4) {
+    if (radius >= 100) this.lights?.flash(x, y, radius * 1.4, tint, dur * 0.8)
     const r = this.scene.add.image(x, y, 'fx_ring')
       .setTint(tint).setDepth(this.layer.depth - 1).setBlendMode(Phaser.BlendModes.ADD)
       .setDisplaySize(radius * 0.4, radius * 0.4)

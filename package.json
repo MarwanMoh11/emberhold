@@ -11,6 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/alegreya-sans": "^5.3.0",
+    "@fontsource/alegreya-sans-sc": "^5.3.0",
+    "@fontsource/grenze-gotisch": "^5.3.0",
     "phaser": "^3.90.0"
   },
   "devDependencies": {
