@@ -60,7 +60,13 @@ export class AudioManager {
 
   /** Must be called from a user gesture on most browsers. */
   unlock() {
-    if (this.started) return
+    if (this.started) {
+      // A context created from a controller-driven title screen may be
+      // suspended until the next real gesture. It can also suspend when a tab
+      // is backgrounded; keep later inputs able to wake it.
+      if (this.ctx?.state === 'suspended') void this.ctx.resume().catch(() => {})
+      return
+    }
     try {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
       this.ctx = new Ctor()
@@ -79,6 +85,7 @@ export class AudioManager {
       const ch = this.noiseBuf.getChannelData(0)
       for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1
       this.started = true
+      if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {})
     } catch {
       this.started = false
     }

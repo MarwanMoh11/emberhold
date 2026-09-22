@@ -17,7 +17,9 @@ export class LevelSystem {
   stacks(id: UpgradeId) { return this.taken.get(id) ?? 0 }
 
   private pool(): UpgradeDef[] {
-    return UPGRADES.filter(u => this.stacks(u.id) < u.maxStacks)
+    const finite = UPGRADES.filter(u => !u.evergreen && this.stacks(u.id) < u.maxStacks)
+    return this.scene.quests?.campaignComplete || finite.length === 0
+      ? [...finite, ...UPGRADES.filter(u => u.evergreen)] : finite
   }
 
   roll(count = 3): UpgradeDef[] {
@@ -50,9 +52,10 @@ export class LevelSystem {
 
   apply(id: UpgradeId) {
     const def = UPGRADE_BY_ID.get(id)
-    if (!def) return
-    def.apply(this.scene.player.stats)
-    this.taken.set(id, this.stacks(id) + 1)
+    if (!def || this.stacks(id) >= def.maxStacks) return
+    const rank = this.stacks(id) + 1
+    def.apply(this.scene.player.stats, rank)
+    this.taken.set(id, rank)
     this.scene.player.syncStats()
     this.scene.abilities.refreshUnlocks()
     this.scene.audio.play('levelup')
@@ -99,12 +102,17 @@ export class LevelSystem {
   toJSON() { return [...this.taken.entries()] }
 
   load(d: [UpgradeId, number][]) {
-    this.taken = new Map(d)
-    // replay picks onto the fresh stat block
-    for (const [id, n] of d) {
+    this.taken.clear()
+    // Coalesce duplicate entries and ignore unknown picks before replaying.
+    for (const [id, raw] of d) {
       const def = UPGRADE_BY_ID.get(id)
-      if (!def) continue
-      for (let i = 0; i < n; i++) def.apply(this.scene.player.stats)
+      if (!def || !Number.isFinite(raw)) continue
+      const n = Math.min(def.maxStacks, this.stacks(id) + Math.max(0, Math.floor(raw)))
+      this.taken.set(id, n)
+    }
+    for (const [id, n] of this.taken) {
+      const def = UPGRADE_BY_ID.get(id)!
+      for (let i = 1; i <= n; i++) def.apply(this.scene.player.stats, i)
     }
     this.scene.player.syncStats()
   }

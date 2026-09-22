@@ -4,6 +4,7 @@ import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { dist } from '../core/math'
 import type { BuildingKey } from '../config/buildings'
 import type { Building } from '../entities/Building'
+import { CAMPS } from '../config/map'
 import type { GameScene } from '../scenes/GameScene'
 
 export interface QuestView {
@@ -32,6 +33,9 @@ export class QuestManager {
   index = 0
   done = new Set<string>()
   unlockedAchievements = new Set<string>()
+  defeatedBosses = new Set<string>()
+  /** Remaining health of the final boss when a fight is saved. */
+  finalBossHp = 0
 
   /**
    * Stamped the moment the last quest lands, and kept for good. The run summary
@@ -49,7 +53,14 @@ export class QuestManager {
 
   constructor(private scene: GameScene) {
     const bus = scene.bus
-    bus.on('enemy:killed', p => { this.kills++; if (p.boss) this.bossKills++ })
+    bus.on('enemy:killed', p => {
+      this.kills++
+      if (p.boss) {
+        this.bossKills++
+        this.defeatedBosses.add(p.key)
+        if (p.key === 'cinderRegent') this.finalBossHp = 0
+      }
+    })
     bus.on('camp:destroyed', () => { this.campsCleared++ })
     bus.on('zone:unlocked', () => { this.zonesClaimed++ })
   }
@@ -60,6 +71,7 @@ export class QuestManager {
 
   /** The whole chain is behind you. The nights, deliberately, are not. */
   get campaignComplete() { return this.index >= QUESTS.length }
+  get finalBossDefeated() { return this.defeatedBosses.has('cinderRegent') }
 
   private progress(q: QuestDef): { have: number; need: number } {
     const s = this.scene
@@ -71,10 +83,11 @@ export class QuestManager {
       case 'upgrade': return { have: s.buildings.highestLevel(g.building as BuildingKey), need: g.level }
       case 'recruit': return { have: s.army.count, need: g.amount }
       case 'workers': return { have: s.workers.count, need: g.amount }
-      case 'survive': return { have: s.waves.wave, need: g.wave }
+      case 'survive': return { have: s.waves.wavesCleared, need: g.wave }
       case 'camp': return { have: this.campsCleared, need: g.amount }
       case 'zone': return { have: this.zonesClaimed, need: g.amount }
       case 'level': return { have: s.player.level, need: g.amount }
+      case 'boss': return { have: this.defeatedBosses.has(g.key) ? 1 : 0, need: 1 }
     }
   }
 
@@ -157,6 +170,12 @@ export class QuestManager {
       const c = this.nearestCamp(live.filter(x => s.zones.isUnlocked(x.spec.zone)))
         ?? this.nearestCamp(live)
       if (c) return this.throughZone(c.spec.x, c.spec.y)
+    }
+    if (g.type === 'boss') {
+      const boss = s.enemies.list.find(e => e.active && e.alive && e.key === g.key)
+      if (boss) return { x: boss.x, y: boss.y }
+      const fortress = CAMPS.find(c => c.id === 'campAshgate')
+      if (fortress) return this.throughZone(fortress.x, fortress.y)
     }
     if (g.type === 'zone') {
       const locked = s.zonesNextTarget()
@@ -254,8 +273,12 @@ export class QuestManager {
   }
 
   toJSON() {
+    const fortressDown = this.scene.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)
+    const finalBoss = fortressDown
+      ? this.scene.enemies.list.find(e => e.active && e.alive && e.key === 'cinderRegent') : null
     return {
       index: this.index, done: [...this.done], achievements: [...this.unlockedAchievements],
+      defeatedBosses: [...this.defeatedBosses], finalBossHp: fortressDown ? finalBoss?.hp ?? this.finalBossHp : 0,
       kills: this.kills, bossKills: this.bossKills,
       campsCleared: this.campsCleared, zonesClaimed: this.zonesClaimed,
       victoryAt: this.victoryAt, victoryWave: this.victoryWave, victoryPlaytime: this.victoryPlaytime,
@@ -266,13 +289,30 @@ export class QuestManager {
     this.index = d.index
     this.done = new Set(d.done)
     this.unlockedAchievements = new Set(d.achievements)
-    this.kills = d.kills
-    this.bossKills = d.bossKills
-    this.campsCleared = d.campsCleared
-    this.zonesClaimed = d.zonesClaimed
+    this.defeatedBosses = new Set(d.defeatedBosses ?? [])
+    this.finalBossHp = Number.isFinite(d.finalBossHp) ? Math.max(0, d.finalBossHp) : 0
+    const count = (n: number | undefined) => Number.isFinite(n) && n! >= 0 ? n! : 0
+    this.kills = Math.max(count(d.kills), count(this.scene.combat.kills))
+    this.bossKills = Math.max(count(d.bossKills), count(this.scene.combat.bossKills))
+    this.campsCleared = Math.max(count(d.campsCleared), this.scene.camps.destroyedCount)
+    this.zonesClaimed = Math.max(count(d.zonesClaimed), this.scene.zones.unlockedCount - 1)
     // Saves written before the campaign had an ending carry none of these.
     this.victoryAt = d.victoryAt ?? 0
     this.victoryWave = d.victoryWave ?? 0
     this.victoryPlaytime = d.victoryPlaytime ?? 0
+    // Before the Regent was added, q20 was the ending. Older saves may also
+    // predate victory timestamps; the new defeatedBosses field distinguishes
+    // them from a current save waiting at q21.
+    if (!Array.isArray(d.defeatedBosses) && this.index === QUESTS.length - 1 && this.done.has('q20')) {
+      this.index = QUESTS.length
+      this.done.add('q21')
+      this.defeatedBosses.add('cinderRegent')
+      this.finalBossHp = 0
+      if (!this.victoryAt) {
+        this.victoryAt = Date.now()
+        this.victoryWave = this.scene.waves.wave
+        this.victoryPlaytime = this.scene.saves.playtime
+      }
+    }
   }
 }

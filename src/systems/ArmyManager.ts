@@ -44,22 +44,27 @@ export class ArmyManager {
     return c
   }
 
-  recruit(key: SoldierKey, x: number, y: number): Soldier {
+  recruit(key: SoldierKey, x: number, y: number, silent = false): Soldier {
     const def = SOLDIERS[key]
     let s = this.free.pop()
     if (!s) s = new Soldier(this.scene)
     const hpMult = 1 + this.scene.buildings.bonus.troopDmg * 0.3
-    s.spawn(def, x + rr(-8, 8), y + rr(-4, 4), this.soldiers.length, hpMult)
+    s.spawn(def, x + (silent ? 0 : rr(-8, 8)), y + (silent ? 0 : rr(-4, 4)), this.soldiers.length, hpMult)
     this.soldiers.push(s)
     this.dirty = true
     this.totalRecruited++
 
-    this.scene.fx.dust(x, y, 5)
-    this.scene.fx.popup(x, y - 28, def.name.toUpperCase(), PAL.allyBody, 14)
-    this.scene.audio.play('recruit', rr(0.95, 1.1))
-    this.scene.bus.emit('soldier:recruited', { key })
-    // little march-out from the door
-    this.scene.tweens.add({ targets: s.sprite, scale: 1, duration: 260, ease: 'Back.easeOut' })
+    if (silent) {
+      s.spawnT = 0
+      s.sprite.setScale(1)
+    } else {
+      this.scene.fx.dust(x, y, 5)
+      this.scene.fx.popup(x, y - 28, def.name.toUpperCase(), PAL.allyBody, 14)
+      this.scene.audio.play('recruit', rr(0.95, 1.1))
+      this.scene.bus.emit('soldier:recruited', { key })
+      // little march-out from the door
+      this.scene.tweens.add({ targets: s.sprite, scale: 1, duration: 260, ease: 'Back.easeOut' })
+    }
     return s
   }
 
@@ -228,7 +233,7 @@ export class ArmyManager {
     if (def.ranged) {
       this.scene.projectiles.fire(s.x + Math.cos(ang) * 12, s.y - 14 + Math.sin(ang) * 6, ang, {
         tex: def.key === 'crossbow' ? 'proj_bolt' : 'proj_arrow',
-        damage: dmg, speed: def.projectileSpeed ?? 540, faction: 'ally', knockback: 26,
+        damage: dmg, speed: def.projectileSpeed ?? 540, faction: 'ally', fromPlayer: false, knockback: 26,
       })
       this.scene.audio.playVaried('shoot', 0.16)
     } else {
@@ -273,17 +278,27 @@ export class ArmyManager {
   toJSON() {
     const counts: Partial<Record<SoldierKey, number>> = {}
     for (const s of this.soldiers) counts[s.key] = (counts[s.key] ?? 0) + 1
-    return { counts, totalRecruited: this.totalRecruited, holding: this.holding }
+    const units = this.soldiers.map(s => ({ key: s.key, x: s.x, y: s.y, hp: s.hp }))
+    return { counts, units, totalRecruited: this.totalRecruited, holding: this.holding }
   }
 
   load(d: ReturnType<ArmyManager['toJSON']>) {
     const hall = this.scene.buildings.townHall
-    for (const k of Object.keys(d.counts) as SoldierKey[]) {
-      for (let i = 0; i < (d.counts[k] ?? 0); i++) {
-        this.recruit(k, hall.x + rr(-70, 70), hall.y + rr(40, 90))
+    if (Array.isArray(d.units)) {
+      for (const rec of d.units) {
+        const s = this.recruit(rec.key, rec.x, rec.y, true)
+        s.hp = Math.max(1, Math.min(s.maxHp, rec.hp))
+      }
+    } else {
+      // Older saves stored counts only. Keep their army, then write unit state
+      // in the next autosave.
+      for (const k of Object.keys(d.counts) as SoldierKey[]) {
+        for (let i = 0; i < (d.counts[k] ?? 0); i++) {
+          this.recruit(k, hall.x + rr(-70, 70), hall.y + rr(40, 90), true)
+        }
       }
     }
-    this.totalRecruited = d.totalRecruited
-    this.holding = d.holding
+    this.totalRecruited = Math.max(this.soldiers.length, d.totalRecruited ?? this.soldiers.length)
+    this.holding = !!d.holding
   }
 }

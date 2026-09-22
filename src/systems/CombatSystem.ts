@@ -25,10 +25,11 @@ export class CombatSystem {
   damageEnemy(e: Enemy, amount: number, srcX: number, srcY: number, knockback = 0, crit = false, fromPlayer = true, showNumber = true) {
     if (!e.alive) return
     const dmg = Math.max(1, amount)
+    const hpBefore = Math.max(0, e.hp)
     const killed = e.applyDamage(dmg, srcX, srcY, knockback)
     if (showNumber) this.scene.fx.damage(e.x, e.y - e.radius - 16, Math.round(dmg), crit)
     if (fromPlayer && this.scene.player.stats.lifesteal > 0) {
-      this.scene.player.heal(dmg * this.scene.player.stats.lifesteal)
+      this.scene.player.heal(Math.min(dmg, hpBefore) * this.scene.player.stats.lifesteal)
     }
     this.scene.audio.playVaried(crit ? 'crit' : 'hit', crit ? 0.9 : 0.45)
     if (killed) this.killEnemy(e)
@@ -81,7 +82,7 @@ export class CombatSystem {
     }
   }
 
-  areaDamageEnemies(x: number, y: number, radius: number, amount: number, knockback = 0, crit = false, stun = 0, showNumbers = true) {
+  areaDamageEnemies(x: number, y: number, radius: number, amount: number, knockback = 0, crit = false, stun = 0, showNumbers = true, fromPlayer = true) {
     const list = this.scene.enemies.grid.query(x, y, radius, this.scratch)
     // copy ids first: killing mutates the grid's arrays underneath us
     const snapshot = list.slice()
@@ -89,7 +90,7 @@ export class CombatSystem {
       if (!e.alive) continue
       const falloff = 1 - Math.min(1, Math.hypot(e.x - x, e.y - y) / radius) * 0.35
       if (stun > 0) e.stun(stun)
-      this.damageEnemy(e, amount * falloff, x, y, knockback, crit, true, showNumbers)
+      this.damageEnemy(e, amount * falloff, x, y, knockback, crit, fromPlayer, showNumbers)
     }
     return snapshot.length
   }

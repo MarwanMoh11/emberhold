@@ -83,11 +83,12 @@ export class Overlay {
     const zone = this.scene.add.zone(0, 0, 10, 10).setScrollFactor(0).setInteractive({ useHandCursor: true })
     let hover = false
     let enabled = true
+    let selected = false
     const redraw = (x: number, y: number, w: number, h: number) => {
       g.clear()
-      g.fillStyle(hover && enabled ? PAL.uiEdge : PAL.uiBg, enabled ? 0.95 : 0.55)
+      g.fillStyle((hover || selected) && enabled ? PAL.uiEdge : PAL.uiBg, enabled ? 0.95 : 0.55)
       g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 8)
-      g.lineStyle(2, colour, enabled ? (hover ? 1 : 0.7) : 0.22)
+      g.lineStyle(2, colour, enabled ? (hover || selected ? 1 : 0.7) : 0.22)
       g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 8)
       t.setColor(CSS(enabled ? PAL.uiText : PAL.uiDim))
     }
@@ -107,6 +108,8 @@ export class Overlay {
       setVisible(v: boolean) { g.setVisible(v); t.setVisible(v); zone.setSize(v ? api.w : 1, v ? api.h : 1) },
       /** A greyed button still draws, but swallows nothing: the tap does nothing. */
       setEnabled(v: boolean) { enabled = v; redraw(api.x, api.y, api.w, api.h) },
+      setSelected(v: boolean) { selected = v; redraw(api.x, api.y, api.w, api.h) },
+      trigger() { if (enabled) onClick() },
     }
     api.place(0, 0)
     return api

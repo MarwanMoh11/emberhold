@@ -1,5 +1,6 @@
 import type { ResourceBag } from '../core/types'
 import type { BuildingKey } from './buildings'
+import type { EnemyKey } from './enemies'
 
 export type QuestGoal =
   | { type: 'kill'; amount: number }
@@ -12,6 +13,7 @@ export type QuestGoal =
   | { type: 'camp'; amount: number }
   | { type: 'zone'; amount: number }
   | { type: 'level'; amount: number }
+  | { type: 'boss'; key: EnemyKey }
 
 export interface QuestDef {
   id: string
@@ -85,8 +87,11 @@ export const QUESTS: QuestDef[] = [
   { id: 'q19', title: 'Warlord', hint: 'Survive wave 10',
     goal: { type: 'survive', wave: 10 }, reward: { coins: 2500, metal: 300, crystal: 30, xp: 400 } },
 
-  { id: 'q20', title: 'Frontier secured', hint: 'Destroy Ashgate Fortress',
+  { id: 'q20', title: 'Break Ashgate', hint: 'Destroy Ashgate Fortress',
     goal: { type: 'camp', amount: 5 }, reward: { coins: 5000, metal: 800, crystal: 80, xp: 900 } },
+
+  { id: 'q21', title: 'Extinguish the crown', hint: 'Defeat the Cinder Regent',
+    goal: { type: 'boss', key: 'cinderRegent' }, reward: { coins: 7000, crystal: 120, xp: 1400 } },
 ]
 
 export const ACHIEVEMENTS = [

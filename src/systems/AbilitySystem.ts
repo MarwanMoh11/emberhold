@@ -124,7 +124,7 @@ export class AbilitySystem {
             const ax = spot.x + rr(-t.radius, t.radius)
             const ay = spot.y + rr(-t.radius * 0.8, t.radius * 0.8)
             this.scene.projectiles.fire(ax, ay - 420, Math.PI / 2, {
-              tex: 'proj_arrow', damage: dmg * t.damageMult, speed: 900, faction: 'ally',
+              tex: 'proj_arrow', damage: dmg * t.damageMult, speed: 900, faction: 'ally', fromPlayer: true,
               splash: 52, tint: 0xd8f0b0,
             })
           })
@@ -135,7 +135,7 @@ export class AbilitySystem {
         const t = ABILITY_TUNING.firebomb
         const spot = this.densestSpot(430) ?? { x: p.x, y: p.y }
         this.scene.projectiles.fire(p.x, p.y - 18, 0, {
-          tex: 'proj_shell', damage: dmg * 1.4, speed: 520, faction: 'ally', splash: t.radius * 0.8,
+          tex: 'proj_shell', damage: dmg * 1.4, speed: 520, faction: 'ally', fromPlayer: true, splash: t.radius * 0.8,
           tint: 0xff9840, spin: 8, lobTo: spot,
           onLand: (x, y) => this.dropFire(x, y, t.radius, dmg * t.damageMult, t.duration),
         })

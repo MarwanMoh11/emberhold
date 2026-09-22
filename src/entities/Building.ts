@@ -164,6 +164,7 @@ export class Building implements Targetable {
   }
 
   toJSON() {
-    return { padId: this.padId, level: this.level, hp: this.hp, progress: this.progress }
+    return { padId: this.padId, level: this.level, hp: this.hp,
+      progress: this.progress, peakWorkers: this.peakWorkers }
   }
 }

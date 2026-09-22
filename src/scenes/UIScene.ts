@@ -12,6 +12,7 @@ import { DebugPanel } from '../ui/DebugPanel'
 import { Overlay } from '../ui/Overlay'
 import { PAL } from '../config/palette'
 import type { GameScene } from './GameScene'
+import { GamepadInput, type PadFrame } from '../core/GamepadInput'
 
 class CoreLostOverlay extends Overlay {
   private heading!: Phaser.GameObjects.Text
@@ -33,7 +34,7 @@ class CoreLostOverlay extends Overlay {
     this.drawCard(x, y, w, h, PAL.danger)
     this.heading.setText('SETTLEMENT OVERRUN').setPosition(this.W / 2, y + 60)
     this.body.setText(
-      'The Command Hall has fallen, but Emberhold still stands.\nYour buildings, troops and stores are untouched.',
+      'The Command Hall has fallen. Rally the survivors,\nrepair the hall, and face this night again.',
     ).setPosition(this.W / 2, y + 108)
     this.btn.place(this.W / 2, y + h - 52, w - 120, 42)
   }
@@ -54,11 +55,21 @@ export class UIScene extends Phaser.Scene {
   private respec!: RespecOverlay
   private pendingUpgrades = 0
   private stickWasActive = false
+  private padWasActive = false
+  private padConnected = false
+  private pad = new GamepadInput()
 
   constructor() { super('UI') }
 
   create(data: { game: GameScene }) {
     this.gs = data.game
+    this.stickWasActive = false
+    this.padWasActive = false
+    this.padConnected = false
+    this.pad = new GamepadInput()
+    // A save may have been written while a boon card or respec was pending.
+    // Set this here, after UI exists, so no offer event is lost at scene launch.
+    this.pendingUpgrades = Math.max(0, this.gs.player.level - 1 - this.gs.levels.pickCount)
     this.hud = new HUD(this, this.gs)
     // After the HUD: the minimap lays itself out from the bands the HUD writes.
     this.minimap = new Minimap(this, this.gs)
@@ -89,9 +100,17 @@ export class UIScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => this.togglePause())
     this.input.keyboard?.on('keydown-F2', () => this.toggleDebug())
     this.input.keyboard?.on('keydown-P', () => this.togglePause())
+    this.input.keyboard?.on('keydown', () => this.gs.audio.unlock())
 
     this.hud.hint('MOVE WITH WASD  ·  YOU ATTACK AUTOMATICALLY  ·  RUN OVER COINS')
     this.time.delayedCall(9000, () => this.hud.hint('STAND ON A BUILD SITE TO POUR YOUR PACK INTO IT'))
+
+    const pauseWhenHidden = () => {
+      if (document.hidden && !this.anyModalOpen()) this.togglePause()
+    }
+    document.addEventListener('visibilitychange', pauseWhenHidden)
+    this.events.once('shutdown', () => document.removeEventListener('visibilitychange', pauseWhenHidden))
+    if (this.gs.coreLost) this.showCoreLost()
   }
 
   /** The pause menu's sub-screens, which open over it and return to it. */
@@ -127,7 +146,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   /**
-   * Twenty quests of tutorial and campaign used to end in a floating toast.
+   * The campaign used to end in a floating toast.
    * The fanfare goes off in the world first, while the game is still running,
    * and the card lands once it has played.
    */
@@ -158,6 +177,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private pauseGame() {
+    this.gs.saves.save()
     this.gs.paused = true
     this.scene.pause('Game')
   }
@@ -184,6 +204,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   toggleDebug() {
+    if (this.anyModalOpen()) return
     this.debug.toggle()
     this.gs.audio.play('ui')
   }
@@ -202,29 +223,83 @@ export class UIScene extends Phaser.Scene {
     hall.hp = hall.maxHp * 0.6
     hall.alive = true
     hall.applyTexture()
-    g.enemies.killAll()
-    g.waves.skipToDay()
+    const regent = g.enemies.list.find(e => e.active && e.alive && e.key === 'cinderRegent')
+    if (regent) g.quests.finalBossHp = regent.hp
+    g.enemies.clearWalkers()
+    g.waves.recoverSettlement()
+    g.coreLost = false
     g.player.respawn(hall.x, hall.y + 90)
     g.fx.ring(hall.x, hall.y, 420, PAL.gold, 0.9)
     this.coreLost.hide()
     this.resumeGame()
+    g.resumeFinalBoss()
+    g.saves.save()
+  }
+
+  private handleGamepad(pad: PadFrame) {
+    if (pad.connected && !this.padConnected) {
+      this.hud.hint('CONTROLLER READY  ·  LEFT STICK MOVE  ·  RB DODGE  ·  START PAUSE')
+    }
+    this.padConnected = pad.connected
+    const b = pad.pressed
+    if (b.size > 0) this.gs.audio.unlock()
+    if (b.has(9)) { this.togglePause(); return }
+    if (this.coreLost.open) {
+      if (b.has(0)) this.restartWave()
+      return
+    }
+    if (this.levelUp.open) {
+      if (b.has(0)) this.levelUp.choose(0)
+      else if (b.has(1)) this.levelUp.choose(1)
+      else if (b.has(2)) this.levelUp.choose(2)
+      return
+    }
+    if (this.screens().some(s => s.open)) {
+      if (b.has(1)) this.closeScreen()
+      return
+    }
+    if (this.pause.open) {
+      if (b.has(12)) this.pause.navigate('up')
+      if (b.has(13)) this.pause.navigate('down')
+      if (b.has(14)) this.pause.navigate('left')
+      if (b.has(15)) this.pause.navigate('right')
+      if (b.has(0)) this.pause.activateFocused()
+      else if (b.has(1)) this.togglePause()
+      return
+    }
+    for (let i = 0; i < 5; i++) if (b.has(i)) this.gs.abilities.castSlot(i)
+    if (b.has(5)) this.gs.player.dodge(pad.x, pad.y)
+    if (b.has(7)) this.gs.abilities.castUltimate()
+    if (b.has(8)) this.minimap.toggle()
+    if (b.has(10)) this.gs.toggleHold()
   }
 
   update(_time: number, delta: number) {
     const dt = Math.min(0.05, delta / 1000)
 
+    const pad = this.pad.read()
+    this.handleGamepad(pad)
+    const modal = this.anyModalOpen()
+    if (modal && this.debug.open) this.debug.hide()
+
     // Only write while the stick is actually held, and clear once on release.
     // Zeroing every frame would make movement depend on scene update order.
-    if (this.joystick.active) {
+    if (this.joystick.active && !modal) {
       this.gs.moveInput.x = this.joystick.value.x
       this.gs.moveInput.y = this.joystick.value.y
       this.stickWasActive = true
-    } else if (this.stickWasActive) {
+      this.padWasActive = false
+    } else if (pad.connected && !modal && Math.hypot(pad.x, pad.y) > 0.08) {
+      this.gs.moveInput.x = pad.x
+      this.gs.moveInput.y = pad.y
+      this.padWasActive = true
       this.stickWasActive = false
+    } else if (this.stickWasActive || this.padWasActive) {
+      this.stickWasActive = false
+      this.padWasActive = false
       this.gs.moveInput.x = 0
       this.gs.moveInput.y = 0
     }
-    const modal = this.anyModalOpen()
     this.joystick.enabled = !modal
     // A modal owns the screen: the HUD's own buttons stop answering taps that
     // land beside the card rather than on it.

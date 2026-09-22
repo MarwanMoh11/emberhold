@@ -14,13 +14,13 @@ export type ScreenName = 'quests' | 'deeds' | 'respec' | 'summary'
 /**
  * Rows in display order, grouped into the lines they share.
  *
- * Eleven things to reach and only seven lines to reach them in: a landscape
+ * Fourteen things to reach and only eight lines to reach them in: a landscape
  * phone gives the card barely 350px of height, and one row per action ran off
  * the bottom long before the reset button. Everything that pairs naturally
  * shares a line instead, so the list got four entries longer without getting
  * any taller.
  */
-const LINES: number[][] = [[0], [1, 2], [3, 4], [5, 6], [7, 8], [9], [10]]
+const LINES: number[][] = [[0], [1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13]]
 
 export class PauseMenu extends Overlay {
   private heading!: Phaser.GameObjects.Text
@@ -28,12 +28,13 @@ export class PauseMenu extends Overlay {
   private controls!: Phaser.GameObjects.Text
   private rows: ReturnType<Overlay['button']>[] = []
   private confirmingReset = false
+  private focusIndex = 0
 
   constructor(scene: Phaser.Scene, private game: GameScene) {
     super(scene, 1_150_000)
     this.heading = this.text(28, PAL.gold, true)
     this.stats = this.text(12, PAL.uiDim)
-    this.controls = this.text(11, PAL.uiDim)
+    this.controls = this.text(11, PAL.uiText)
 
     const open = (s: ScreenName) => () => {
       this.game.audio.play('ui')
@@ -49,7 +50,14 @@ export class PauseMenu extends Overlay {
       this.button('EFFECTS', () => this.cycle('sfx'), PAL.heroTrim, 12),
       this.button('MUSIC', () => this.cycle('music'), PAL.heroTrim, 12),
       this.button('QUALITY', () => this.cycleQuality(), PAL.heroTrim, 12),
-      this.button('SAVE NOW', () => { this.game.saves.save(); this.rows[9].setLabel('SAVED ✓') }),
+      this.button('NUMBERS', () => this.toggleSetting('showDamage'), PAL.heroTrim, 12),
+      this.button('MOTION', () => this.toggleSetting('reducedMotion'), PAL.heroTrim, 12),
+      this.button('SAVE NOW', () => {
+        this.rows[11].setLabel(this.game.saves.save() ? 'SAVED ✓' : 'SAVE FAILED')
+      }),
+      this.button('EXPORT FILE', () => {
+        this.rows[12].setLabel(this.game.saves.download() ? 'FILE READY ✓' : 'EXPORT FAILED')
+      }, PAL.heroTrim, 12),
       this.button('RESET PROGRESS', () => this.resetProgress(), PAL.danger),
     ]
   }
@@ -74,19 +82,52 @@ export class PauseMenu extends Overlay {
     this.layout()
   }
 
+  private toggleSetting(which: 'showDamage' | 'reducedMotion') {
+    const s = { ...this.game.settings, [which]: !this.game.settings[which] }
+    this.game.applySettings(s)
+    this.game.audio.play('ui')
+    this.layout()
+  }
+
   private resetProgress() {
     if (!this.confirmingReset) {
       this.confirmingReset = true
-      this.rows[10].setLabel('TAP AGAIN TO WIPE')
+      this.rows[13].setLabel('TAP AGAIN TO WIPE')
       this.scene.time.delayedCall(2600, () => {
         this.confirmingReset = false
-        this.rows[10].setLabel('RESET PROGRESS')
+        this.rows[13].setLabel('RESET PROGRESS')
       })
       return
     }
     SaveManager.clear()
     window.location.reload()
   }
+
+  show() {
+    super.show()
+    this.focus(0)
+  }
+
+  private focus(index: number) {
+    this.focusIndex = index
+    this.rows.forEach((row, i) => row.setSelected(i === index))
+  }
+
+  navigate(direction: 'up' | 'down' | 'left' | 'right') {
+    const line = LINES.findIndex(row => row.includes(this.focusIndex))
+    const col = LINES[line].indexOf(this.focusIndex)
+    const nextLine = Math.max(0, Math.min(LINES.length - 1,
+      line + (direction === 'up' ? -1 : direction === 'down' ? 1 : 0)))
+    const nextCol = direction === 'left' ? Math.max(0, col - 1)
+      : direction === 'right' ? Math.min(LINES[nextLine].length - 1, col + 1) : col
+    const next = LINES[nextLine][Math.min(nextCol, LINES[nextLine].length - 1)]
+    if (next !== this.focusIndex) {
+      this.focus(next)
+      this.game.audio.play('ui')
+    }
+  }
+
+  activateFocused() { this.rows[this.focusIndex].trigger() }
 
   protected layout() {
     const c = this.compact
@@ -98,10 +139,11 @@ export class PauseMenu extends Overlay {
     // portrait phone and on any window narrow enough to pin the card to 380.
     this.controls.setFontSize(c ? 9 : 11).setWordWrapWidth(w - 36).setText(
       c
-        ? `WASD move  ·  ${ABILITY_KEYS.join(' ')} abilities  ·  R ultimate  ·  H hold  ·  stand in a site to build`
-        : `WASD / arrows move   ·   auto-attack   ·   ${ABILITY_KEYS.join(' ')} abilities   ·   R ultimate\n` +
-          'H hold or follow   ·   ESC pause   ·   F2 debug   ·   stand in a site to build',
-    )
+        ? `WASD move  ·  X dodge  ·  ${ABILITY_KEYS.join(' ')} skills  ·  R ultimate  ·  H army`
+        : `WASD move  ·  X dodge  ·  ${ABILITY_KEYS.join(' ')} skills\n` +
+          'R ultimate  ·  H army  ·  ESC pause  ·  F2 debug\n' +
+          'Stand at a site to build, recruit or claim',
+    ).setAlpha(0.8)
 
     const headH = c ? 68 : 118
     const footH = Math.round(this.controls.height) + (c ? 14 : 22)
@@ -130,7 +172,10 @@ export class PauseMenu extends Overlay {
       `EFFECTS  ${Math.round(g.settings.sfx * 100)}%`,
       `MUSIC  ${Math.round(g.settings.music * 100)}%`,
       `QUALITY  ${QUALITY_NAMES[g.settings.quality]}`,
+      `NUMBERS  ${g.settings.showDamage ? 'ON' : 'OFF'}`,
+      `MOTION  ${g.settings.reducedMotion ? 'LOW' : 'FULL'}`,
       'SAVE NOW',
+      'EXPORT FILE',
       this.confirmingReset ? 'TAP AGAIN TO WIPE' : 'RESET PROGRESS',
     ]
 

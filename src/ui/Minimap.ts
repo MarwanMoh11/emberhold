@@ -162,9 +162,11 @@ export class Minimap {
 
     ui.input.keyboard?.on('keydown-M', () => this.toggle())
 
-    // Claimed ground counts as known ground, which also keeps a loaded save
-    // honest: the world's fog is not persisted, so both start from the hold.
+    // The world restores its explored fog before UI launches. Rebuild this
+    // cheaper map from those marks so travel beyond the hold stays visible on
+    // the minimap after a reload as well.
     this.reveal(WORLD.centerX, WORLD.centerY, SEED)
+    this.restoreWorldExploration()
     for (const z of ZONES) if (game.zones.isUnlocked(z.id)) this.revealZone(z)
 
     game.bus.on('zone:unlocked', () => {
@@ -214,6 +216,10 @@ export class Minimap {
         this.coldDirty = true
       }
     }
+  }
+
+  private restoreWorldExploration() {
+    this.game.zones.forEachExplored((x, y) => this.reveal(x, y, REVEAL))
   }
 
   private revealZone(z: ZoneSpec) {

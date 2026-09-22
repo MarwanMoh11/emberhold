@@ -6,6 +6,7 @@ export type UpgradeId =
   | 'keenEdge' | 'deepCuts' | 'multishot' | 'pierce' | 'lifesteal'
   | 'longbow' | 'packMule' | 'regen' | 'armor' | 'knockback'
   | 'warlordAura' | 'scavenger' | 'splashShots' | 'quickHands' | 'bulwark'
+  | 'masteryArms' | 'masteryVigor' | 'masteryCommand'
 
 export interface UpgradeDef {
   id: UpgradeId
@@ -16,7 +17,9 @@ export interface UpgradeDef {
   maxStacks: number
   /** higher = shows up more often */
   weight: number
-  apply: (s: PlayerStats) => void
+  /** Repeatable after the campaign or when the finite pool runs dry. */
+  evergreen?: boolean
+  apply: (s: PlayerStats, rank: number) => void
 }
 
 /** Live, mutable copy of the hero's numbers. */
@@ -46,8 +49,9 @@ export interface PlayerStats {
 
 const U = (
   id: UpgradeId, name: string, desc: string, colour: number,
-  maxStacks: number, weight: number, apply: (s: PlayerStats) => void,
-): UpgradeDef => ({ id, name, desc, colour, maxStacks, weight, apply })
+  maxStacks: number, weight: number, apply: (s: PlayerStats, rank: number) => void,
+  evergreen = false,
+): UpgradeDef => ({ id, name, desc, colour, maxStacks, weight, apply, evergreen })
 
 export const UPGRADES: UpgradeDef[] = [
   U('rapidFire', 'Rapid Fire', '+18% attack speed', 0x8fd0ff, 6, 10, s => { s.attackRate *= 1.18 }),
@@ -70,6 +74,16 @@ export const UPGRADES: UpgradeDef[] = [
   U('splashShots', 'Shattering', 'Shots explode for area damage', 0xff9840, 3, 5, s => { s.splash += 46 }),
   U('quickHands', 'Quick Hands', '+15% projectile speed, +8% attack speed', 0x8fd0ff, 3, 5, s => { s.projectileSpeed *= 1.15; s.attackRate *= 1.08 }),
   U('bulwark', 'Bulwark', '+80 max health and +15% troop health', 0x5f6f8c, 3, 5, s => { s.maxHp += 80 }),
+
+  // Endless nights keep granting a real choice once the capped boons are full.
+  // Each rank gives a little less than the last, so mastery stays useful
+  // without turning an old save into an unbounded damage multiplier.
+  U('masteryArms', 'Battle Mastery', 'More hero damage each rank', 0xffc15a,
+    Infinity, 3, (s, rank) => { s.damage *= 1 + 0.025 / (1 + rank / 24) }, true),
+  U('masteryVigor', 'Heart of the Hold', 'More maximum health each rank', 0x75d99b,
+    Infinity, 3, (s, rank) => { s.maxHp += Math.max(2, Math.round(14 / (1 + rank / 28))) }, true),
+  U('masteryCommand', 'Field Command', 'More troop damage each rank', 0x8caaff,
+    Infinity, 3, (s, rank) => { s.troopDamage *= 1 + 0.025 / (1 + rank / 24) }, true),
 ]
 
 export const UPGRADE_BY_ID = new Map(UPGRADES.map(u => [u.id, u]))

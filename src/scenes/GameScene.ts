@@ -66,6 +66,7 @@ export class GameScene extends Phaser.Scene {
   allyGrid = new Grid<Targetable>(72)
   now = 0
   paused = false
+  coreLost = false
   settings!: Settings
 
   /** analogue move vector, written by the HUD joystick or the keyboard */
@@ -84,10 +85,26 @@ export class GameScene extends Phaser.Scene {
   private zoomTarget = CAMERA.baseZoom
   private harvestCd = 0
   private levelUpQueued = 0
+  private finalBossPending = false
+  private simTimes = new Float32Array(120)
+  private frameTimes = new Float32Array(120)
+  private perfCursor = 0
+  private perfCount = 0
+  private perfRefresh = 0
+  private simP95 = 0
+  private frameP95 = 0
 
   constructor() { super('Game') }
 
   create(data: { load?: boolean; settings: Settings }) {
+    this.paused = false
+    this.coreLost = false
+    this.finalBossPending = false
+    this.levelUpQueued = 0
+    this.edgeMarkers.length = 0
+    this.moveInput = { x: 0, y: 0 }
+    this.perfCursor = this.perfCount = this.perfRefresh = 0
+    this.simP95 = this.frameP95 = 0
     srand(Date.now() & 0xffff)
     this.settings = data.settings
     this.bus = new Bus()
@@ -102,6 +119,8 @@ export class GameScene extends Phaser.Scene {
 
     this.fx = new EffectsManager(this, DEPTH.fx)
     this.fx.quality = this.settings.quality
+    this.fx.showDamage = this.settings.showDamage
+    this.fx.reducedMotion = this.settings.reducedMotion
     this.res = new ResourceManager(this.bus)
     this.combat = new CombatSystem(this)
     this.nodes = new NodeManager(this)
@@ -117,6 +136,9 @@ export class GameScene extends Phaser.Scene {
     this.levels = new LevelSystem(this)
     this.quests = new QuestManager(this)
     this.saves = new SaveManager(this)
+    this.bus.on('camp:destroyed', ({ id }) => {
+      if (id === 'campAshgate') this.scheduleFinalBoss()
+    })
 
     this.nodes.build()
     this.buildings.build()
@@ -149,9 +171,20 @@ export class GameScene extends Phaser.Scene {
     this.player.container.setPosition(this.player.x, this.player.y)
     cam.centerOn(this.player.x, this.player.y)
     this.zones.update(0)
+    if (this.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)) {
+      this.scheduleFinalBoss()
+    }
 
     this.scene.launch('UI', { game: this })
-    this.events.on('shutdown', () => this.bus.destroy())
+    const saveWhenHidden = () => this.saves.save()
+    window.addEventListener('pagehide', saveWhenHidden)
+    const saveOnVisibility = () => { if (document.hidden) saveWhenHidden() }
+    document.addEventListener('visibilitychange', saveOnVisibility)
+    this.events.on('shutdown', () => {
+      window.removeEventListener('pagehide', saveWhenHidden)
+      document.removeEventListener('visibilitychange', saveOnVisibility)
+      this.bus.destroy()
+    })
   }
 
   /** The opening 15 seconds should never be empty: coins and a fight nearby. */
@@ -173,6 +206,38 @@ export class GameScene extends Phaser.Scene {
     this.fx.popup(cx, cy - 150, 'EMBERHOLD', PAL.gold, 34)
   }
 
+  /** Ashgate's ruler remains in the world until defeated, including after reload. */
+  private scheduleFinalBoss() {
+    if (this.finalBossPending || this.quests.finalBossDefeated) return
+    if (this.enemies.list.some(e => e.active && e.alive && e.key === 'cinderRegent')) return
+    this.finalBossPending = true
+    this.time.delayedCall(1600, () => {
+      this.finalBossPending = false
+      if (this.quests.finalBossDefeated) return
+      // The HUD has one boss bar. Let a night boss finish before the finale enters.
+      if (this.paused || (this.enemies.bossRef?.alive && this.enemies.bossRef.key !== 'cinderRegent')) {
+        this.scheduleFinalBoss()
+        return
+      }
+      const fortress = this.camps.camps.find(c => c.spec.id === 'campAshgate')
+      if (!fortress?.destroyed) return
+      const e = this.enemies.spawn('cinderRegent', fortress.spec.x, fortress.spec.y - 70)
+      if (!e) { this.scheduleFinalBoss(); return }
+      if (this.quests.finalBossHp > 0) e.hp = Math.min(e.maxHp, this.quests.finalBossHp)
+      this.fx.ring(e.x, e.y, 320, PAL.danger, 1.1)
+      this.fx.flash(0xff5b2d, 0.25)
+      this.fx.popup(e.x, e.y - 170, 'THE CINDER REGENT RISES', PAL.danger, 28)
+      this.audio.play('bossRoar', 0.9)
+    })
+  }
+
+  /** The Ashgate fight is independent of the nightly wave and survives a loss. */
+  resumeFinalBoss() {
+    if (this.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)) {
+      this.scheduleFinalBoss()
+    }
+  }
+
   applySettings(s: Settings) {
     this.settings = s
     this.audio.volume = s.master
@@ -180,7 +245,11 @@ export class GameScene extends Phaser.Scene {
     this.audio.musicVolume = s.music
     this.audio.muted = s.muted
     this.audio.applyVolumes()
-    if (this.fx) this.fx.quality = s.quality
+    if (this.fx) {
+      this.fx.quality = s.quality
+      this.fx.showDamage = s.showDamage
+      this.fx.reducedMotion = s.reducedMotion
+    }
     SaveManager.saveSettings(s)
   }
 
@@ -189,7 +258,7 @@ export class GameScene extends Phaser.Scene {
     const kb = this.input.keyboard
     if (!kb) return
     this.keys = kb.addKeys(
-      'W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,Q,E,R,F,G,H,ONE,TWO,THREE,FOUR,SHIFT',
+      'W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,Q,E,R,F,G,H,X,ONE,TWO,THREE,FOUR,SHIFT',
     ) as Record<string, Phaser.Input.Keyboard.Key>
 
     // One binding per hotbar slot, straight off the config, so a slot can never
@@ -197,9 +266,10 @@ export class GameScene extends Phaser.Scene {
     ABILITY_KEYS.forEach((k, i) => kb.on(`keydown-${k}`, () => this.abilities.castSlot(i)))
     kb.on('keydown-R', () => this.abilities.castUltimate())
     kb.on('keydown-H', () => this.toggleHold())
-    kb.on('keydown-ESC', () => this.events.emit('togglePause'))
-    kb.on('keydown-P', () => this.events.emit('togglePause'))
-    kb.on('keydown-F2', () => this.events.emit('toggleDebug'))
+    kb.on('keydown-X', () => this.tryDodge())
+    kb.on('keydown', () => this.audio.unlock())
+    // UI owns pause and debug hotkeys. Registering them in both active scenes
+    // toggles twice on a single press, so the pause menu never opens in play.
 
     this.input.on('pointerdown', () => this.audio.unlock())
   }
@@ -210,6 +280,12 @@ export class GameScene extends Phaser.Scene {
       this.army.holding ? 'ARMY HOLDS THE HOLD' : 'ARMY FOLLOWS YOU',
       this.army.holding ? PAL.heroTrim : PAL.gold, 18)
     this.audio.play('ui')
+  }
+
+  tryDodge() {
+    const kb = this.readKeyboard()
+    const moving = this.moveInput.x !== 0 || this.moveInput.y !== 0
+    this.player.dodge(moving ? this.moveInput.x : kb.x, moving ? this.moveInput.y : kb.y)
   }
 
   private readKeyboard(): InputVector {
@@ -243,6 +319,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   onCoreLost() {
+    this.coreLost = true
     this.fx.flash(0x8a1020, 0.5)
     this.fx.popup(this.player.x, this.player.y - 130, 'SETTLEMENT OVERRUN', PAL.danger, 32)
     this.events.emit('coreLost')
@@ -361,7 +438,7 @@ export class GameScene extends Phaser.Scene {
       this.projectiles.fire(p.x, p.y - 16, baseAng + off, {
         tex: 'proj_wave', tint: p.level >= 11 ? PAL.gold : PAL.heroTrim,
         damage: dmg, crit, knockback: p.stats.knockback, pierce: p.stats.pierce,
-        splash: p.stats.splash, speed: p.stats.projectileSpeed, faction: 'ally',
+        splash: p.stats.splash, speed: p.stats.projectileSpeed, faction: 'ally', fromPlayer: true,
         scale: 1 + p.stats.splash / 120,
       })
     }
@@ -469,6 +546,7 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.now = time
     if (this.paused) return
+    const simStart = performance.now()
     const dt = Math.min(0.05, delta / 1000)
 
     const kb = this.readKeyboard()
@@ -513,7 +591,7 @@ export class GameScene extends Phaser.Scene {
     this.res.tickRates(dt)
     this.fx.update(dt)
     this.saves.update(dt)
-    this.audio.updateMusic(dt, this.waves.tension)
+    this.audio.updateMusic(dt, Math.max(this.waves.tension, this.enemies.bossRef?.alive ? 1 : 0))
 
     this.updateCamera(dt)
     this.updateObjectiveArrow()
@@ -523,6 +601,23 @@ export class GameScene extends Phaser.Scene {
       this.levelUpQueued--
       this.events.emit('offerUpgrades')
     }
+    this.recordFrameCost(performance.now() - simStart, delta)
+  }
+
+  /** Rolling 95th percentile separates slow simulation from slow presentation. */
+  private recordFrameCost(simMs: number, frameMs: number) {
+    this.simTimes[this.perfCursor] = simMs
+    this.frameTimes[this.perfCursor] = frameMs
+    this.perfCursor = (this.perfCursor + 1) % this.simTimes.length
+    this.perfCount = Math.min(this.simTimes.length, this.perfCount + 1)
+    if (++this.perfRefresh < 30) return
+    this.perfRefresh = 0
+    const p95 = (source: Float32Array) => {
+      const sorted = Array.from(source.subarray(0, this.perfCount)).sort((a, b) => a - b)
+      return sorted[Math.max(0, Math.ceil(sorted.length * 0.95) - 1)] ?? 0
+    }
+    this.simP95 = p95(this.simTimes)
+    this.frameP95 = p95(this.frameTimes)
   }
 
   // ---- debug helpers ----------------------------------------------------
@@ -544,6 +639,17 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** Short route to the encounter for combat and layout testing. */
+  debugSpawnFinalBoss() {
+    if (this.enemies.list.some(e => e.active && e.alive && e.key === 'cinderRegent')) return
+    const x = clamp(this.player.x + 280, 40, WORLD.width - 40)
+    const e = this.enemies.spawn('cinderRegent', x, this.player.y)
+    if (e) {
+      this.fx.ring(e.x, e.y, 320, PAL.danger, 1.1)
+      this.audio.play('bossRoar', 0.9)
+    }
+  }
+
   debugLevel(n: number) {
     for (let i = 0; i < n; i++) this.player.addXp(this.player.xpToNext)
   }
@@ -551,6 +657,8 @@ export class GameScene extends Phaser.Scene {
   get stats() {
     return {
       fps: Math.round(this.game.loop.actualFps),
+      simP95: this.simP95,
+      frameP95: this.frameP95,
       enemies: this.enemies.walkerCount,
       soldiers: this.army.count,
       workers: this.workers.count,

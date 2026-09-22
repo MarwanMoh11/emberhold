@@ -109,12 +109,35 @@ export class CampManager {
 
   toJSON() { return this.camps.filter(c => c.destroyed).map(c => c.spec.id) }
 
+  /** Damage to standing camps should not disappear when the player reloads. */
+  healthJSON(): Record<string, number> {
+    const hp: Record<string, number> = {}
+    for (const rec of this.camps) {
+      if (!rec.destroyed && rec.enemy?.alive && rec.enemy.hp < rec.enemy.maxHp) {
+        hp[rec.spec.id] = rec.enemy.hp
+      }
+    }
+    return hp
+  }
+
   load(ids: string[]) {
     for (const rec of this.camps) {
       if (ids.includes(rec.spec.id)) {
         rec.destroyed = true
         rec.label.setVisible(false)
         this.destroyedCount++
+      }
+    }
+  }
+
+  loadHealth(hp: Record<string, number>) {
+    for (const rec of this.camps) {
+      const value = hp[rec.spec.id]
+      if (rec.destroyed || value === undefined) continue
+      this.ensureEnemy(rec)
+      if (rec.enemy) {
+        rec.enemy.hp = Math.max(1, Math.min(rec.enemy.maxHp, value))
+        rec.enemy.sprite.setScale(1)
       }
     }
   }

@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { PAL, CSS } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { ABILITIES, ABILITY_KEYS, ABILITY_SLOTS } from '../config/abilities'
+import { PLAYER } from '../config/balance'
 import { clamp, short } from '../core/math'
 import { safeAreaInsets, wantsTouchTargets } from '../core/device'
 import type { GameScene } from '../scenes/GameScene'
@@ -48,6 +49,7 @@ interface Chip {
 export class HUD {
   private g: Phaser.GameObjects.Graphics
   private gTop: Phaser.GameObjects.Graphics
+  private deathCard: Phaser.GameObjects.Graphics
 
   private hpText!: Phaser.GameObjects.Text
   private lvlText!: Phaser.GameObjects.Text
@@ -61,10 +63,13 @@ export class HUD {
   private toastText!: Phaser.GameObjects.Text
   private statsText!: Phaser.GameObjects.Text
   private hintText!: Phaser.GameObjects.Text
+  private deathTitle!: Phaser.GameObjects.Text
+  private deathHint!: Phaser.GameObjects.Text
 
   private rows: ResRow[] = []
   private buttons: AbilityBtn[] = []
   private ultBtn!: AbilityBtn
+  private dodgeBtn!: AbilityBtn
   private pauseChip!: Chip
   private holdChip!: Chip
   /** Bottom of the top-left cluster: health bar plus the two chips under it. */
@@ -88,6 +93,7 @@ export class HUD {
   constructor(private ui: Phaser.Scene, private game: GameScene) {
     this.g = ui.add.graphics().setScrollFactor(0).setDepth(1_000_000)
     this.gTop = ui.add.graphics().setScrollFactor(0).setDepth(1_000_004)
+    this.deathCard = ui.add.graphics().setScrollFactor(0).setDepth(1_000_006)
 
     const t = (size: number, colour: number, bold = false) =>
       ui.add.text(0, 0, '', {
@@ -107,6 +113,8 @@ export class HUD {
     this.toastText = t(16, PAL.gold, true).setOrigin(0.5, 0)
     this.statsText = t(10, PAL.uiDim).setOrigin(0, 1)
     this.hintText = t(13, PAL.uiText, true).setOrigin(0.5, 1)
+    this.deathTitle = t(25, PAL.danger, true).setOrigin(0.5).setDepth(1_000_007).setVisible(false)
+    this.deathHint = t(13, PAL.uiText).setOrigin(0.5).setDepth(1_000_007).setVisible(false)
 
     for (const type of RESOURCE_ORDER) {
       const icon = ui.add.image(0, 0, `res_${type}`).setScrollFactor(0)
@@ -120,6 +128,7 @@ export class HUD {
     // whether or not the ability behind it exists yet, so nothing ever shuffles.
     for (let i = 0; i < ABILITY_SLOTS.length; i++) this.buttons.push(this.makeButton(i))
     this.ultBtn = this.makeButton(-1)
+    this.dodgeBtn = this.makeButton(-2)
 
     // A finger has no ESC and no H. Without these two, everything behind the
     // pause menu — every volume, the quality switch, SAVE NOW, RESET PROGRESS —
@@ -152,7 +161,9 @@ export class HUD {
     }).setOrigin(0.5).setScrollFactor(0).setDepth(1_000_005)
     const zone = this.ui.add.zone(0, 0, 10, 10).setScrollFactor(0).setInteractive({ useHandCursor: true })
     zone.on('pointerdown', () => {
-      if (index < 0) this.game.abilities.castUltimate()
+      if (this.blocked) return
+      if (index === -2) this.game.tryDodge()
+      else if (index < 0) this.game.abilities.castUltimate()
       else this.game.abilities.castSlot(index)
     })
     return { index, ring, glyph, key, zone, x: 0, y: 0, r: 30 }
@@ -285,12 +296,17 @@ export class HUD {
 
     const ultR = r + 5
     const baseY = this.H - padB - ultR - 6
-    this.game.uiBands.bottom = this.H - (baseY - ultR - 8)
+    const dodgeY = baseY - ultR * 2 - 16
+    this.game.uiBands.bottom = this.H - (dodgeY - r - 8)
     let x = right - ultR
     this.ultBtn.x = x; this.ultBtn.y = baseY; this.ultBtn.r = ultR
     this.ultBtn.zone.setPosition(x, baseY).setSize(ultR * 2, ultR * 2)
     this.ultBtn.glyph.setPosition(x, baseY - 2).setFontSize(`${r}px`)
     this.ultBtn.key.setPosition(x, baseY + ultR + 2)
+    this.dodgeBtn.x = x; this.dodgeBtn.y = dodgeY; this.dodgeBtn.r = r
+    this.dodgeBtn.zone.setPosition(x, dodgeY).setSize(r * 2, r * 2)
+    this.dodgeBtn.glyph.setPosition(x, dodgeY - 2).setFontSize(`${r - 4}px`)
+    this.dodgeBtn.key.setPosition(x, dodgeY + r + 2)
     x -= ultR + gap + r
     for (let i = 0; i < this.buttons.length; i++) {
       const b = this.buttons[i]
@@ -308,6 +324,7 @@ export class HUD {
     const { padT, padL, padR } = this
     this.g.clear()
     this.gTop.clear()
+    this.deathCard.clear()
 
     // Every HUD tap target goes dead behind a modal, so a thumb aimed at the
     // pause menu cannot fire an ability or flip the army through the dim.
@@ -320,7 +337,8 @@ export class HUD {
     const hp = clamp(p.hp / p.maxHp, 0, 1)
     this.bar(this.gTop, hx + 10, hy + 20, barW, 10, hp,
       hp > 0.5 ? PAL.good : hp > 0.25 ? PAL.gold : PAL.danger)
-    this.hpText.setText(`${Math.ceil(Math.max(0, p.hp))} / ${Math.round(p.maxHp)}`)
+    this.hpText.setText(`${Math.ceil(Math.max(0, p.hp))} / ${Math.round(p.maxHp)}${p.respawnShieldT > 0 ? '  SHIELDED' : ''}`)
+      .setColor(CSS(p.respawnShieldT > 0 ? PAL.heroTrim : PAL.uiText))
     const xp = clamp(p.xp / p.xpToNext, 0, 1)
     this.bar(this.gTop, hx + 10, hy + 34, barW, 5, xp, PAL.xp)
     this.lvlText.setText(`LV ${p.level}`).setPosition(hx + 10 + barW - 44, hy + 30)
@@ -457,6 +475,37 @@ export class HUD {
       this.ultBtn.key.setVisible(false)
       this.ultBtn.zone.setSize(1, 1)
     }
+    const dodgeReady = p.dodgeCd <= 0
+    this.drawButton(this.dodgeBtn, '➜', PAL.heroTrim,
+      dodgeReady ? 1 : 1 - p.dodgeCd / PLAYER.dodgeCooldown, dodgeReady)
+    this.dodgeBtn.key.setVisible(true).setText('X')
+    this.dodgeBtn.zone.setSize(live ? this.dodgeBtn.r * 2 : 1, live ? this.dodgeBtn.r * 2 : 1)
+
+    // The world keeps fighting while the hero returns. Give the otherwise
+    // empty camera a reason and an exact countdown, unless a modal owns it.
+    const fallen = !p.alive && !this.blocked
+    this.deathTitle.setVisible(fallen)
+    this.deathHint.setVisible(fallen)
+    if (fallen) {
+      const compactDeath = this.H < 520 || this.W < 520
+      const ph = compactDeath ? 64 : 86
+      const pw = Math.min(390, this.W - 32)
+      const px = (this.W - pw) / 2
+      const safeTop = g.uiBands.top + 8
+      const safeBottom = this.H - g.uiBands.bottom - 8
+      const py = safeBottom - safeTop >= ph
+        ? clamp(this.H * 0.43, safeTop, safeBottom - ph)
+        : (this.H - ph) / 2
+      this.deathCard.fillStyle(PAL.uiBg, 0.96)
+      this.deathCard.fillRoundedRect(px, py, pw, ph, 8)
+      this.deathCard.lineStyle(2, PAL.danger, 0.95)
+      this.deathCard.strokeRoundedRect(px, py, pw, ph, 8)
+      this.deathTitle.setFontSize(compactDeath ? 19 : 25)
+        .setPosition(this.W / 2, py + (compactDeath ? 21 : 28)).setText('HERO FALLEN')
+      this.deathHint.setFontSize(compactDeath ? 11 : 13)
+        .setPosition(this.W / 2, py + (compactDeath ? 46 : 60))
+        .setText(`RETURNING TO THE HALL IN ${Math.max(1, Math.ceil(p.deadTimer))}`)
+    }
 
     // ---- misc ------------------------------------------------------------
     const combo = g.fx.combo
@@ -480,7 +529,8 @@ export class HUD {
     if (this.showStats) {
       const s = g.stats
       this.statsText.setVisible(true).setText(
-        `${s.fps} fps   enemies ${s.enemies}   troops ${s.soldiers}   workers ${s.workers}   drops ${s.pickups}   shots ${s.projectiles}`,
+        `${s.fps} fps   sim p95 ${s.simP95.toFixed(1)} ms   frame p95 ${s.frameP95.toFixed(1)} ms\n` +
+        `enemies ${s.enemies}   troops ${s.soldiers}   workers ${s.workers}   drops ${s.pickups}   shots ${s.projectiles}`,
       )
     } else this.statsText.setVisible(false)
   }

@@ -28,6 +28,8 @@ export class EffectsManager {
 
   /** 0 = low, 1 = medium, 2 = high */
   quality = 2
+  showDamage = true
+  reducedMotion = false
 
   private comboCount = 0
   private comboTimer = 0
@@ -89,6 +91,7 @@ export class EffectsManager {
   }
 
   damage(x: number, y: number, amount: number, crit = false, tint = '#ffffff') {
+    if (!this.showDamage) return
     if (this.quality === 0 && !crit && Math.random() > 0.4) return
     const t = this.obtainText()
     if (!t) return
@@ -197,6 +200,20 @@ export class EffectsManager {
     })
   }
 
+  /** Holds the exact danger radius on the ground until a delayed attack lands. */
+  warningCircle(x: number, y: number, radius: number, tint: number, seconds: number) {
+    const g = this.scene.add.graphics().setPosition(x, y).setDepth(this.layer.depth - 2)
+    g.fillStyle(tint, 0.12).fillCircle(0, 0, radius)
+    g.lineStyle(4, tint, 0.82).strokeCircle(0, 0, radius)
+    g.lineStyle(1, 0xffffff, 0.45).strokeCircle(0, 0, radius - 5)
+    if (this.reducedMotion) {
+      this.scene.time.delayedCall(seconds * 1000, () => g.destroy())
+    } else {
+      this.scene.tweens.add({ targets: g, alpha: 0.55, duration: seconds * 500,
+        yoyo: true, onComplete: () => g.destroy() })
+    }
+  }
+
   slash(x: number, y: number, angle: number, scale: number, tint: number) {
     if (this.quality === 0) return
     const s = this.scene.add.image(x, y, 'fx_slash')
@@ -241,11 +258,12 @@ export class EffectsManager {
   }
 
   shake(intensity: number, duration: number) {
-    if (this.quality === 0) return
+    if (this.quality === 0 || this.reducedMotion) return
     this.scene.cameras.main.shake(duration * 1000, intensity * (this.quality === 1 ? 0.6 : 1), true)
   }
 
   flash(colour: number, duration = 0.16) {
+    if (this.reducedMotion) return
     const c = this.scene.cameras.main
     c.flash(duration * 1000, (colour >> 16) & 255, (colour >> 8) & 255, colour & 255, true)
   }

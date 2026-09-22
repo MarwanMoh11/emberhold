@@ -69,6 +69,13 @@ export class EnemyManager {
     }
   }
 
+  /** Clear a failed night without awarding kills or erasing standing camps. */
+  clearWalkers() {
+    for (const e of this.list) {
+      if (e.active && !e.def.structure) this.despawn(e)
+    }
+  }
+
   /** Damage everything at once — used by the wave-clear sweep. */
   forEachAlive(fn: (e: Enemy) => void) {
     for (const e of this.list) if (e.active && e.alive) fn(e)
@@ -114,13 +121,24 @@ export class EnemyManager {
 
     const list = this.list
     this.walkerCount = 0
+    let nearestBoss: Enemy | null = null
+    let nearestBossD2 = Infinity
     for (let i = 0; i < list.length; i++) {
       const e = list[i]
       if (e.active && e.alive) {
         this.grid.insert(e)
         if (!e.def.structure) this.walkerCount++
+        if (e.def.boss) {
+          const dx = e.x - this.scene.player.x
+          const dy = e.y - this.scene.player.y
+          const d2 = dx * dx + dy * dy
+          if (d2 < nearestBossD2) { nearestBossD2 = d2; nearestBoss = e }
+        }
       }
     }
+    // More than one boss can be alive when a night begins during the finale.
+    // Show the one the player is actually fighting in the single HUD bar.
+    this.bossRef = nearestBoss
 
     // commander auras: few of them, so a direct pass is fine
     for (let i = 0; i < list.length; i++) {
@@ -187,6 +205,11 @@ export class EnemyManager {
         continue
       }
 
+      if (e.chargeT > 0) {
+        this.moveBossCharge(e, dt)
+        continue
+      }
+
       // staggered re-target
       e.retargetIn -= dt
       if (e.retargetIn <= 0 || !e.target || !e.target.alive) {
@@ -202,7 +225,16 @@ export class EnemyManager {
       const d = Math.hypot(dx, dy) || 1
       const reach = e.range + t.radius + e.radius * 0.4
 
-      if (e.def.boss) this.bossUpdate(e, dt, d)
+      if (e.def.boss) {
+        this.bossUpdate(e, dt, d)
+        // A ground warning must stay under the attack that follows it.
+        if (e.telegraphT > 0) {
+          e.vx = e.vy = 0
+          e.state = 'attack'
+          this.render(e, dt)
+          continue
+        }
+      }
 
       if (d <= reach) {
         e.state = 'attack'
@@ -270,6 +302,10 @@ export class EnemyManager {
       e.y = clamp(e.y + e.vy * dt, 20, WORLD.height - 20)
 
       if (Math.abs(e.vx) > 6) e.facing = e.vx > 0 ? 1 : -1
+      if (e.key === 'cinderRegent' && this.frame % 10 === 0
+        && Phaser.Geom.Rectangle.Contains(this.scene.cameras.main.worldView, e.x, e.y)) {
+        this.scene.fx.embers(e.x + rr(-24, 24), e.y - e.radius * 1.6, 2)
+      }
       this.render(e, dt)
     }
 
@@ -285,7 +321,7 @@ export class EnemyManager {
         e.x + Math.cos(ang) * 14, e.y - e.radius * 0.5 + Math.sin(ang) * 14, ang,
         {
           tex: 'proj_enemyArrow', damage: dmg, speed: e.def.projectileSpeed ?? 380,
-          faction: 'enemy', knockback: 20,
+          faction: 'enemy', fromPlayer: false, knockback: 20,
         },
       )
       this.scene.audio.playVaried('shoot', 0.18)
@@ -300,6 +336,24 @@ export class EnemyManager {
   }
 
   // ---- boss behaviour ---------------------------------------------------
+  private moveBossCharge(e: Enemy, dt: number) {
+    e.chargeT = Math.max(0, e.chargeT - dt)
+    e.x = clamp(e.x + e.chargeVX * dt, 20, WORLD.width - 20)
+    e.y = clamp(e.y + e.chargeVY * dt, 20, WORLD.height - 20)
+    const near = this.scene.allyGrid.query(e.x, e.y, e.radius + 48, [])
+    for (const ally of near) {
+      if (e.chargeHits.has(ally.id) || Math.hypot(ally.x - e.x, ally.y - e.y) > e.radius + ally.radius + 8) continue
+      e.chargeHits.add(ally.id)
+      this.scene.combat.damageAlly(ally, e.damage * 1.45, e.x, e.y, 260)
+      this.scene.fx.hitSpark(ally.x, ally.y - 12, PAL.danger, 2)
+    }
+    if (e.chargeT <= 0) {
+      e.vx = e.chargeVX * 0.18
+      e.vy = e.chargeVY * 0.18
+    }
+    this.render(e, dt)
+  }
+
   private bossUpdate(e: Enemy, dt: number, distToTarget: number) {
     e.bossTimer -= dt
     const hpFrac = e.hp / e.maxHp
@@ -315,7 +369,6 @@ export class EnemyManager {
       this.scene.fx.shake(0.018, 0.5)
     }
 
-    if (e.chargeT > 0) { e.chargeT -= dt; return }
     if (e.telegraphT > 0) {
       e.telegraphT -= dt
       if (e.telegraphT <= 0) this.bossRelease(e)
@@ -323,29 +376,71 @@ export class EnemyManager {
     }
     if (e.bossTimer > 0) return
 
-    e.bossTimer = e.def.key === 'warlord' ? rr(4.5, 7) : rr(5, 8)
+    e.bossTimer = e.def.key === 'cinderRegent' ? rr(3.8, 5.4)
+      : e.def.key === 'warlord' ? rr(4.5, 7) : rr(5, 8)
 
     if (e.def.key === 'siegeBeast') {
       if (distToTarget > 220) {
         // lobbed boulder
         const t = e.target
         if (!t) return
+        this.scene.fx.warningCircle(t.x, t.y, 96, PAL.danger,
+          Math.max(0.28, Math.hypot(t.x - e.x, t.y - e.y) / 420))
         this.scene.projectiles.fire(e.x, e.y - e.radius, 0, {
-          tex: 'proj_rock', damage: e.damage * 1.6, speed: 420, faction: 'enemy',
+          tex: 'proj_rock', damage: e.damage * 1.6, speed: 420, faction: 'enemy', fromPlayer: false,
           splash: 96, spin: 6, lobTo: { x: t.x, y: t.y },
         })
         this.scene.fx.popup(e.x, e.y - e.radius - 40, 'BOULDER', PAL.danger, 16)
         this.scene.audio.play('boom', 0.7, 0.6)
       } else {
+        e.bossAttack = 'slam'
         e.telegraphT = 0.9
-        this.scene.fx.ring(e.x, e.y, 180, PAL.danger, 0.9)
+        this.scene.fx.warningCircle(e.x, e.y, 190, PAL.danger, e.telegraphT)
         this.scene.fx.popup(e.x, e.y - e.radius - 40, 'SLAM!', PAL.danger, 20)
       }
+    } else if (e.def.key === 'cinderRegent') {
+      const t = e.target
+      if (!t) return
+      if (distToTarget > 155 || Math.random() < 0.55) {
+        e.bossAttack = 'cinderVolley'
+        e.telegraphT = e.bossPhase ? 1.0 : 1.25
+        e.bossAimX = t.x
+        e.bossAimY = t.y
+        const angle = Math.atan2(t.y - e.y, t.x - e.x)
+        const ox = -Math.sin(angle) * 88
+        const oy = Math.cos(angle) * 88
+        const flight = Math.max(0.28, Math.hypot(t.x - e.x, t.y - e.y) / 1800)
+        for (const offset of [-1, 0, 1]) {
+          this.scene.fx.warningCircle(t.x + ox * offset, t.y + oy * offset,
+            70, PAL.danger, e.telegraphT + flight)
+        }
+        this.scene.fx.popup(e.x, e.y - e.radius - 40, 'CINDER RAIN', PAL.danger, 20)
+      } else {
+        e.bossAttack = 'cinderNova'
+        e.telegraphT = e.bossPhase ? 0.85 : 1.1
+        this.scene.fx.warningCircle(e.x, e.y, 225, PAL.danger, e.telegraphT)
+        this.scene.fx.popup(e.x, e.y - e.radius - 40, 'FIRESTORM', PAL.danger, 20)
+      }
+      this.scene.audio.play('bossRoar', 0.8, 0.6)
     } else if (e.def.key === 'warlord') {
       const roll = Math.random()
       if (roll < 0.4 && distToTarget > 200) {
         // telegraphed charge
+        e.bossAttack = 'charge'
         e.telegraphT = 0.7
+        const aimX = e.target?.x ?? e.x
+        const aimY = e.target?.y ?? e.y
+        const aimD = Math.max(1, Math.hypot(aimX - e.x, aimY - e.y))
+        const travel = Math.min(aimD, e.speed * 4.2 * 1.2)
+        e.bossAimX = e.x + (aimX - e.x) / aimD * travel
+        e.bossAimY = e.y + (aimY - e.y) / aimD * travel
+        const line = this.scene.add.graphics().setDepth(e.y - 1)
+        line.lineStyle(e.radius * 2 + 24, PAL.danger, 0.14)
+        line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
+        line.lineStyle(4, PAL.danger, 0.8)
+        line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
+        this.scene.tweens.add({ targets: line, alpha: 0, duration: 700, onComplete: () => line.destroy() })
+        this.scene.fx.warningCircle(e.bossAimX, e.bossAimY, e.radius + 30, PAL.danger, e.telegraphT)
         this.scene.fx.popup(e.x, e.y - e.radius - 40, 'CHARGE!', PAL.danger, 20)
         this.scene.fx.ring(e.x, e.y, 120, PAL.gold, 0.7)
       } else if (roll < 0.75) {
@@ -359,33 +454,54 @@ export class EnemyManager {
         this.scene.fx.popup(e.x, e.y - e.radius - 40, 'TO ME!', PAL.enemyCommander, 20)
         this.scene.audio.play('horn', 1.4, 0.7)
       } else {
+        e.bossAttack = 'shockwave'
         e.telegraphT = 0.9
-        this.scene.fx.ring(e.x, e.y, 230, PAL.danger, 0.9)
+        this.scene.fx.warningCircle(e.x, e.y, 240, PAL.danger, e.telegraphT)
         this.scene.fx.popup(e.x, e.y - e.radius - 40, 'SHOCKWAVE', PAL.danger, 20)
       }
     }
   }
 
   private bossRelease(e: Enemy) {
-    if (e.def.key === 'siegeBeast') {
+    const attack = e.bossAttack
+    e.bossAttack = null
+    e.attackCd = Math.max(e.attackCd, 0.8)
+    if (attack === 'slam') {
       this.scene.fx.explosion(e.x, e.y, 190, 0xd4a05a)
       this.scene.combat.areaDamageAllies(e.x, e.y, 190, e.damage * 1.8)
       this.scene.fx.shake(0.025, 0.4)
       this.scene.audio.play('boom', 0.5, 1.2)
-    } else if (e.def.key === 'warlord') {
-      if (Math.random() < 0.5 && e.target) {
-        const ang = Math.atan2(e.target.y - e.y, e.target.x - e.x)
-        e.vx = Math.cos(ang) * e.speed * 3.4
-        e.vy = Math.sin(ang) * e.speed * 3.4
-        e.chargeT = 0.8
+    } else if (attack === 'charge') {
+        const ang = Math.atan2(e.bossAimY - e.y, e.bossAimX - e.x)
+        e.chargeVX = Math.cos(ang) * e.speed * 4.2
+        e.chargeVY = Math.sin(ang) * e.speed * 4.2
+        e.chargeHits.clear()
+        e.chargeT = Math.max(0.3, Math.hypot(e.bossAimX - e.x, e.bossAimY - e.y)
+          / Math.max(1, Math.hypot(e.chargeVX, e.chargeVY)))
         this.scene.fx.shake(0.02, 0.3)
         this.scene.audio.play('boom', 1.1, 0.8)
-      } else {
+    } else if (attack === 'cinderVolley') {
+      const angle = Math.atan2(e.bossAimY - e.y, e.bossAimX - e.x)
+      const ox = -Math.sin(angle) * 88
+      const oy = Math.cos(angle) * 88
+      for (const offset of [-1, 0, 1]) {
+        this.scene.projectiles.fire(e.x, e.y - e.radius, angle, {
+          tex: 'proj_rock', tint: 0xff7129, damage: e.damage * 1.1,
+          speed: 1800, faction: 'enemy', fromPlayer: false, splash: 70, spin: 9,
+          lobTo: { x: e.bossAimX + ox * offset, y: e.bossAimY + oy * offset },
+        })
+      }
+      this.scene.audio.play('boom', 0.7, 0.7)
+    } else if (attack === 'cinderNova') {
+      this.scene.fx.explosion(e.x, e.y, 225, 0xff7129)
+      this.scene.combat.areaDamageAllies(e.x, e.y, 225, e.damage * 1.4)
+      this.scene.fx.shake(0.025, 0.35)
+      this.scene.audio.play('boom', 0.55, 1.1)
+    } else if (attack === 'shockwave') {
         this.scene.fx.explosion(e.x, e.y, 240, PAL.enemyBoss)
         this.scene.combat.areaDamageAllies(e.x, e.y, 240, e.damage * 1.5)
         this.scene.fx.shake(0.03, 0.45)
         this.scene.audio.play('boom', 0.45, 1.3)
-      }
     }
   }
 
@@ -409,6 +525,8 @@ export class EnemyManager {
       s.setTint(0xffd24a)
     } else if (stunned) {
       s.setTint(0x8fd0ff)
+    } else {
+      s.clearTint()
     }
 
     // walk bob keeps a crowd from reading as a slab of static sprites

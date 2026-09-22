@@ -59,19 +59,24 @@ export class WorkerManager {
     return c
   }
 
-  hire(key: WorkerKey, home: Building): Worker | null {
+  hire(key: WorkerKey, home: Building, at?: { x: number; y: number }, silent = false): Worker | null {
     const def = WORKERS[key]
     let w = this.free.pop()
     if (!w) w = new Worker(this.scene)
     const resource = home.def.gathers ?? 'wood'
-    w.spawn(def, home.x + rr(-20, 20), home.y + 24, home.padId, home.x, home.y, resource)
+    w.spawn(def, at?.x ?? home.x + rr(-20, 20), at?.y ?? home.y + 24,
+      home.padId, home.x, home.y, resource)
     this.workers.push(w)
     this.totalHired++
-    this.scene.fx.dust(w.x, w.y, 4)
-    this.scene.fx.popup(w.x, w.y - 26, def.name.toUpperCase(), PAL.workerBody, 13)
-    this.scene.audio.play('recruit', 1.25)
-    this.scene.bus.emit('worker:hired', { key })
-    this.scene.tweens.add({ targets: w.sprite, scale: 1, duration: 240, ease: 'Back.easeOut' })
+    if (silent) {
+      w.sprite.setScale(1)
+    } else {
+      this.scene.fx.dust(w.x, w.y, 4)
+      this.scene.fx.popup(w.x, w.y - 26, def.name.toUpperCase(), PAL.workerBody, 13)
+      this.scene.audio.play('recruit', 1.25)
+      this.scene.bus.emit('worker:hired', { key })
+      this.scene.tweens.add({ targets: w.sprite, scale: 1, duration: 240, ease: 'Back.easeOut' })
+    }
     return w
   }
 
@@ -413,16 +418,34 @@ export class WorkerManager {
   }
 
   toJSON() {
-    return this.workers.map(w => ({ key: w.key, homeId: w.homeId }))
+    return this.workers.map(w => ({
+      key: w.key, homeId: w.homeId, x: w.x, y: w.y, hp: w.hp,
+      carrying: w.carrying, carryType: w.carryType, sheltered: w.sheltered,
+    }))
   }
 
   load(d: ReturnType<WorkerManager['toJSON']>) {
     for (const rec of d) {
       const home = this.scene.buildings.byPad.get(rec.homeId)
       if (!home || home.level === 0) continue
-      if (!WORKER_FOR[home.key]) continue
-      const w = this.hire(rec.key, home)
-      if (w) { home.workers.push(w.id); home.peakWorkers = Math.max(home.peakWorkers, home.workers.length) }
+      if (WORKER_FOR[home.key] !== rec.key) continue
+      const at = Number.isFinite(rec.x) && Number.isFinite(rec.y)
+        ? { x: rec.x, y: rec.y } : undefined
+      const w = this.hire(rec.key, home, at, true)
+      if (!w) continue
+      w.hp = Math.max(1, Math.min(w.maxHp, rec.hp ?? w.maxHp))
+      w.carrying = Math.max(0, rec.carrying ?? 0)
+      w.state = w.carrying > 0 ? 'carry' : 'seek'
+      if (rec.sheltered) {
+        w.sheltered = true
+        w.state = 'shelter'
+        w.sprite.setVisible(false)
+        w.load.setVisible(false)
+      } else if (w.carrying > 0) {
+        w.load.setVisible(true).setPosition(w.x, w.y - 30).setDepth(w.y + 1)
+      }
+      home.workers.push(w.id)
+      home.peakWorkers = Math.max(home.peakWorkers, home.workers.length)
     }
   }
 }

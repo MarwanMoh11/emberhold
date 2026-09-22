@@ -52,6 +52,12 @@ export class Enemy implements Targetable {
   bossTimer = 0
   telegraphT = 0
   chargeT = 0
+  bossAttack: 'slam' | 'charge' | 'shockwave' | 'cinderVolley' | 'cinderNova' | null = null
+  chargeVX = 0
+  chargeVY = 0
+  chargeHits = new Set<number>()
+  bossAimX = 0
+  bossAimY = 0
 
   spawnT = 0
   bobSeed = 0
@@ -94,6 +100,10 @@ export class Enemy implements Targetable {
     this.bossTimer = def.boss ? 4 : 0
     this.telegraphT = 0
     this.chargeT = 0
+    this.bossAttack = null
+    this.chargeVX = this.chargeVY = 0
+    this.chargeHits.clear()
+    this.bossAimX = this.bossAimY = 0
     this.spawnT = 0.35
     this.bobSeed = Math.random() * 10
     this.fromWave = false

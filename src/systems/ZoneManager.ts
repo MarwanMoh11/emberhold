@@ -4,6 +4,7 @@ import { WORLD } from '../config/balance'
 import { PAL, CSS } from '../config/palette'
 import { RESOURCE_ORDER } from '../core/types'
 import { clamp, short } from '../core/math'
+import { FogMemory } from '../core/FogMemory'
 import type { GameScene } from '../scenes/GameScene'
 
 /** World px per fog texel. */
@@ -26,6 +27,8 @@ const CLAIM_MARGIN = 96
 const CLAIM_DWELL = 0.45
 /** The banner only draws within this range of the claim point. */
 const BANNER_RANGE = 460
+/** Far-future claims should explain themselves when approached, not crowd the starting view. */
+const GATED_BANNER_RANGE = 230
 /** Height of the flag planted on the claim ring; the frame clears it. */
 const POLE_H = 44
 
@@ -70,6 +73,7 @@ export class ZoneManager {
   private views = new Map<ZoneId, ZoneView>()
   private fog!: Phaser.GameObjects.RenderTexture
   private brush!: Phaser.GameObjects.Image
+  private explored = new FogMemory(WORLD.width, WORLD.height)
   private lastRevealX = -9999
   private lastRevealY = -9999
   unlockedCount = 1
@@ -101,10 +105,26 @@ export class ZoneManager {
     for (let ry = -radius; ry <= radius; ry += step) {
       for (let rx = -radius; rx <= radius; rx += step) {
         if (rx * rx + ry * ry > radius * radius) continue
-        this.fog.erase(this.brush, (x + rx) / FOG_SCALE, (y + ry) / FOG_SCALE)
+        this.eraseFog(x + rx, y + ry)
       }
     }
+    this.eraseFog(x, y)
+  }
+
+  private eraseFog(x: number, y: number) {
+    this.explored.mark(x, y)
     this.fog.erase(this.brush, x / FOG_SCALE, y / FOG_SCALE)
+  }
+
+  fogJSON() { return this.explored.toJSON() }
+
+  forEachExplored(fn: (x: number, y: number) => void) {
+    this.explored.forEachMarked(fn)
+  }
+
+  loadFog(encoded: string) {
+    this.explored.load(encoded)
+    this.explored.forEachMarked((x, y) => this.fog.erase(this.brush, x / FOG_SCALE, y / FOG_SCALE))
   }
 
   private buildZone(spec: ZoneSpec, depth: number) {
@@ -182,12 +202,7 @@ export class ZoneManager {
     g.fillTriangle(v.cx + 2, v.cy - 34, v.cx + 26, v.cy - 27, v.cx + 2, v.cy - 19)
   }
 
-  /**
-   * Fit the frame around whatever the label wrapped to, then keep it clear of
-   * the HUD. It slides vertically only: the frame used to be clamped sideways
-   * too, which pinned it to the screen edge while the claim disc stayed behind
-   * in the world, so "stand here" pointed at a box that was never the target.
-   */
+  /** Fit the frame inside the viewport, with a tether to the real claim ring. */
   private frameBanner(v: ZoneView) {
     const lh = v.label.height
     const ch = v.cost.height
@@ -205,15 +220,18 @@ export class ZoneManager {
     // itself clear of the HUD rather than just its foot.
     const minY = view.y + bands.top / cam.zoom - top
     const maxY = view.bottom - bands.bottom / cam.zoom
-    v.banner.x = v.cx
+    const side = BANNER_W / 2 + 12 / cam.zoom
+    v.banner.x = Phaser.Math.Clamp(v.cx, view.left + side, view.right - side)
     v.banner.y = Phaser.Math.Clamp(v.cy, minY, Math.max(minY, maxY))
 
     v.bg.clear()
-    // tether back to the flag whenever the frame has been pushed off its spot
+    // The banner can move to clear screen edges, but the flag and ring never
+    // move. A diagonal tether keeps the callout unambiguously attached to it.
+    const sideways = v.cx - v.banner.x
     const drop = v.cy - v.banner.y
-    if (Math.abs(drop) > 8) {
+    if (Math.hypot(sideways, drop) > 8) {
       v.bg.lineStyle(2, PAL.gold, 0.4)
-      v.bg.lineBetween(0, -POLE_H, 0, drop - 34)
+      v.bg.lineBetween(0, -POLE_H, sideways, drop - 34)
     }
     v.bg.fillStyle(PAL.uiBg, 0.9)
     v.bg.fillRoundedRect(-BANNER_W / 2, top, BANNER_W, h, 8)
@@ -303,7 +321,7 @@ export class ZoneManager {
     if (Math.hypot(p.x - this.lastRevealX, p.y - this.lastRevealY) > 26) {
       this.lastRevealX = p.x
       this.lastRevealY = p.y
-      this.fog.erase(this.brush, p.x / FOG_SCALE, p.y / FOG_SCALE)
+      this.eraseFog(p.x, p.y)
     }
 
     const here = this.zoneAt(p.x, p.y)
@@ -313,7 +331,9 @@ export class ZoneManager {
       // claim territory in the same moment, and two world panels fighting for
       // the middle of a phone screen just looks broken.
       const d = Math.hypot(p.x - v.cx, p.y - v.cy)
-      const near = d < BANNER_RANGE && !this.scene.buildings.panelShown
+      const hallGap = v.spec.requiresTownHall - this.scene.buildings.townHallLevel
+      const range = hallGap >= 2 ? GATED_BANNER_RANGE : BANNER_RANGE
+      const near = d < range && !this.scene.buildings.panelShown
       v.banner.setVisible(near)
       v.marker.setVisible(near)
       if (!near) { v.dwell = 0; continue }

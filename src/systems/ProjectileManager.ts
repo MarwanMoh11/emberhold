@@ -10,6 +10,7 @@ export type Faction = 'ally' | 'enemy'
 interface Projectile {
   active: boolean
   faction: Faction
+  fromPlayer: boolean
   x: number; y: number
   vx: number; vy: number
   damage: number
@@ -41,6 +42,8 @@ export interface FireOpts {
   splash?: number
   speed: number
   faction: Faction
+  /** Only the hero's attacks can trigger hero lifesteal. */
+  fromPlayer: boolean
   spin?: number
   trail?: boolean
   scale?: number
@@ -58,7 +61,7 @@ export class ProjectileManager {
     this.pool = new Pool<Projectile>(() => {
       const sprite = scene.add.image(0, 0, 'proj_arrow').setVisible(false)
       return {
-        active: false, faction: 'ally', x: 0, y: 0, vx: 0, vy: 0, damage: 0, crit: false,
+        active: false, faction: 'ally', fromPlayer: false, x: 0, y: 0, vx: 0, vy: 0, damage: 0, crit: false,
         knockback: 0, pierce: 0, splash: 0, life: 0, spin: 0, trail: false, tint: 0xffffff,
         lobTo: null, lobT: 0, lobDur: 0, lobZ: 0, hit: new Set(), sprite, onLand: null,
       }
@@ -71,6 +74,7 @@ export class ProjectileManager {
     if (this.pool.activeCount >= PERF.maxProjectiles) return
     const p = this.pool.obtain()
     p.faction = o.faction
+    p.fromPlayer = o.fromPlayer
     p.x = x; p.y = y
     p.damage = o.damage
     p.crit = o.crit ?? false
@@ -144,7 +148,7 @@ export class ProjectileManager {
           if (!e.alive || p.hit.has(e.id)) continue
           if (Math.hypot(e.x - midX, e.y - midY) > reach + e.radius * 0.8) continue
           p.hit.add(e.id)
-          combat.damageEnemy(e, p.damage, p.x, p.y, p.knockback, p.crit)
+          combat.damageEnemy(e, p.damage, p.x, p.y, p.knockback, p.crit, p.fromPlayer)
           if (p.splash > 0) { this.land(p); return }
           this.scene.fx.hitSpark(p.x, p.y, p.tint, 0.7)
           if (p.pierce <= 0) { p.active = false; p.sprite.setVisible(false); return }
@@ -176,7 +180,7 @@ export class ProjectileManager {
       this.scene.fx.explosion(x, y, p.splash, p.tint)
       this.scene.audio.playVaried('boom', 0.5)
       if (p.faction === 'ally') {
-        this.scene.combat.areaDamageEnemies(x, y, p.splash, p.damage, 180, p.crit)
+        this.scene.combat.areaDamageEnemies(x, y, p.splash, p.damage, 180, p.crit, 0, true, p.fromPlayer)
       } else {
         this.scene.combat.areaDamageAllies(x, y, p.splash, p.damage)
       }

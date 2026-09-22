@@ -115,7 +115,15 @@ export class WaveManager {
     this.phase = 'night'
     this.phaseT = DAYNIGHT.nightSeconds
     this.nightElapsed = 0
-    const def = this.peekNext()
+    // The warning preview was for wave + 1. The old code incremented wave and
+    // then previewed again, silently skipping the authored first encounter and
+    // showing the wrong gate and boss schedule every night.
+    const def = directorAdjust(waveDef(this.wave), {
+      soldierCount: this.scene.army.count,
+      towerCount: this.scene.buildings.towerCount,
+      playerLevel: this.scene.player.level,
+      wallHp: this.scene.buildings.totalWallHp,
+    })
     this.current = def
     this.queue.length = 0
     this.queueHead = 0
@@ -210,6 +218,19 @@ export class WaveManager {
     this.remaining = 0
   }
 
+  /** A lost settlement gets a full rebuild day, then retries its active night. */
+  recoverSettlement() {
+    if (this.phase === 'night') this.wave = Math.max(0, this.wave - 1)
+    this.phase = 'day'
+    this.phaseT = DAYNIGHT.daySeconds
+    this.nightElapsed = 0
+    this.queue.length = 0
+    this.queueHead = 0
+    this.remaining = 0
+    this.current = null
+    this.bossName = null
+  }
+
   get bossLabel() { return this.bossName }
 
   /** Where the next attack is coming from, for the HUD compass. */
@@ -218,12 +239,17 @@ export class WaveManager {
     return def.gates.map(g => GATE_BY_ID.get(g)).filter(Boolean) as { x: number; y: number; name: string }[]
   }
 
-  toJSON() { return { wave: this.wave, wavesCleared: this.wavesCleared } }
-  load(d: { wave: number; wavesCleared: number }) {
-    this.wave = d.wave
+  toJSON() { return { wave: this.wave, wavesCleared: this.wavesCleared, phase: this.phase, phaseT: this.phaseT } }
+  load(d: { wave: number; wavesCleared: number; phase?: Phase; phaseT?: number }, recovering = false) {
+    // Enemy positions and the live spawn queue are intentionally transient.
+    // An ordinary interrupted night restarts at its warning. A saved Hall loss
+    // gets a full rebuild day before the same wave returns.
+    this.wave = d.phase === 'night' ? Math.max(0, d.wave - 1) : d.wave
     this.wavesCleared = d.wavesCleared
     this.phase = 'day'
-    this.phaseT = DAYNIGHT.daySeconds
+    this.phaseT = recovering ? DAYNIGHT.daySeconds
+      : d.phase === 'night' || d.phase === 'warning' ? DAYNIGHT.warningSeconds + 0.01
+        : Number.isFinite(d.phaseT) ? clamp(d.phaseT!, 0, DAYNIGHT.daySeconds) : DAYNIGHT.daySeconds
   }
 }
 

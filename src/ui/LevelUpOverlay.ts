@@ -59,7 +59,7 @@ export class LevelUpOverlay extends Overlay {
     return true
   }
 
-  private choose(i: number) {
+  choose(i: number) {
     if (!this.open || i >= this.choices.length) return
     this.game.levels.apply(this.choices[i].id)
     this.hide()
@@ -106,7 +106,8 @@ export class LevelUpOverlay extends Overlay {
       c.desc.setWordWrapWidth(cw - 24)
       const taken = this.game.levels.stacks(def.id)
       c.stacks.setPosition(x + cw / 2, y0 + ch - 28)
-        .setText(taken > 0 ? `owned ${taken}/${def.maxStacks}` : `${def.maxStacks} max`)
+        .setText(def.evergreen ? `MASTERY · RANK ${taken + 1}`
+          : taken > 0 ? `owned ${taken}/${def.maxStacks}` : `${def.maxStacks} max`)
       c.keyHint.setPosition(x + cw / 2, y0 + ch - 12).setText(`press ${i + 1}`)
       c.zone.setPosition(x + cw / 2, y0 + ch / 2)
     }

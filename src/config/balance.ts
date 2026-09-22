@@ -21,11 +21,15 @@ export const PLAYER = {
   carryCapacity: 120,
   projectileSpeed: 620,
   respawnSeconds: 3,
+  respawnShieldSeconds: 2.2,
   lifesteal: 0,
   knockback: 90,
   multishot: 1,
   pierce: 0,
   regen: 0,               // hp / second
+  dodgeSpeed: 660,
+  dodgeSeconds: 0.2,
+  dodgeCooldown: 3.5,
 }
 
 /** Hero visual tiers unlock at these levels. */

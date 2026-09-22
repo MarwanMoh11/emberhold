@@ -44,9 +44,15 @@ export class Player implements Targetable {
   private bob = 0
   private flashUntil = 0
   private hurtCd = 0
+  dodgeCd = 0
+  private dodgeTime = 0
+  private dodgeX = 0
+  private dodgeY = 0
+  private dodgeTrail = 0
 
   invincible = false
   deadTimer = 0
+  respawnShieldT = 0
 
   /** temporary multipliers from Rally etc. */
   buffDamage = 1
@@ -121,7 +127,7 @@ export class Player implements Targetable {
   }
 
   applyDamage(amount: number, srcX: number, srcY: number, knockback = 0): boolean {
-    if (!this.alive || this.invincible) return false
+    if (!this.alive || this.invincible || this.dodgeTime > 0 || this.respawnShieldT > 0) return false
     const dmg = Math.max(1, amount - this.stats.armor)
     this.hp -= dmg
     this.flashUntil = this.scene.now + 120
@@ -143,6 +149,7 @@ export class Player implements Targetable {
     this.alive = false
     this.hp = 0
     this.deadTimer = PLAYER.respawnSeconds
+    this.respawnShieldT = 0
     this.container.setVisible(false)
     this.scene.fx.deathBurst(this.x, this.y - 12, PAL.heroBody, 2)
     this.scene.fx.shake(0.02, 0.4)
@@ -155,16 +162,20 @@ export class Player implements Targetable {
     this.hp = this.maxHp
     this.x = x; this.y = y
     this.vx = this.vy = 0
+    this.dodgeTime = 0
+    this.respawnShieldT = PLAYER.respawnShieldSeconds
     this.container.setVisible(true).setPosition(x, y)
     this.scene.fx.ring(x, y, 140, PAL.heroTrim, 0.6)
   }
 
   update(dt: number, inputX: number, inputY: number) {
     this.hurtCd -= dt
+    this.dodgeCd = Math.max(0, this.dodgeCd - dt)
     if (!this.alive) {
       this.deadTimer -= dt
       return
     }
+    this.respawnShieldT = Math.max(0, this.respawnShieldT - dt)
 
     if (this.stats.regen > 0 && this.hp < this.maxHp) {
       this.hp = Math.min(this.maxHp, this.hp + this.stats.regen * dt)
@@ -172,7 +183,17 @@ export class Player implements Targetable {
 
     const len = Math.hypot(inputX, inputY)
     const speed = this.stats.moveSpeed
-    if (len > 0.08) {
+    if (this.dodgeTime > 0) {
+      this.dodgeTime = Math.max(0, this.dodgeTime - dt)
+      this.vx = this.dodgeX * PLAYER.dodgeSpeed
+      this.vy = this.dodgeY * PLAYER.dodgeSpeed
+      this.moving = true
+      this.dodgeTrail -= dt
+      if (this.dodgeTrail <= 0) {
+        this.dodgeTrail = 0.06
+        this.scene.fx.dust(this.x, this.y, 2)
+      }
+    } else if (len > 0.08) {
       const nx = inputX / len, ny = inputY / len
       const m = Math.min(1, len)
       this.vx += (nx * speed * m - this.vx) * Math.min(1, dt * 16)
@@ -196,6 +217,14 @@ export class Player implements Targetable {
     this.sprite.y = bobY
     this.sprite.setFlipX(this.facing < 0)
     this.sprite.rotation = this.moving ? Math.sin(this.bob * 0.5) * 0.035 * this.facing : 0
+    this.sprite.setAlpha(this.dodgeTime > 0 ? 0.7 : 1)
+    const shielded = this.respawnShieldT > 0
+    this.aura.setVisible(this.tier >= 2 || shielded)
+      .setTint(shielded ? PAL.heroTrim : this.tier >= 3 ? PAL.gold : PAL.heroTrim)
+      .setAlpha(shielded
+        ? this.scene.settings.reducedMotion ? 0.52 : 0.42 + Math.sin(this.scene.now * 0.018) * 0.1
+        : this.tier >= 3 ? 0.32 : 0.2)
+      .setScale(shielded ? 1.2 : 0.9)
 
     this.sprite.setTintFill(0xffffff)
     if (this.scene.now < this.flashUntil) this.sprite.setTintFill(0xffffff)
@@ -206,6 +235,20 @@ export class Player implements Targetable {
     this.carryStack.update(this.scene.res, dt, this.moving, this.facing)
 
     this.attackCd -= dt
+  }
+
+  dodge(inputX: number, inputY: number): boolean {
+    if (!this.alive || this.dodgeCd > 0 || this.dodgeTime > 0) return false
+    const len = Math.hypot(inputX, inputY)
+    this.dodgeX = len > 0.08 ? inputX / len : this.facing
+    this.dodgeY = len > 0.08 ? inputY / len : 0
+    this.dodgeTime = PLAYER.dodgeSeconds
+    this.dodgeCd = PLAYER.dodgeCooldown
+    this.dodgeTrail = 0
+    this.facing = this.dodgeX >= 0 ? 1 : -1
+    this.scene.fx.ring(this.x, this.y - 12, 70, PAL.heroTrim, 0.18)
+    this.scene.audio.play('ability', 1.5, 0.55)
+    return true
   }
 
   canAttack() { return this.alive && this.attackCd <= 0 }

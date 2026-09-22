@@ -3,7 +3,7 @@ import { PAL } from './palette'
 export type EnemyKey =
   | 'grunt' | 'runner' | 'brute' | 'archer' | 'shield'
   | 'bomber' | 'swarm' | 'elite' | 'commander'
-  | 'siegeBeast' | 'warlord' | 'camp'
+  | 'siegeBeast' | 'warlord' | 'cinderRegent' | 'camp'
 
 export type TargetPref = 'nearest' | 'structures' | 'workers' | 'player'
 
@@ -122,6 +122,17 @@ export const ENEMIES: Record<EnemyKey, EnemyDef> = {
       { type: 'metal', chance: 1, amount: 200 },
       { type: 'crystal', chance: 1, amount: 40 },
       { type: 'stone', chance: 1, amount: 200 },
+    ],
+  },
+  cinderRegent: {
+    key: 'cinderRegent', name: 'THE CINDER REGENT',
+    hp: 9400, damage: 42, speed: 76, range: 68, attackRate: 0.8, radius: 44, scale: 3.1,
+    colour: 0x9f3425, accent: 0xffb64c, xp: 1200, coins: 1800, prefers: 'player',
+    boss: true, knockbackResist: 1, healthbar: true,
+    drops: [
+      { type: 'crystal', chance: 1, amount: 120 },
+      { type: 'metal', chance: 1, amount: 320 },
+      { type: 'stone', chance: 1, amount: 240 },
     ],
   },
 }

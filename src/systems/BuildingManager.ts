@@ -400,14 +400,14 @@ export class BuildingManager {
 
     if (splash > 0) {
       this.scene.projectiles.fire(b.x, muzzleY, ang, {
-        tex: 'proj_shell', damage: dmg, speed: 420, faction: 'ally', splash,
+        tex: 'proj_shell', damage: dmg, speed: 420, faction: 'ally', fromPlayer: false, splash,
         knockback: 140, spin: 9, lobTo: { x: target.x, y: target.y },
       })
       this.scene.audio.playVaried('boom', 0.35)
       this.scene.fx.hitSpark(b.x + Math.cos(ang) * 22, muzzleY + Math.sin(ang) * 22, 0xffd24a, 1.2)
     } else {
       this.scene.projectiles.fire(b.x, muzzleY, ang, {
-        tex: 'proj_arrow', damage: dmg, speed: 640, faction: 'ally', knockback: 40,
+        tex: 'proj_arrow', damage: dmg, speed: 640, faction: 'ally', fromPlayer: false, knockback: 40,
         pierce: b.level >= 4 ? 1 : 0, tint: 0xffffff,
       })
       this.scene.audio.playVaried('shoot', 0.3)
@@ -478,7 +478,9 @@ export class BuildingManager {
       b.applyTexture()
       this.scene.fx.popup(b.x, b.y - 40, `${b.def.short} WRECKED`, PAL.danger, 16)
     }
-    if (b.key === 'townHall') this.scene.onCoreLost()
+    // A fortified Hall can lose an upgrade tier and keep fighting. Only the
+    // final collapse ends the defense and offers a wave restart.
+    if (b.key === 'townHall' && b.level === 0) this.scene.onCoreLost()
     this.recomputeBonuses()
   }
 
@@ -964,9 +966,28 @@ export class BuildingManager {
       const b = this.byPad.get(d.padId)
       if (!b) continue
       if (d.trains && SOLDIERS[d.trains]) this.trains.set(d.padId, d.trains)
-      while (b.level < d.level) b.completeLevel()
-      b.hp = Math.max(1, d.hp)
+      // Starting structures are raised during build(). A saved loss can have
+      // reduced one to rubble, so loading must also be able to move downward.
+      if (d.level === 0) {
+        b.level = 0
+        b.maxHp = 0
+        b.hp = 0
+        b.alive = false
+        b.state = 'empty'
+        b.applyTexture()
+      } else {
+        if (b.level > d.level) {
+          b.level = d.level
+          b.maxHp = b.def.levels[d.level - 1].hp
+        }
+        while (b.level < d.level) b.completeLevel()
+        b.hp = Math.max(1, Math.min(b.maxHp, d.hp))
+        b.alive = true
+        b.state = 'done'
+        b.applyTexture()
+      }
       b.progress = d.progress ?? {}
+      b.peakWorkers = Math.max(0, d.peakWorkers ?? 0)
       if (b.key === 'farm' && b.level > 0 && !this.fielded.has(b.padId)) {
         this.fielded.add(b.padId)
         this.scene.nodes.addField(b.x, b.y + 40, b.zone, 5)

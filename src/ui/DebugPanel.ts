@@ -9,6 +9,7 @@ export class DebugPanel extends Overlay {
   private heading!: Phaser.GameObjects.Text
   private info!: Phaser.GameObjects.Text
   private rows: ReturnType<Overlay['button']>[] = []
+  private nextRefresh = 0
 
   constructor(scene: Phaser.Scene, private game: GameScene) {
     super(scene, 1_250_000)
@@ -27,6 +28,7 @@ export class DebugPanel extends Overlay {
     b('SPAWN 10', () => this.game.debugSpawn(10))
     b('SPAWN 100', () => this.game.debugSpawn(100))
     b('SPAWN 300', () => this.game.debugSpawn(300))
+    b('SUMMON FINAL BOSS', () => this.game.debugSpawnFinalBoss(), PAL.danger)
     b('NEXT WAVE NOW', () => this.game.waves.forceNextWave())
     b('END NIGHT', () => this.game.waves.skipToDay())
     b('KILL ALL', () => this.game.enemies.killAll(), PAL.danger)
@@ -40,26 +42,37 @@ export class DebugPanel extends Overlay {
   }
 
   protected layout() {
-    const w = Math.min(250, this.W - 24)
-    const h = Math.min(this.H - 24, 120 + this.rows.length * 30)
+    const cols = this.W >= 600 ? 2 : 1
+    const perCol = Math.ceil(this.rows.length / cols)
+    const w = Math.min(cols === 2 ? 500 : 250, this.W - 24)
+    const h = Math.min(this.H - 24, 128 + perCol * 30)
     const x = 14
     const y = this.H / 2 - h / 2
     this.drawCard(x, y, w, h, PAL.danger)
-    this.heading.setText('DEBUG  ·  F2').setPosition(x + w / 2, y + 28)
+    this.heading.setText('DEBUG  ·  F2').setPosition(x + w / 2, y + 24)
     const s = this.game.stats
     this.info.setText(
-      `${s.fps} fps   enemies ${s.enemies}\n` +
+      `${s.fps} fps   sim p95 ${s.simP95.toFixed(1)} ms\n` +
+      `frame p95 ${s.frameP95.toFixed(1)} ms   enemies ${s.enemies}\n` +
       `troops ${s.soldiers}   workers ${s.workers}\n` +
       `drops ${s.pickups}   shots ${s.projectiles}\n` +
       `godmode ${this.game.player.invincible ? 'ON' : 'off'}`,
-    ).setPosition(x + w / 2, y + 62)
+    ).setPosition(x + w / 2, y + 67)
 
-    let by = y + 104
-    for (const r of this.rows) {
-      r.place(x + w / 2, by, w - 28, 26)
-      by += 30
+    const pitch = Math.min(30, (h - 124) / perCol)
+    const buttonW = (w - 28 - (cols - 1) * 8) / cols
+    for (let i = 0; i < this.rows.length; i++) {
+      const col = Math.floor(i / perCol)
+      const row = i % perCol
+      const bx = x + 14 + col * (buttonW + 8) + buttonW / 2
+      const by = y + 112 + row * pitch
+      this.rows[i].place(bx, by, buttonW, Math.min(26, pitch - 2))
     }
   }
 
-  update() { if (this.open) this.layout() }
+  update() {
+    if (!this.open || this.scene.time.now < this.nextRefresh) return
+    this.nextRefresh = this.scene.time.now + 250
+    this.layout()
+  }
 }

@@ -98,6 +98,19 @@ export function drawUnit(p: Pen, key: string, look: UnitLook) {
       .tri(cx + headR * 0.95, headY - headR * 0.35, cx + headR * 1.85, headY - headR * 1.25, cx + headR * 0.75, headY - headR * 0.95)
   }
 
+  if (key === 'enm_cinderRegent') {
+    // A jagged ember crown makes the final boss readable even in a crowd.
+    p.fill(0x4a1818).rect(cx - headR * 1.1, headY - headR * 0.55, headR * 2.2, headR * 0.42)
+    for (const offset of [-0.7, 0, 0.7]) {
+      const fx = cx + headR * offset
+      const height = offset === 0 ? 1.5 : 1.2
+      p.fill(0xff6a25).tri(fx - headR * 0.32, headY - headR * 0.35,
+        fx + headR * 0.32, headY - headR * 0.35, fx, headY - headR * height)
+      p.fill(0xffd35a).tri(fx - headR * 0.12, headY - headR * 0.42,
+        fx + headR * 0.12, headY - headR * 0.42, fx, headY - headR * (height - 0.34))
+    }
+  }
+
   // eyes — the single detail that makes them feel alive at small size
   const eyeC = look.eyes ?? 0x1b2430
   p.fill(eyeC)
@@ -201,7 +214,7 @@ const HERO_TIER_LOOKS: UnitLook[] = [
 const ENEMY_WEAPON: Record<string, UnitLook['weapon']> = {
   grunt: 'club', runner: 'none', brute: 'hammer', archer: 'bow', shield: 'sword',
   bomber: 'torch', swarm: 'none', elite: 'axe', commander: 'staff',
-  siegeBeast: 'none', warlord: 'axe',
+  siegeBeast: 'none', warlord: 'axe', cinderRegent: 'staff',
 }
 
 const WORKER_WEAPON: Record<string, UnitLook['weapon']> = {
@@ -239,11 +252,12 @@ export function buildUnitTextures(p: Pen) {
       skin: shade(def.colour, -0.5),
       eyes: def.boss || def.elite ? 0xffe27a : 0xffd8c8,
       weapon: ENEMY_WEAPON[def.key] ?? 'club',
-      helmet: def.key === 'shield' || def.key === 'elite' || def.key === 'warlord',
+      helmet: def.key === 'shield' || def.key === 'elite' || def.key === 'warlord' || def.key === 'cinderRegent',
       shield: def.key === 'shield' || def.key === 'warlord',
       horns: def.key === 'brute' || def.key === 'elite' || def.key === 'warlord' || def.key === 'siegeBeast',
       bulk: def.boss ? 1.45 : def.elite ? 1.2 : def.key === 'brute' ? 1.3 : 1,
-      cape: def.key === 'commander' ? 0x36246e : def.key === 'warlord' ? 0x4a0f18 : undefined,
+      cape: def.key === 'commander' ? 0x36246e : def.key === 'warlord' ? 0x4a0f18
+        : def.key === 'cinderRegent' ? 0xff8b36 : undefined,
       banner: def.key === 'commander' ? 0x8f6fe0 : undefined,
     })
   }

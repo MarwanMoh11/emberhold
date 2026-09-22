@@ -18,7 +18,7 @@ interface Cell {
 /**
  * The campaign's payoff, and the ledger you can reopen afterwards.
  *
- * Finishing the chain used to produce a toast and nothing else — twenty quests
+ * Finishing the chain used to produce a toast and nothing else — many quests
  * of tutorial and campaign ending in a line of floating text. This is the
  * moment instead: what the frontier cost, in one card. It is emphatically not
  * a game over. One button, and the nights keep coming.
@@ -107,7 +107,7 @@ export class RunSummary extends Overlay {
     const played = RunSummary.clock(this.game.saves.playtime)
     let subLine: string
     if (this.victory) {
-      subLine = `Ashgate Fortress is rubble — night ${q.victoryWave}, ${played} in.`
+      subLine = `The Cinder Regent fell — night ${q.victoryWave}, ${played} in.`
     } else if (q.campaignComplete) {
       subLine = q.victoryWave
         ? `Frontier secured on night ${q.victoryWave}.  ${played} played.`
