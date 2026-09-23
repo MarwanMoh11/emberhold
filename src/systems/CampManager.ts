@@ -30,6 +30,7 @@ export class CampManager {
       const label = this.scene.add.text(spec.x, spec.y - 128, spec.name,
         textStyle({ voice: 'display', size: 20, colour: PAL.danger, stroke: 5 }))
         .setOrigin(0.5).setDepth(780_000).setVisible(false)
+      this.scene.culler.add(label, spec.x, spec.y - 128, Math.max(label.width, 200))
       this.camps.push({ spec, enemy: null, timer: rr(3, 8), destroyed: false, label })
     }
   }

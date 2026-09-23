@@ -48,7 +48,7 @@ export class DebugPanel extends Overlay {
     const cols = this.W >= 600 ? 2 : 1
     const perCol = Math.ceil(this.rows.length / cols)
     const w = Math.min(cols === 2 ? 500 : 250, this.W - 24)
-    const h = Math.min(this.H - 24, 161 + perCol * 30)
+    const h = Math.min(this.H - 24, 178 + perCol * 30)
     const x = 14
     const y = this.H / 2 - h / 2
     this.drawCard(x, y, w, h, PAL.wax)
@@ -61,16 +61,17 @@ export class DebugPanel extends Overlay {
       `drops ${s.pickups}   shots ${s.projectiles}\n` +
       `chunks ${s.chunks.resident} held  ${s.chunks.queued} queued  ${s.chunks.baked} baked\n` +
       `bake ${s.chunks.frameMs.toFixed(1)} ms  worst ${s.chunks.worstFrameMs.toFixed(1)} ms\n` +
+      `static ${s.cull.shown} drawn  ${s.cull.total - s.cull.shown} culled\n` +
       `godmode ${this.game.player.invincible ? 'ON' : 'off'}`,
-    ).setPosition(x + w / 2, y + 81)
+    ).setPosition(x + w / 2, y + 88)
 
-    const pitch = Math.min(30, (h - 157) / perCol)
+    const pitch = Math.min(30, (h - 174) / perCol)
     const buttonW = (w - 28 - (cols - 1) * 8) / cols
     for (let i = 0; i < this.rows.length; i++) {
       const col = Math.floor(i / perCol)
       const row = i % perCol
       const bx = x + 14 + col * (buttonW + 8) + buttonW / 2
-      const by = y + 145 + row * pitch
+      const by = y + 162 + row * pitch
       this.rows[i].place(bx, by, buttonW, Math.min(26, pitch - 2))
     }
   }

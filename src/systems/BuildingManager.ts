@@ -123,6 +123,10 @@ export class BuildingManager {
 
   private addPad(spec: PadSpec) {
     const b = new Building(this.scene, spec)
+    // Later levels draw taller than the level-1 ghost, so the disc is generous.
+    const r = Math.max(b.ghost.width, b.ghost.height) * 1.5
+    this.scene.culler.add(b.sprite, b.x, b.y - b.ghost.height / 2, r)
+    this.scene.culler.add(b.ghost, b.x, b.y - b.ghost.height / 2, r)
     this.buildings.push(b)
     this.byPad.set(spec.id, b)
     if (spec.startLevel) {

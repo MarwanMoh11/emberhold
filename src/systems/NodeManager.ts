@@ -60,6 +60,8 @@ export class NodeManager {
     const sprite = this.scene.add.image(x, y, tex)
     sprite.setOrigin(0.5, 1 - 8 / sprite.height)
     sprite.setDepth(y)
+    // regrowth tweens scale from 0.3 to 1, so the full size bounds it
+    this.scene.culler.add(sprite, x, y - sprite.height / 2, Math.max(sprite.width, sprite.height))
     const node: ResourceNode = {
       id: this.nextNodeId++, type, resource: d.resource, x, y,
       hp: d.hp, maxHp: d.hp, yield: d.yield, respawnIn: 0, alive: true,

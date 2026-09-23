@@ -9,6 +9,7 @@ import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type Targetable } from '../core/types'
 import { paintTerrainRect } from '../world/Terrain'
 import { TerrainChunks } from '../world/TerrainChunks'
+import { Culler } from '../systems/Culler'
 
 import { Player } from '../entities/Player'
 import { ResourceManager } from '../systems/ResourceManager'
@@ -51,6 +52,8 @@ export class GameScene extends Phaser.Scene {
   bus!: Bus
   audio!: AudioManager
   terrain!: TerrainChunks
+  /** Hides static world objects far outside the view; see Culler. */
+  culler!: Culler
   fx!: EffectsManager
   res!: ResourceManager
   combat!: CombatSystem
@@ -124,6 +127,7 @@ export class GameScene extends Phaser.Scene {
     this.physics?.world?.setBounds(0, 0, WORLD.width, WORLD.height)
 
     this.terrain = new TerrainChunks(this, paintTerrainRect, { width: WORLD.width, height: WORLD.height, depth: DEPTH.terrain })
+    this.culler = new Culler()
 
     this.fx = new EffectsManager(this, DEPTH.fx)
     this.fx.quality = this.settings.quality
@@ -566,6 +570,7 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.now = time
     this.terrain.update(this.cameras.main)
+    this.culler.update(this.cameras.main)
     if (this.paused) return
     const simStart = performance.now()
     const dt = Math.min(0.05, delta / 1000)
@@ -687,6 +692,7 @@ export class GameScene extends Phaser.Scene {
       pickups: this.pickups.activeCount,
       projectiles: this.projectiles.activeCount,
       chunks: this.terrain.stats(),
+      cull: this.culler.stats(),
       maxPickups: PICKUP.maxActive,
       respawn: PLAYER.respawnSeconds,
     }
