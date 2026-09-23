@@ -68,7 +68,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 *Status: landed (S04). `WORLD` at [src/config/world/index.ts:20](../../src/config/world/index.ts#L20), `raster()` at [:44](../../src/config/world/index.ts#L44), `ZoneManager.zoneAt` at [src/systems/ZoneManager.ts:280](../../src/systems/ZoneManager.ts#L280), save `KEY` at [src/systems/SaveManager.ts:13](../../src/systems/SaveManager.ts#L13).*
 
 - `src/config/world/index.ts` replaces `src/config/map.ts`, which is deleted, and exports:
-  - `WORLD = { width, height, centerX, centerY, tile }` (:20). `centerX/Y` is the map's middle, **not** home: use `HALL`. `balance.ts` re-exports `WORLD` until S05 removes the line.
+  - `WORLD = { width, height, centerX, centerY, tile }` (:20). `centerX/Y` is the map's middle, **not** home: use `HALL`. (`balance.ts` no longer re-exports it: S05.)
   - `HALL = { x, y }` (:40, from the `hall` pad), `REGIONS: RegionDef[]` (:34, `RegionBP & { index }`), `REGION_BY_ID`, and `type RegionId, Biome`.
   - `PADS: PadSpec[]` (:75; `region`, `requiresTownHall` from `hall`, `startLevel`) and `FUTURE_PADS: PadBP[]` (:78; outpost, fishery, tradingPost).
   - `CAMPS: CampSpec[]` (:146; `region`, `reward: ResourceBag`, bracketed spawn keys resolved by `resolveSpawnKey`), `NODE_CLUSTERS: NodeCluster[]` (:167; `region`, no fish), `NODE_DEFS`.
@@ -92,17 +92,17 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S05: NavGrid
 
-*Status: planned.*
+*Status: landed (S05). `NavGrid` at [src/world/NavGrid.ts:141](../../src/world/NavGrid.ts#L141), `FlowField` at [:32](../../src/world/NavGrid.ts#L32); `GameScene.nav`, ticked every frame.*
 
-- `src/world/NavGrid.ts`: `class NavGrid`, built from `raster()`.
-  - `blocked(i)`
-  - `passableAt(x, y)`
-  - `setBlocker(id, x, y, radius, on)` for wall pads and built walls. A blocker costs `WALL_COST` rather than being infinite, so a sealed hold is still reachable.
-  - `slide(x, y, dx, dy, radius) → { x, y }` is collision for any walker.
-  - `field(target: 'hall' | \`via:${crossingId}\`) → FlowField`. Fields are cached and rebuilt lazily when `version` changes. Rebuilds are spread across frames, up to 6 ms per frame.
-  - `FlowField.dir(x, y) → { dx, dy }` and `FlowField.dist(x, y)`.
-- `EnemyManager` steers with `nav.field(leg)` instead of straight lines toward `WALL_RING` gates.
-- The hero, enemies and allies collide through `slide`. Projectiles ignore terrain: arrows over the river are the point of towers at fords.
+- `src/world/NavGrid.ts` (pure, `loadTs`-testable): `new NavGrid(raster(), { hall, sliceMs = 6, now? })`. `WALL_COST = 40`; `walkRadius(body) = min(body / 2, 12)` is the collision circle every walker passes to `slide`.
+  - Cells: `passable(i)` (land and not a sealed crossing's water), `passableAt(x, y)`, `blocked(i)` / `blockedAt(x, y)` (a wall covers it), `speedAt(x, y)` (a ford's `slow` in its water, else 1), `nearestPassable(x, y) → i | -1` (8 rings).
+  - `setBlocker(id, x, y, radius, on)` marks cells whose centre is within `radius`; re-calling an id replaces it. `setSealed(crossingId, sealed)` and `isSealed(id)`; `sealedUntil` crossings start sealed. Both bump `version`.
+  - `slide(x, y, dx, dy, radius) → { x, y }`: centre plus four circle points, x/y split on contact, steps under a third of a cell; an off-ground centre is put on the nearest passable cell. `clearAt(x, y, r)`; `lineClear(ax, ay, bx, by)` is false through impassable or walled cells.
+  - `field(target: 'hall' | \`via:${crossingId}\`) → FlowField`: the first call builds synchronously (~36 ms); a stale one keeps serving while `tick(budgetMs?)` rebuilds it in slices. `building`, `flush()`, `sources(target)`, `stats() → { version, fields, building, frameMs, worstFrameMs, rebuilds, lastBuildMs }` (F2, `H.nav()`).
+  - `FlowField`: `nextCell(i) → j | -1`, `dir(x, y) → { dx, dy }` (unit, toward the next cell's centre), `dist(x, y)`, raw `d: Float32Array` and `step: Int8Array` (NB8 index, -1 at the target or unreachable), `version`.
+- `EnemyManager` checks `lineClear` to its target on each retarget (`Enemy.los`); without it, it steps along `field('hall')`. A walled next cell latches that wall as the target. S09 swaps `'hall'` for the enemy's leg.
+- `BuildingManager.syncNav` registers built `wall` pads (radius 40) on build, destroy, demolish and load. Gates and other buildings stay out of the grid.
+- The hero, enemies, soldiers and workers move through `slide` (building push-out too). Projectiles ignore terrain.
 
 ## S06: ally pathing and roads
 

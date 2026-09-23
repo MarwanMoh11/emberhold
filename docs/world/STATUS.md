@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S05** ([card](sessions/S05-navgrid.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S06** ([card](sessions/S06-ally-pathing.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -22,6 +22,16 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S05 · NavGrid: done (2026-09-23)
+- `src/world/NavGrid.ts` + `NavDebug.ts` per CONTRACTS §S05; `GameScene.nav` ticks after the pause check. Tests: Ferrow Muster → hall over `oldBridge`, a shut toy ring pays through a wall, sliced rebuilds, `slide` never ends off the ground, ford speed, sight lines.
+- **How enemies pick a leg** (for S09's `via`): on each retarget (0.35–0.65 s) `EnemyManager.sight` sets `Enemy.los` from `nav.lineClear` to the target, stopping short of its body. `los` → steer straight (today's code); else step to `hallField.nextCell(cell)`'s centre. One field, `'hall'`, is read once per frame at `const hallField` (EnemyManager ~:176); S09 swaps in the enemy's leg there. A walled next cell latches that wall (`latch`, held 1.5 s). The blocker probe still sends sappers/non-walls to attack and flips `los` off on a wall.
+- Walls: `BuildingManager.syncNav` (radius 40, pads 62 apart make one band; gates stay free). Built ring + gates: the south raid hit gates 217 and walls 95 samples, nothing stuck off-ground.
+- Cost: first hall field 36 ms (boot); a rebuild is 5 slices, worst 5.7 ms in the browser (6.0 in node), ~35–42 ms wall time. 70 walls built in one frame = one rebuild.
+- Verify (north gate moved to the Old Bridge through the module's `GATE_BY_ID`): three nights, 4,508 enemy samples at 1 s, **0 off-ground**, 127 on the bridge; hero stops at the river bank, crosses the bridge once Ferrow is claimed, ford speed 59 vs 98 px per 0.5 s (0.6). No console errors. v1/v2 saves and settings restored byte-identical.
+- Deviations: collision radius is `min(body/2, 12)` so bosses fit 1-cell passages. Walls stay non-solid for everyone (as before); enemies are held by steering, so separation or knockback can still leak one through a wall band.
+- Trips for S06: soldiers steer straight at the hero and snag on banks when he is across water (expected until A*); workers only slide + their old detour. No pad→field line in the data crosses water except quarry2→a greyfall tree field, so worker snags should be rare. The zone barrier (not the NavGrid) stops the hero at a locked region's crossing: claim it before testing a crossing. Early nights spawn at `north` (5000,1900), not the bridge.
+- `balance.WORLD` re-export removed. No new open decisions; no blueprint moves.
+
 ### S04 · Move in: done (2026-09-23)
 - The game runs on the 10240×9216 frontier from `src/config/world/index.ts` (CONTRACTS §S04); `map.ts` deleted. `ZoneId` → `RegionId`, and every `zone` field (pads, camps, clusters, `Building`, `ResourceNode`) is `region`. The hero starts at `HALL` + 340 px south.
 - Files: config/{balance, world/index, world/blueprint (header comment only)}, entities/{Building, Player}, scenes/GameScene, systems/{Building, Camp, Enemy, Node, Quest, Save, Wave, Zone}Manager, ui/{Minimap, RunSummary}, world/Terrain, dev/harness; tests/{world-module (new), save-portability}.
@@ -42,12 +52,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - Trips for S04: register anything new and static (POIs, border stones, region labels) with `scene.culler.add`; ZoneManager's zone banners and post graphics are not registered. Rebuild the vellum from regions. No new open decisions.
 
 ### S02 · Chunked terrain: done (2026-09-23)
-- `paintTerrainRect(ctx, wx, wy, size, scale)` in `src/world/Terrain.ts` is the deterministic painter (ctx arrives world-transformed; brushwork in texels at S = 0.5). Per-biome colour is `biomeAt`/`TONES`/`toneAt`, per-biome marks `markAt`. Scatter is dealt per 128 px cell from `strokeRng(cell, k)`; roads, plaza, camp scorch and gates are laid out once. `buildTerrain` is gone; `buildVellumTexture` untouched.
-- `src/world/TerrainChunks.ts` streams 1024 px chunks per CONTRACTS §S02. GameScene constructs it where buildTerrain was, calls `prime(cam)` after centring on the hero, and `update(cam)` every frame (before the pause check). F2 shows held/queued/baked and bake ms.
-- Deviations: chunks bake in 256 px slices (a whole chunk is ~10 ms, over the 4 ms budget); added `prime()`, and `frameMs`/`worstFrameMs` in `stats()`. Textures go in with `textures.addImage`, since `addCanvas`'s CanvasTexture reads every pixel back (1-4 ms per chunk).
-- Old map check: 12 chunks, slices 0.7-1.7 ms, worst streaming frame 3.5 ms. Mean colour at hall, zone border and Ashgate is identical to before; per-pixel difference 3-5/255 (the scatter moved). The step across chunk borders is no larger than across any other column.
-- Trips: the painter still reads `WORLD` (balance) and `ZONES/PADS/CAMPS/SPAWN_GATES/WALL_RING` (map); S04 swaps those for the blueprint and gives the chunks the new world size. S03's Culler must not register the chunk Images, which TerrainChunks owns. Call `prime` after any camera jump.
-- No sprite needed absorbing: Terrain.ts drew none. The minimap never read the terrain texture, so nothing is left for S12. No new open decisions.
+- `paintTerrainRect` + `TerrainChunks` stream 1024 px chunks in 256 px slices (≤4 ms/frame); call `prime` after any camera jump.
 
 ### S01 · Blueprint home: done (2026-09-23)
 - Blueprint moved to `src/config/world/blueprint.ts`; shared `src/world/raster.ts` and `flow.ts` (options-bag `sealed`); `world:lint`, `world:map` and the blueprint test added; `.claude/` stays untracked.
