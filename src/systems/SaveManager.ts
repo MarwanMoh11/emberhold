@@ -7,6 +7,7 @@ import { CAMPS, PADS, WALL_RING } from '../config/map'
 import { SOLDIERS, WORKERS } from '../config/units'
 import { UPGRADE_BY_ID } from '../config/upgrades'
 import { QUESTS } from '../config/quests'
+import { FogMemory } from '../core/FogMemory'
 
 const KEY = 'emberhold.save.v1'
 const BACKUP_KEY = 'emberhold.save.backup.v1'
@@ -90,7 +91,7 @@ function validSave(v: unknown): v is SaveBlob {
     || !Array.isArray(v.upgrades) || !v.upgrades.every(u => Array.isArray(u)
       && typeof u[0] === 'string' && UPGRADE_BY_ID.has(u[0] as never)
       && finite(u[1]) && Number.isInteger(u[1]) && u[1] >= 0 && u[1] <= 10000)) return false
-  if (v.exploredFog !== undefined && (typeof v.exploredFog !== 'string' || v.exploredFog.length > 10000)) return false
+  if (v.exploredFog !== undefined && (typeof v.exploredFog !== 'string' || v.exploredFog.length > FogMemory.maxEncodedLength(WORLD.width, WORLD.height))) return false
   if (v.campHealth !== undefined && (!record(v.campHealth)
     || !Object.entries(v.campHealth).every(([id, hp]) => CAMPS.some(c => c.id === id)
       && finite(hp) && hp > 0 && hp <= 100000))) return false

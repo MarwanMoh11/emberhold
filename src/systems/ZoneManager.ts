@@ -11,8 +11,8 @@ import { setColour, textStyle } from '../ui/theme'
 import { SkinPanel } from '../ui/skin'
 import { DPR } from '../core/device'
 
-/** World px per fog texel. */
-const FOG_SCALE = 4
+/** World px per fog texel: the fog RenderTexture is the world at 1/8. */
+export const FOG_SCALE = 4
 /** Banner frame width in world units; also its wrap width. */
 const BANNER_W = 248
 /** How close the hero has to be for a claim to fire. */
@@ -95,8 +95,8 @@ export class ZoneManager {
   }
 
   private buildFog(depth: number) {
-    // Quarter resolution: fog is low-frequency, and a full- or half-res target
-    // over a 3400x2800 world is a lot of GPU memory to ask a phone for.
+    // Eighth resolution: fog is low-frequency, and even a quarter-res target
+    // over the 10240x9216 frontier is a lot of GPU memory to ask a phone for.
     const w = Math.ceil(WORLD.width / FOG_SCALE)
     const h = Math.ceil(WORLD.height / FOG_SCALE)
     this.fog = this.scene.add.renderTexture(0, 0, w, h)
@@ -107,8 +107,8 @@ export class ZoneManager {
     this.fog.draw('fog_vellum', 0, 0)
     this.brush = this.scene.make.image({ key: 'fx_fogbrush', add: false })
     this.brush.setOrigin(0.5, 0.5)
-    // 480px source art drawn at half size in fog space -> ~960 world px reveal
-    this.brush.setScale(0.5)
+    // 480px source art drawn at 2/FOG_SCALE in fog space -> ~960 world px reveal
+    this.brush.setScale(2 / FOG_SCALE)
     // the hold itself is already known ground
     this.revealArea(WORLD.centerX, WORLD.centerY, 950)
   }
