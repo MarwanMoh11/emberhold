@@ -12,7 +12,7 @@ import { SkinPanel } from '../ui/skin'
 import { DPR } from '../core/device'
 
 /** World px per fog texel: the fog RenderTexture is the world at 1/8. */
-export const FOG_SCALE = 4
+export const FOG_SCALE = 8
 /** Banner frame width in world units; also its wrap width. */
 const BANNER_W = 248
 /** How close the hero has to be for a claim to fire. */

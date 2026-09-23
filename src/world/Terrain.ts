@@ -484,6 +484,11 @@ export function buildVellumTexture(scene: Phaser.Scene, fogScale: number) {
   const W = Math.ceil(WORLD.width / fogScale)
   const H = Math.ceil(WORLD.height / fogScale)
   const k = 1 / fogScale
+  // The page was drawn at 4 world px per texel. Noise keeps its world size;
+  // the ink marks keep their texel size (a coarser sheet draws bolder marks),
+  // so they are dealt more sparsely to leave the page as open as it was.
+  const s = fogScale / 4
+  const sparse = 1 / (s * s)
   const [c, x] = makeCanvas(W, H)
   const r = new Rng(4242)
 
@@ -491,8 +496,8 @@ export function buildVellumTexture(scene: Phaser.Scene, fogScale: number) {
   const img = x.createImageData(W, H)
   for (let j = 0; j < H; j++) {
     for (let i = 0; i < W; i++) {
-      const n = fbm(i * 0.02, j * 0.02, 900, 4)
-      const m = fbm(i * 0.08, j * 0.08, 901, 2)
+      const n = fbm(i * 0.02 * s, j * 0.02 * s, 900, 4)
+      const m = fbm(i * 0.08 * s, j * 0.08 * s, 901, 2)
       const col = mix(mix(0xd8c49a, 0xefe0bc, n), 0xc8b088, Math.max(0, m - 0.6) * 1.2)
       const q = (j * W + i) * 4
       img.data[q] = (col >> 16) & 255
@@ -504,7 +509,7 @@ export function buildVellumTexture(scene: Phaser.Scene, fogScale: number) {
   x.putImageData(img, 0, 0)
 
   // foxing: age spots
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < Math.round(90 * sparse); i++) {
     const px = r.range(0, W), py = r.range(0, H), rad = r.range(3, 14)
     const g = x.createRadialGradient(px, py, 0, px, py, rad)
     g.addColorStop(0, css(0x9a7a4a, 0.22)); g.addColorStop(1, css(0x9a7a4a, 0))
@@ -519,7 +524,7 @@ export function buildVellumTexture(scene: Phaser.Scene, fogScale: number) {
     const step = 3
     const gw = Math.ceil(W / step) + 1, gh = Math.ceil(H / step) + 1
     const hgt = new Float32Array(gw * gh)
-    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) hgt[j * gw + i] = fbm(i * step * 0.012, j * step * 0.012, 950, 3)
+    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) hgt[j * gw + i] = fbm(i * step * 0.012 * s, j * step * 0.012 * s, 950, 3)
     x.fillStyle = css(sepia, 0.15)
     for (let level = 0.3; level < 0.8; level += 0.08) {
       for (let j = 0; j < gh - 1; j++) {
@@ -569,7 +574,7 @@ export function buildVellumTexture(scene: Phaser.Scene, fogScale: number) {
   for (const z of ZONES) {
     const list = zoneSym[z.id]
     if (!list) continue
-    const n = Math.round((z.w * z.h) / 26000)
+    const n = Math.round((z.w * z.h) / 26000 * sparse)
     for (let i = 0; i < n; i++) {
       const px = (z.x + r.range(0.05, 0.95) * z.w) * k
       const py = (z.y + r.range(0.05, 0.95) * z.h) * k
@@ -577,14 +582,14 @@ export function buildVellumTexture(scene: Phaser.Scene, fogScale: number) {
     }
     // the surveyor's name for it, in a small italic hand
     x.save()
-    x.font = `italic 600 ${Math.round(12 * k * 4)}px "Alegreya Sans", Georgia, serif`
+    x.font = `italic 600 ${Math.max(10, Math.round(48 * k))}px "Alegreya Sans", Georgia, serif`
     x.fillStyle = css(sepia, 0.55)
     x.textAlign = 'center'
     x.fillText(z.name, (z.x + z.w / 2) * k, (z.y + z.h / 2) * k)
     x.restore()
   }
   // loose grass marks across the unclaimed wild
-  for (let i = 0; i < 700; i++) {
+  for (let i = 0; i < Math.round(700 * sparse); i++) {
     const wx = r.range(0, WORLD.width), wy = r.range(0, WORLD.height)
     if (ZONES.some(z => z.id !== 'hold' && wx > z.x && wx < z.x + z.w && wy > z.y && wy < z.y + z.h)) continue
     sym.grass(wx * k, wy * k)
