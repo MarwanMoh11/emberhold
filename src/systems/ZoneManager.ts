@@ -1,12 +1,15 @@
 import Phaser from 'phaser'
 import { ZONES, type ZoneId, type ZoneSpec } from '../config/map'
 import { WORLD } from '../config/balance'
-import { PAL, CSS } from '../config/palette'
+import { PAL } from '../config/palette'
 import { RESOURCE_ORDER } from '../core/types'
 import { clamp, short } from '../core/math'
 import { FogMemory } from '../core/FogMemory'
 import { buildVellumTexture } from '../world/Terrain'
 import type { GameScene } from '../scenes/GameScene'
+import { setColour, textStyle } from '../ui/theme'
+import { SkinPanel } from '../ui/skin'
+import { DPR } from '../core/device'
 
 /** World px per fog texel. */
 const FOG_SCALE = 4
@@ -32,6 +35,11 @@ const BANNER_RANGE = 460
 const GATED_BANNER_RANGE = 230
 /** Height of the flag planted on the claim ring; the frame clears it. */
 const POLE_H = 44
+/**
+ * The banner is something you read, so it sits above the lightmap with the
+ * rest of the world's labels. Under it, night dimmed the words you most need.
+ */
+const LABEL_DEPTH = 780_000
 
 interface ZoneView {
   spec: ZoneSpec
@@ -41,7 +49,9 @@ interface ZoneView {
   overlay: Phaser.GameObjects.Rectangle
   banner: Phaser.GameObjects.Container
   bg: Phaser.GameObjects.Graphics
+  frame: SkinPanel
   label: Phaser.GameObjects.Text
+  blurb: Phaser.GameObjects.Text
   cost: Phaser.GameObjects.Text
   post: Phaser.GameObjects.Graphics
   marker: Phaser.GameObjects.Graphics
@@ -145,26 +155,26 @@ export class ZoneManager {
     // onto. The frame above it is only a label.
     const marker = this.scene.add.graphics().setDepth(depth + 1).setVisible(false)
 
-    const banner = this.scene.add.container(cx, cy).setDepth(depth + 2)
-    // The frame is drawn in update() once the text has been measured: the name
-    // plus its blurb runs well past a fixed 248px box, and on a phone that box
-    // is most of the screen anyway.
+    const banner = this.scene.add.container(cx, cy).setDepth(LABEL_DEPTH)
+    // The frame is sized in update() once the text has been measured: the name
+    // plus its blurb runs well past a fixed box, and on a phone that box is
+    // most of the screen anyway.
     const bg = this.scene.add.graphics()
-    const label = this.scene.add.text(0, -50, spec.name.toUpperCase(), {
-      fontFamily: 'Verdana, Geneva, sans-serif', fontSize: '15px',
-      color: CSS(PAL.gold), fontStyle: 'bold', align: 'center',
-      wordWrap: { width: BANNER_W - 24 },
-    }).setOrigin(0.5, 0)
-    const cost = this.scene.add.text(0, -30, '', {
-      fontFamily: 'Verdana, Geneva, sans-serif', fontSize: '11px',
-      color: CSS(PAL.uiText), align: 'center',
-      wordWrap: { width: BANNER_W - 24 },
-    }).setOrigin(0.5, 0)
-    banner.add([bg, label, cost])
+    const frame = new SkinPanel(this.scene, 'hud')
+    const label = this.scene.add.text(0, -50, spec.name,
+      textStyle({ voice: 'display', size: 21, colour: PAL.gold, align: 'center', wrap: BANNER_W - 28, shadow: true }))
+      .setOrigin(0.5, 0)
+    const blurb = this.scene.add.text(0, -40, spec.blurb,
+      textStyle({ size: 13, weight: 'italic 500', colour: PAL.uiDim, align: 'center', wrap: BANNER_W - 28 }))
+      .setOrigin(0.5, 0)
+    const cost = this.scene.add.text(0, -30, '',
+      textStyle({ voice: 'caps', size: 13, weight: '800', colour: PAL.uiText, align: 'center', wrap: BANNER_W - 28 }))
+      .setOrigin(0.5, 0).setLineSpacing(2)
+    banner.add([bg, frame.img, label, blurb, cost])
     banner.setVisible(!unlocked)
 
     this.views.set(spec.id, {
-      spec, cx, cy, overlay, banner, bg, label, cost, post, marker, dwell: 0, unlocked,
+      spec, cx, cy, overlay, banner, bg, frame, label, blurb, cost, post, marker, dwell: 0, unlocked,
     })
   }
 
@@ -209,12 +219,14 @@ export class ZoneManager {
   /** Fit the frame inside the viewport, with a tether to the real claim ring. */
   private frameBanner(v: ZoneView) {
     const lh = v.label.height
+    const bh = v.blurb.height
     const ch = v.cost.height
     // The frame floats a flag's height above its anchor so it clears both the
     // pole and the ring drawn on the ground around it.
-    const top = -POLE_H - 46 - lh - ch
+    const top = -POLE_H - 50 - lh - bh - ch
     v.label.setPosition(0, top + 10)
-    v.cost.setPosition(0, top + 14 + lh)
+    v.blurb.setPosition(0, top + 10 + lh)
+    v.cost.setPosition(0, top + 18 + lh + bh)
     const h = -top - POLE_H + 4
 
     const cam = this.scene.cameras.main
@@ -222,9 +234,11 @@ export class ZoneManager {
     const bands = this.scene.uiBands
     // -top is the banner's height above its anchor, so this keeps the frame
     // itself clear of the HUD rather than just its foot.
-    const minY = view.y + bands.top / cam.zoom - top
-    const maxY = view.bottom - bands.bottom / cam.zoom
-    const side = BANNER_W / 2 + 12 / cam.zoom
+    // the bands are CSS pixels; the camera's zoom already carries the DPR
+    const px = DPR / cam.zoom
+    const minY = view.y + bands.top * px - top
+    const maxY = view.bottom - bands.bottom * px
+    const side = BANNER_W / 2 + 12 * px
     v.banner.x = Phaser.Math.Clamp(v.cx, view.left + side, view.right - side)
     v.banner.y = Phaser.Math.Clamp(v.cy, minY, Math.max(minY, maxY))
 
@@ -234,13 +248,10 @@ export class ZoneManager {
     const sideways = v.cx - v.banner.x
     const drop = v.cy - v.banner.y
     if (Math.hypot(sideways, drop) > 8) {
-      v.bg.lineStyle(2, PAL.gold, 0.4)
-      v.bg.lineBetween(0, -POLE_H, sideways, drop - 34)
+      v.bg.lineStyle(2, PAL.gilt, 0.55)
+      v.bg.lineBetween(0, top + h, sideways, drop - 34)
     }
-    v.bg.fillStyle(PAL.uiBg, 0.9)
-    v.bg.fillRoundedRect(-BANNER_W / 2, top, BANNER_W, h, 8)
-    v.bg.lineStyle(2, PAL.gold, 1)
-    v.bg.strokeRoundedRect(-BANNER_W / 2, top, BANNER_W, h, 8)
+    v.frame.place(-BANNER_W / 2, top, BANNER_W, h)
   }
 
   private drawBoundary(g: Phaser.GameObjects.Graphics, spec: ZoneSpec) {
@@ -309,7 +320,7 @@ export class ZoneManager {
       targets: v.overlay, alpha: 0, duration: 700, ease: 'Cubic.easeOut',
       onComplete: () => v.overlay.setVisible(false),
     })
-    this.scene.fx.popup(v.cx, v.cy - 70, `${v.spec.name.toUpperCase()} CLAIMED`, PAL.gold, 26)
+    this.scene.fx.popup(v.cx, v.cy - 70, `${v.spec.name} claimed`, PAL.gold, 26)
     this.scene.fx.ring(v.cx, v.cy, 340, PAL.gold, 0.9)
     this.scene.fx.flash(0xffe9b0, 0.22)
     this.scene.audio.play('quest', 0.8)
@@ -346,11 +357,10 @@ export class ZoneManager {
       const needHall = this.scene.buildings.townHallLevel < v.spec.requiresTownHall
       const costStr = RESOURCE_ORDER.filter(k => v.spec.cost[k])
         .map(k => `${short(v.spec.cost[k] ?? 0)} ${k}`).join('   ')
-      v.cost.setText(
-        needHall ? `COMMAND HALL LV.${v.spec.requiresTownHall} REQUIRED`
-          : `${costStr}\n${affordable ? 'STAND ON THE RING TO CLAIM' : 'not enough'}`,
-      ).setColor(affordable ? CSS(PAL.good) : needHall ? CSS(PAL.danger) : CSS(PAL.uiDim))
-      v.label.setText(`${v.spec.name.toUpperCase()}  ·  ${v.spec.blurb}`)
+      setColour(v.cost.setText(
+        needHall ? `Command Hall level ${v.spec.requiresTownHall} required`
+          : `${costStr}\n${affordable ? 'Stand on the ring to claim' : 'Not enough yet'}`,
+      ), affordable ? PAL.good : needHall ? PAL.danger : PAL.uiDim)
       this.frameBanner(v)
 
       const inside = d < CLAIM_RADIUS

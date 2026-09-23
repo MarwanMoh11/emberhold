@@ -13,30 +13,39 @@ import { Overlay } from '../ui/Overlay'
 import { PAL } from '../config/palette'
 import type { GameScene } from './GameScene'
 import { GamepadInput, type PadFrame } from '../core/GamepadInput'
+import { IS_TOUCH } from '../core/device'
+import { cssCamera } from '../ui/theme'
 
 class CoreLostOverlay extends Overlay {
+  private marks!: Phaser.GameObjects.Graphics
   private heading!: Phaser.GameObjects.Text
   private body!: Phaser.GameObjects.Text
   private btn: ReturnType<Overlay['button']>
 
   constructor(scene: Phaser.Scene, onRestart: () => void) {
     super(scene, 1_180_000)
-    this.heading = this.text(30, PAL.danger, true)
-    this.body = this.text(13, PAL.uiDim)
-    this.btn = this.button('RALLY AND REBUILD', onRestart, PAL.gold)
+    this.marks = this.gfx()
+    this.heading = this.text(34, PAL.danger, true)
+    this.body = this.text(14, PAL.uiDim)
+    this.body.setFontStyle('italic 500').setLineSpacing(3)
+    this.btn = this.button('Rally and rebuild', onRestart, 'primary', 17)
   }
 
   protected layout() {
-    const w = Math.min(420, this.W - 40)
-    const h = 220
+    const w = Math.min(440, this.W - 32)
+    const h = 236
     const x = this.W / 2 - w / 2
     const y = this.H / 2 - h / 2
-    this.drawCard(x, y, w, h, PAL.danger)
-    this.heading.setText('SETTLEMENT OVERRUN').setPosition(this.W / 2, y + 60)
+    this.drawCard(x, y, w, h, PAL.wax)
+    this.heading.setText('Settlement Overrun').setPosition(this.W / 2, y + 52)
+    this.fitText(this.heading, 34, w - 48)
+    this.marks.clear()
+    this.rule(this.marks, this.W / 2, y + 82, Math.min(220, w - 80))
     this.body.setText(
       'The Command Hall has fallen. Rally the survivors,\nrepair the hall, and face this night again.',
-    ).setPosition(this.W / 2, y + 108)
-    this.btn.place(this.W / 2, y + h - 52, w - 120, 42)
+    ).setPosition(this.W / 2, y + 122)
+    this.fitText(this.body, 14, w - 44)
+    this.btn.place(this.W / 2, y + h - 46, Math.min(280, w - 80), 44)
   }
 }
 
@@ -62,6 +71,7 @@ export class UIScene extends Phaser.Scene {
   constructor() { super('UI') }
 
   create(data: { game: GameScene }) {
+    cssCamera(this)
     this.gs = data.game
     this.stickWasActive = false
     this.padWasActive = false
@@ -102,8 +112,10 @@ export class UIScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-P', () => this.togglePause())
     this.input.keyboard?.on('keydown', () => this.gs.audio.unlock())
 
-    this.hud.hint('MOVE WITH WASD  ·  YOU ATTACK AUTOMATICALLY  ·  RUN OVER COINS')
-    this.time.delayedCall(9000, () => this.hud.hint('STAND ON A BUILD SITE TO POUR YOUR PACK INTO IT'))
+    this.hud.hint(IS_TOUCH
+      ? 'Drag to move  ·  you attack on your own  ·  run over coins'
+      : 'Move with WASD  ·  you attack on your own  ·  run over coins')
+    this.time.delayedCall(9000, () => this.hud.hint('Stand on a build site to pour your pack into it'))
 
     const pauseWhenHidden = () => {
       if (document.hidden && !this.anyModalOpen()) this.togglePause()
@@ -238,7 +250,7 @@ export class UIScene extends Phaser.Scene {
 
   private handleGamepad(pad: PadFrame) {
     if (pad.connected && !this.padConnected) {
-      this.hud.hint('CONTROLLER READY  ·  LEFT STICK MOVE  ·  RB DODGE  ·  START PAUSE')
+      this.hud.hint('Controller ready  ·  left stick moves  ·  RB dodges  ·  Start pauses')
     }
     this.padConnected = pad.connected
     const b = pad.pressed

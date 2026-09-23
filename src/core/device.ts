@@ -88,3 +88,24 @@ export function safeAreaInsets() {
     top: px('--sat'), right: px('--sar'), bottom: px('--sab'), left: px('--sal'),
   }
 }
+
+/**
+ * Device pixels per CSS pixel the game draws at.
+ *
+ * Phaser's RESIZE mode sized the canvas in CSS pixels, so on every phone and
+ * every retina laptop the browser stretched the whole frame 2–3x — the ink
+ * lines, the lettering and the painted chrome all went soft together. The game
+ * now renders at the device's own resolution, capped: 2x on a desktop, and
+ * 1.5x on a phone or a weak machine, where filling four times the pixels would
+ * cost frames the horde needs more.
+ *
+ * Layout never sees this. Every scene's camera maps CSS pixels onto the
+ * canvas, so a 44px button is still 44 CSS pixels; there are just more device
+ * pixels painting it.
+ */
+export const DPR: number = (() => {
+  if (typeof window === 'undefined') return 1
+  const d = window.devicePixelRatio || 1
+  const cap = PERF_TIER === 2 ? 2 : 1.5
+  return Math.max(1, Math.min(cap, d))
+})()

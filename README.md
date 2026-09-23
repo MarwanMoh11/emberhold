@@ -139,6 +139,16 @@ The target is a few hundred enemies at 60 fps, and the design follows from that.
   filled with the hour's ambient colour, every hearth, brazier, fire and ember
   is added into it as a soft brush on a 2D canvas, and the result is multiplied
   over the world. By day it is only a warm grade.
+- **The interface is painted, not drawn.** Every panel, plate, bar and seal is
+  painted once into a canvas texture by `src/ui/skin.ts`, cached by how it
+  looks and shared: a dozen buttons of one size are one texture, and hovering
+  one swaps textures rather than repainting. A health bar changing every frame
+  is a crop rectangle over a fill painted at full width.
+- **It renders at the screen's own resolution**, capped at 2x on a desktop and
+  1.5x on a phone or weaker machine (`DPR` in `core/device.ts`). The canvas is
+  sized in device pixels and each camera maps CSS pixels onto it, so layout,
+  touch targets and the HUD's numbers are all still in CSS pixels. The
+  lightmap stays at a quarter of the CSS resolution, so night costs no more.
 
 The F2 panel reports rolling 95th-percentile simulation and frame times. In
 the in-app preview, roughly 250 active enemies took **2.6 ms** for the game

@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { PAL } from '../config/palette'
+import { DPR } from '../core/device'
 import { css, makeCanvas, mix, type Ctx } from '../art/ink'
 import type { BuildingKey } from '../config/buildings'
 import type { GameScene } from '../scenes/GameScene'
@@ -125,7 +126,10 @@ export class LightingManager {
     const cam = s.cameras.main
     const z = cam.zoom
     const W = cam.width, H = cam.height
-    const lw = Math.ceil(W / LS) + 1, lh = Math.ceil(H / LS) + 1
+    // one lightmap texel per LS CSS pixels, whatever the canvas resolution:
+    // the light is soft by nature, and a DPR-sized map would cost 4x to paint
+    const ls = LS * DPR
+    const lw = Math.ceil(W / ls) + 1, lh = Math.ceil(H / ls) + 1
     if (lw !== this.w || lh !== this.h) {
       this.w = lw; this.h = lh
       this.tex.setSize(lw, lh)
@@ -133,7 +137,7 @@ export class LightingManager {
     }
     // A scroll-factor-0 object still scales about the camera centre, so undo
     // the zoom to pin the map to the screen's top-left corner.
-    this.img.setScale(LS / z).setPosition((W / 2) * (1 - 1 / z), (H / 2) * (1 - 1 / z))
+    this.img.setScale(ls / z).setPosition((W / 2) * (1 - 1 / z), (H / 2) * (1 - 1 / z))
 
     const x = this.ctx
     const d = s.waves.darkness
@@ -143,7 +147,7 @@ export class LightingManager {
     x.fillRect(0, 0, lw, lh)
 
     const view = cam.worldView
-    const k = z / LS
+    const k = z / ls
     x.globalCompositeOperation = 'lighter'
     const put = (wx: number, wy: number, r: number, c: number, a: number) => {
       if (a <= 0.01) return

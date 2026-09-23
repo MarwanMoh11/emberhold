@@ -12,16 +12,31 @@ import { GameScene } from './scenes/GameScene'
 import { UIScene } from './scenes/UIScene'
 import { PAL, CSS } from './config/palette'
 import { FONT_FACES } from './ui/theme'
+import { DPR } from './core/device'
+
+/**
+ * The canvas is sized in device pixels and shown at CSS size, so nothing is
+ * stretched by the browser: see DPR. RESIZE mode cannot do this — it always
+ * sizes the canvas in CSS pixels — so the sizing is done here by hand instead,
+ * from the parent's box.
+ */
+const deviceSize = () => {
+  const el = document.getElementById('app')
+  const w = Math.max(1, el?.clientWidth || window.innerWidth)
+  const h = Math.max(1, el?.clientHeight || window.innerHeight)
+  return { w: Math.round(w * DPR), h: Math.round(h * DPR) }
+}
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'app',
   backgroundColor: CSS(PAL.uiBg),
   scale: {
-    mode: Phaser.Scale.RESIZE,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: '100%',
-    height: '100%',
+    mode: Phaser.Scale.NONE,
+    autoCenter: Phaser.Scale.NO_CENTER,
+    width: 16,
+    height: 16,
+    zoom: 1 / DPR,
   },
   render: {
     antialias: true,
@@ -89,18 +104,24 @@ document.getElementById('boot-retry')?.addEventListener('click', () => location.
 
 function launch() {
   let game: Phaser.Game
+  const size = deviceSize()
+  const sized = { ...config, scale: { ...config.scale, width: size.w, height: size.h } }
   try {
-    game = new Phaser.Game(config)
+    game = new Phaser.Game(sized)
   } catch {
     // WebGL refused outright. Canvas is slower but it draws.
-    game = new Phaser.Game({ ...config, type: Phaser.CANVAS })
+    game = new Phaser.Game({ ...sized, type: Phaser.CANVAS })
   }
 
-  // Scale.RESIZE already tracks the window; only orientation flips on mobile
-  // need a nudge once the new viewport metrics have settled.
-  window.addEventListener('orientationchange', () => {
-    setTimeout(() => game.scale.refresh(), 150)
-  })
+  // Follow the parent's box. Orientation flips on mobile report their new
+  // metrics a beat late, so those get a second look once they have settled.
+  const fit = () => {
+    const s = deviceSize()
+    if (s.w !== game.scale.width || s.h !== game.scale.height) game.scale.resize(s.w, s.h)
+  }
+  window.addEventListener('resize', fit)
+  window.addEventListener('orientationchange', () => setTimeout(fit, 150))
+  if (typeof ResizeObserver === 'function' && parent) new ResizeObserver(fit).observe(parent)
 
   // handy for debugging from the console (and for the F2 panel's perf readout)
   ;(window as unknown as { emberhold: Phaser.Game }).emberhold = game

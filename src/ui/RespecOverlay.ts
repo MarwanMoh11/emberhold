@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { Overlay } from './Overlay'
-import { PAL, CSS } from '../config/palette'
+import { PAL } from '../config/palette'
+import { UPGRADE_ICON } from '../art/icons'
 import { UPGRADES } from '../config/upgrades'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { short } from '../core/math'
@@ -23,6 +24,8 @@ export class RespecOverlay extends Overlay {
   private costLabel!: Phaser.GameObjects.Text
   private panel!: Phaser.GameObjects.Graphics
   private picks: Phaser.GameObjects.Text[] = []
+  private pickIcons: Phaser.GameObjects.Image[] = []
+  private priceIcons: Phaser.GameObjects.Image[] = []
   private prices: Phaser.GameObjects.Text[] = []
   private confirmBtn!: ReturnType<Overlay['button']>
   private backBtn!: ReturnType<Overlay['button']>
@@ -36,14 +39,26 @@ export class RespecOverlay extends Overlay {
     if (this.built) return
     this.built = true
     this.panel = this.gfx()
-    this.heading = this.text(22, PAL.gold, true)
-    this.sub = this.text(11, PAL.uiDim)
-    this.empty = this.text(12, PAL.uiDim)
-    this.costLabel = this.text(10, PAL.uiDim)
-    for (let i = 0; i < UPGRADES.length; i++) this.picks.push(this.text(11, PAL.uiText, false, 0, 0.5))
-    for (let i = 0; i < RESOURCE_ORDER.length; i++) this.prices.push(this.text(13, PAL.uiText, true))
-    this.backBtn = this.button('BACK', () => this.scene.events.emit('closeScreen'), PAL.heroTrim, 13)
-    this.confirmBtn = this.button('RESPEC', () => this.confirm(), PAL.gold, 13)
+    this.heading = this.text(26, PAL.uiText, true)
+    this.sub = this.text(12, PAL.uiDim)
+    this.sub.setFontStyle('italic 500')
+    this.empty = this.text(13, PAL.uiDim)
+    this.empty.setFontStyle('italic 500')
+    this.costLabel = this.text(11, PAL.uiDim, true, 0.5, 0.5, 'caps')
+    for (let i = 0; i < UPGRADES.length; i++) {
+      const icon = this.scene.add.image(0, 0, 'ico_blade').setScrollFactor(0)
+      this.root.add(icon)
+      this.pickIcons.push(icon)
+      this.picks.push(this.text(12, PAL.uiText, false, 0, 0.5))
+    }
+    for (let i = 0; i < RESOURCE_ORDER.length; i++) {
+      const icon = this.scene.add.image(0, 0, 'res_coins').setScrollFactor(0)
+      this.root.add(icon)
+      this.priceIcons.push(icon)
+      this.prices.push(this.text(14, PAL.uiText, true, 0, 0.5))
+    }
+    this.backBtn = this.button('Back', () => this.scene.events.emit('closeScreen'), 'plain', 14)
+    this.confirmBtn = this.button('Respec', () => this.confirm(), 'danger', 14)
   }
 
   show() { this.ensure(); this.confirming = false; super.show() }
@@ -79,29 +94,29 @@ export class RespecOverlay extends Overlay {
 
     const cols = c ? 3 : 2
     const perCol = Math.max(1, Math.ceil(Math.max(taken.length, 1) / cols))
-    const w = Math.min(c ? 600 : 440, this.W - 28)
-    const headH = c ? 52 : 70
-    const rowH = c ? 18 : 20
-    const costH = c ? 44 : 56
-    const footH = c ? 42 : 54
-    const h = Math.min(this.H - 20, headH + perCol * rowH + costH + footH)
+    const w = Math.min(c ? 620 : 460, this.W - 24)
+    const headH = c ? 58 : 84
+    const rowH = c ? 20 : 24
+    const costH = c ? 48 : 64
+    const footH = c ? 46 : 60
+    const h = Math.min(this.H - 16, headH + perCol * rowH + costH + footH)
     const x = this.W / 2 - w / 2
     const y = this.H / 2 - h / 2
     const cx = this.W / 2
-    this.drawCard(x, y, w, h, PAL.gold)
+    this.drawCard(x, y, w, h, PAL.wax)
 
-    this.heading.setText('RESPEC').setPosition(cx, y + (c ? 24 : 32))
-    this.fitText(this.heading, c ? 18 : 22, w - 36)
+    this.heading.setText('Respec').setPosition(cx, y + (c ? 25 : 36))
+    this.fitText(this.heading, c ? 22 : 28, w - 44)
     this.sub
       .setText(n > 0
         ? `Unmake all ${n} boons and choose every one again`
         : 'Nothing to unmake yet — boons come from levelling')
-      .setPosition(cx, y + (c ? 40 : 52))
-    this.fitText(this.sub, c ? 10 : 11, w - 28)
+      .setPosition(cx, y + (c ? 44 : 60))
+    this.fitText(this.sub, c ? 11 : 13, w - 40)
 
     // ---- what you would be giving back ----------------------------------
-    const padX = c ? 16 : 24
-    const gap = 12
+    const padX = c ? 22 : 30
+    const gap = 14
     const colW = (w - padX * 2 - gap * (cols - 1)) / cols
     const top = y + headH
     const avail = h - headH - costH - footH
@@ -110,41 +125,48 @@ export class RespecOverlay extends Overlay {
     this.panel.clear()
     this.empty.setVisible(taken.length === 0)
     if (taken.length === 0) {
-      this.empty.setFontSize(c ? 11 : 12).setText('No boons taken.').setPosition(cx, top + avail / 2)
+      this.empty.setFontSize(c ? 12 : 13).setText('No boons taken.').setPosition(cx, top + avail / 2)
     }
     for (let i = 0; i < this.picks.length; i++) {
       const t = this.picks[i]
+      const icon = this.pickIcons[i]
       const def = taken[i]
       t.setVisible(!!def)
+      icon.setVisible(!!def)
       if (!def) continue
       const col = Math.floor(i / perCol)
       const bx = x + padX + col * (colW + gap)
       const by = top + (i % perCol) * pitch + pitch / 2
-      this.panel.fillStyle(def.colour, 0.9)
-      this.panel.fillRect(bx, by - 3, 3, 6)
-      t.setFontSize(pitch < 17 ? 9 : c ? 10 : 11)
+      const is = Math.min(20, pitch - 2)
+      icon.setTexture(UPGRADE_ICON[def.id]).setDisplaySize(is, is).setPosition(bx + is / 2, by)
+      t.setFontSize(pitch < 19 ? 10 : c ? 11 : 13)
         .setText(`${def.name}  ×${lv.stacks(def.id)}`)
-        .setColor(CSS(PAL.uiText)).setAlpha(0.85)
-        .setPosition(bx + 9, by)
+        .setPosition(bx + is + 7, by)
     }
 
     // ---- the bill --------------------------------------------------------
     // Measured down from the top of its own band, so the label always keeps
     // clear of the last row of picks however few picks there are.
     const costTop = y + h - footH - costH
-    const costY = costTop + (c ? 27 : 34)
-    this.costLabel.setFontSize(c ? 9 : 10)
-      .setText(n > 0 ? 'THE SMITHS WANT' : '')
-      .setPosition(cx, costTop + (c ? 11 : 14))
+    this.panel.lineStyle(1, 0x3a2616, 0.3)
+    this.panel.lineBetween(x + padX, costTop + 2, x + w - padX, costTop + 2)
+    const costY = costTop + (c ? 30 : 40)
+    this.costLabel.setFontSize(c ? 10 : 12)
+      .setText(n > 0 ? 'The smiths want' : '')
+      .setPosition(cx, costTop + (c ? 13 : 17))
 
     const shown: ResourceType[] = RESOURCE_ORDER.filter(k => (cost[k] ?? 0) > 0)
-    for (let i = shown.length; i < this.prices.length; i++) this.prices[i].setVisible(false)
+    for (let i = shown.length; i < this.prices.length; i++) {
+      this.prices[i].setVisible(false)
+      this.priceIcons[i].setVisible(false)
+    }
 
     // A deep rebuild bills in five currencies at once, which is a long line on
     // a phone: measure the whole row and shrink it until it fits the card.
-    const spacing = c ? 12 : 18
+    const spacing = c ? 14 : 20
+    const iconW = c ? 16 : 20
     const widths: number[] = []
-    let size = c ? 11 : 13
+    let size = c ? 12 : 15
     let rowW = 0
     for (;;) {
       widths.length = 0
@@ -152,27 +174,29 @@ export class RespecOverlay extends Overlay {
       for (let i = 0; i < shown.length; i++) {
         const k = shown[i]
         const t = this.prices[i].setVisible(true).setFontSize(size)
-        t.setText(`${short(cost[k] ?? 0)} ${k}`)
-          .setColor(CSS(this.game.res.available(k) >= (cost[k] ?? 0) ? PAL[k] : PAL.danger))
-        widths.push(t.width)
-        rowW += t.width
+        t.setText(short(cost[k] ?? 0))
+        this.ink(t, this.game.res.available(k) >= (cost[k] ?? 0) ? PAL.uiText : PAL.danger)
+        widths.push(iconW + 4 + t.width)
+        rowW += iconW + 4 + t.width
       }
-      if (rowW <= w - 28 || size <= 8) break
+      if (rowW <= w - 40 || size <= 8) break
       size--
     }
     let px = cx - rowW / 2
     for (let i = 0; i < shown.length; i++) {
-      this.prices[i].setPosition(px + widths[i] / 2, costY)
+      this.priceIcons[i].setVisible(true).setTexture(`ui_res_${shown[i]}`)
+        .setDisplaySize(iconW, iconW).setPosition(px + iconW / 2, costY)
+      this.prices[i].setPosition(px + iconW + 4, costY)
       px += widths[i] + spacing
     }
 
     // ---- buttons ---------------------------------------------------------
     const bw = Math.min(200, (w - padX * 2 - 12) / 2)
-    const by = y + h - (c ? 20 : 28)
+    const by = y + h - (c ? 23 : 33)
     const bh = c ? 28 : 36
     this.backBtn.place(cx - bw / 2 - 6, by, bw, bh)
     this.confirmBtn.setLabel(
-      this.confirming ? 'TAP AGAIN' : n === 0 ? 'NO BOONS' : affordable ? `RESPEC — ${n} BACK` : 'CANNOT AFFORD',
+      this.confirming ? 'Tap again' : n === 0 ? 'No boons' : affordable ? `Respec — ${n} back` : 'Cannot afford',
     )
     this.confirmBtn.place(cx + bw / 2 + 6, by, bw, bh)
     this.confirmBtn.setEnabled(affordable)

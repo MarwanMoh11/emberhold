@@ -3,6 +3,7 @@ import { PAL, CSS } from '../config/palette'
 import { COMBAT } from '../config/balance'
 import { rr, ri, short } from '../core/math'
 import { FONT, TEXT_INK, titleCase } from '../ui/theme'
+import { DPR } from '../core/device'
 
 interface FloatText {
   active: boolean
@@ -46,6 +47,7 @@ export class EffectsManager {
         fontFamily: FONT.ui, fontStyle: '800',
         fontSize: '15px', color: '#ffffff',
         stroke: TEXT_INK, strokeThickness: 4,
+        resolution: DPR,
       }).setOrigin(0.5).setVisible(false)
       this.layer.add(txt)
       this.texts.push({ active: false, txt, vx: 0, vy: 0, life: 0, maxLife: 1 })

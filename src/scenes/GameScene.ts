@@ -29,6 +29,7 @@ import { LevelSystem } from '../systems/LevelSystem'
 import { QuestManager } from '../systems/QuestManager'
 import { SaveManager, type Settings } from '../systems/SaveManager'
 import { LightingManager } from '../systems/LightingManager'
+import { DPR } from '../core/device'
 
 export const DEPTH = {
   terrain: -100_000,
@@ -166,7 +167,9 @@ export class GameScene extends Phaser.Scene {
 
     const cam = this.cameras.main
     cam.startFollow(this.player.container, true, CAMERA.lerp, CAMERA.lerp)
-    cam.setZoom(CAMERA.baseZoom)
+    // Zoom is in device pixels per world unit: the canvas is DPR times the
+    // CSS size, so the world zooms by the same factor to look the same size.
+    cam.setZoom(CAMERA.baseZoom * DPR)
 
     if (data.load) {
       const ok = this.saves.load()
@@ -479,8 +482,8 @@ export class GameScene extends Phaser.Scene {
     const want = crowd > CAMERA.zoomOutAt
       ? Math.max(CAMERA.minZoom, CAMERA.baseZoom - (crowd - CAMERA.zoomOutAt) / 420)
       : CAMERA.baseZoom
-    const fit = Math.min(1.25, Math.max(0.72, Math.min(cam.width / 900, cam.height / 560)))
-    this.zoomTarget = want * fit
+    const fit = Math.min(1.25, Math.max(0.72, Math.min(cam.width / DPR / 900, cam.height / DPR / 560)))
+    this.zoomTarget = want * fit * DPR
     cam.setZoom(cam.zoom + (this.zoomTarget - cam.zoom) * Math.min(1, dt * 1.4))
 
     // look ahead in the direction of travel
@@ -534,8 +537,12 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // A scroll-factor-0 image still scales about the camera centre by its zoom,
+    // so the offset from the centre is divided back out: the marker lands
+    // `pad` CSS pixels in from the edge whatever the zoom or DPR.
     const cx = cam.width / 2, cy = cam.height / 2
-    const pad = 38
+    const pad = 38 * DPR
+    const z = cam.zoom
     for (const c of consider) {
       if (i >= this.edgeMarkers.length) break
       const m = this.edgeMarkers[i++]
@@ -543,7 +550,7 @@ export class GameScene extends Phaser.Scene {
       const rx = cx - pad, ry = cy - pad
       const t = Math.min(Math.abs(rx / Math.cos(ang)), Math.abs(ry / Math.sin(ang)))
       m.setVisible(true)
-        .setPosition(cx + Math.cos(ang) * t, cy + Math.sin(ang) * t)
+        .setPosition(cx + (Math.cos(ang) * t) / z, cy + (Math.sin(ang) * t) / z)
         .setRotation(ang + Math.PI / 2)
         .setTint(c.tint).setScale(c.scale)
         .setAlpha(0.6 + Math.sin(this.now * 0.008) * 0.3)

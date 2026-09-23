@@ -1,5 +1,6 @@
 import type Phaser from 'phaser'
 import { PAL, CSS } from '../config/palette'
+import { DPR } from '../core/device'
 
 /**
  * Typography and text styling, in one place.
@@ -53,6 +54,9 @@ export function textStyle(o: TextOpts): Phaser.Types.GameObjects.Text.TextStyle 
     color: CSS(o.colour ?? PAL.uiText),
     fontStyle: o.weight ?? (voice === 'display' ? '800' : '700'),
     align: o.align ?? 'left',
+    // rasterised at the device's resolution, or the letters are the one soft
+    // thing left on a sharp screen
+    resolution: DPR,
   }
   if (o.stroke) {
     style.stroke = TEXT_INK
@@ -77,4 +81,44 @@ export function titleCase(s: string) {
     const w = raw.toLowerCase()
     return i > 0 && small.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)
   }).join(' ')
+}
+
+/**
+ * Recolour a text only when the colour actually changes. Phaser re-renders a
+ * Text's whole canvas on every `setColor`, even to the colour it already has,
+ * and the HUD sets colours every frame.
+ */
+export function setColour(t: Phaser.GameObjects.Text, c: number) {
+  const s = CSS(c)
+  if (t.style.color !== s) t.setColor(s)
+  return t
+}
+
+const fitted = new WeakMap<Phaser.GameObjects.Text, string>()
+
+/**
+ * Shrink a line until it fits `maxW`, starting from `size`. Remembered per
+ * text, so calling it every frame costs nothing until the words change —
+ * every step of the shrink is a full measure and re-render in Phaser.
+ */
+export function fitWidth(t: Phaser.GameObjects.Text, size: number, maxW: number, min = 9) {
+  const sig = `${t.text}|${size}|${Math.round(maxW)}`
+  if (fitted.get(t) === sig) return t
+  fitted.set(t, sig)
+  t.setFontSize(size)
+  while (t.width > maxW && size > min) { size--; t.setFontSize(size) }
+  return t
+}
+
+/**
+ * The screen in CSS pixels. The canvas is DPR times larger; every layout in
+ * the interface is done in these units and the camera does the rest.
+ */
+export function screen(scene: Phaser.Scene) {
+  return { w: scene.scale.width / DPR, h: scene.scale.height / DPR }
+}
+
+/** Point a screen-space scene's camera at CSS pixels: see DPR. */
+export function cssCamera(scene: Phaser.Scene) {
+  scene.cameras.main.setOrigin(0, 0).setZoom(DPR)
 }

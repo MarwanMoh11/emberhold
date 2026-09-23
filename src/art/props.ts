@@ -260,6 +260,13 @@ export function buildPropTextures(scene: Phaser.Scene) {
   const pickup = (key: string, colour: number, shape: PickupShape) => {
     const S = 24, c = S / 2
     bake(scene, key, S, S, { body: x => pickupBody(x, c, colour, shape), outline: 1.4, grain: 0.06 })
+    // The HUD shows these at icon size on a screen twice or three times as
+    // dense as the world's art, so it gets its own copy painted at 3x.
+    const U = 3
+    bake(scene, `ui_${key}`, S * U, S * U, {
+      body: x => { x.save(); x.scale(U, U); pickupBody(x, c, colour, shape); x.restore() },
+      outline: 1.4 * U, grain: 0.06,
+    })
   }
   pickup('res_coins', PAL.coins, 'coin')
   pickup('res_wood', PAL.wood, 'log')

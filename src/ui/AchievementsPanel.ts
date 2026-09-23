@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { Overlay } from './Overlay'
-import { PAL, CSS } from '../config/palette'
+import { PAD, sealTexture } from './skin'
+import { PAL } from '../config/palette'
 import { ACHIEVEMENTS } from '../config/quests'
 import { short } from '../core/math'
 import type { GameScene } from '../scenes/GameScene'
@@ -9,6 +10,8 @@ interface Row {
   name: Phaser.GameObjects.Text
   desc: Phaser.GameObjects.Text
   score: Phaser.GameObjects.Text
+  seal: Phaser.GameObjects.Image
+  icon: Phaser.GameObjects.Image
 }
 
 /**
@@ -33,16 +36,20 @@ export class AchievementsPanel extends Overlay {
     if (this.built) return
     this.built = true
     this.bars = this.gfx()
-    this.heading = this.text(22, PAL.gold, true)
-    this.sub = this.text(11, PAL.uiDim)
+    this.heading = this.text(26, PAL.uiText, true)
+    this.sub = this.text(12, PAL.uiDim)
+    this.sub.setFontStyle('italic 500')
     for (let i = 0; i < ACHIEVEMENTS.length; i++) {
       this.rows.push({
-        name: this.text(13, PAL.uiText, true, 0, 0.5),
-        desc: this.text(10, PAL.uiDim, false, 0, 0.5),
-        score: this.text(10, PAL.uiDim, false, 1, 0.5),
+        name: this.text(15, PAL.uiText, true, 0, 0.5),
+        desc: this.text(11, PAL.uiDim, false, 0, 0.5),
+        score: this.text(11, PAL.uiDim, true, 1, 0.5, 'caps'),
+        seal: this.scene.add.image(0, 0, '__WHITE').setScrollFactor(0),
+        icon: this.scene.add.image(0, 0, 'ico_crown').setScrollFactor(0),
       })
     }
-    this.btn = this.button('BACK', () => this.scene.events.emit('closeScreen'), PAL.heroTrim)
+    for (const r of this.rows) this.root.add([r.seal, r.icon])
+    this.btn = this.button('Back', () => this.scene.events.emit('closeScreen'), 'plain')
   }
 
   show() { this.ensure(); super.show() }
@@ -53,35 +60,36 @@ export class AchievementsPanel extends Overlay {
     // Two columns whenever the window is wide and not tall enough for eight
     // stacked rows — which covers a landscape phone and a squat desktop window
     // with the same rule.
-    const cols = this.W >= 640 && this.H < 620 ? 2 : 1
+    const cols = this.W >= 640 && this.H < 680 ? 2 : 1
     const perCol = Math.ceil(ACHIEVEMENTS.length / cols)
 
-    const w = Math.min(cols === 2 ? 700 : 440, this.W - 28)
-    const headH = c ? 52 : 74
-    const footH = c ? 44 : 56
-    const rowH = c ? 48 : 52
-    const h = Math.min(this.H - 20, headH + perCol * rowH + footH)
+    const w = Math.min(cols === 2 ? 720 : 460, this.W - 24)
+    const headH = c ? 58 : 86
+    const footH = c ? 46 : 62
+    const rowH = c ? 48 : 56
+    const h = Math.min(this.H - 16, headH + perCol * rowH + footH)
     const x = this.W / 2 - w / 2
     const y = this.H / 2 - h / 2
     const cx = this.W / 2
-    this.drawCard(x, y, w, h, PAL.gold)
+    this.drawCard(x, y, w, h, PAL.gilt)
 
     const unlocked = this.game.quests.unlockedAchievements
-    this.heading.setText('DEEDS').setPosition(cx, y + (c ? 24 : 34))
-    this.fitText(this.heading, c ? 18 : 22, w - 36)
+    this.heading.setText('Deeds').setPosition(cx, y + (c ? 25 : 36))
+    this.fitText(this.heading, c ? 22 : 28, w - 44)
     this.sub.setText(`${unlocked.size} of ${ACHIEVEMENTS.length} earned`)
-      .setPosition(cx, y + (c ? 42 : 56))
-    this.fitText(this.sub, c ? 10 : 11, w - 28)
+      .setPosition(cx, y + (c ? 44 : 60))
+    this.fitText(this.sub, c ? 11 : 13, w - 40)
 
     const stats = this.game.quests.achievementStats()
-    const padX = c ? 18 : 24
-    const gap = 12
+    const padX = c ? 22 : 28
+    const gap = 14
     const colW = (w - padX * 2 - gap * (cols - 1)) / cols
     const top = y + headH
     const avail = h - headH - footH
     const pitch = Math.min(rowH, avail / perCol)
 
     this.bars.clear()
+    if (!c) this.rule(this.bars, cx, top - 10, Math.min(240, w - 80), PAL.gilt)
     for (let i = 0; i < this.rows.length; i++) {
       const a = ACHIEVEMENTS[i]
       const r = this.rows[i]
@@ -94,32 +102,46 @@ export class AchievementsPanel extends Overlay {
       const have = stats[a.stat] ?? 0
       const frac = Math.max(0, Math.min(1, have / a.amount))
 
-      this.bars.fillStyle(got ? PAL.gold : PAL.uiBg, got ? 0.12 : 0.5)
-      this.bars.fillRoundedRect(bx, by, colW, rh, 7)
-      this.bars.lineStyle(1, got ? PAL.gold : PAL.uiEdge, got ? 0.8 : 0.5)
-      this.bars.strokeRoundedRect(bx, by, colW, rh, 7)
+      // an earned deed is washed in gilt; an open one is only ruled off
+      if (got) {
+        this.bars.fillStyle(0xd9a53a, 0.22)
+        this.bars.fillRoundedRect(bx, by, colW, rh, 4)
+      }
+      this.bars.lineStyle(1, 0x3a2616, got ? 0.5 : 0.28)
+      this.bars.strokeRoundedRect(bx, by, colW, rh, 4)
+
+      // a seal on the left: gilt and crowned once earned, blank wax until then
+      const sr = Math.min(16, rh / 2 - 4)
+      const sx = bx + 8 + sr
+      const sy = by + rh / 2
+      r.seal.setTexture(sealTexture(this.scene, got ? PAL.gilt : 0x8a7a68, got, 20)).setPosition(sx, sy)
+        .setDisplaySize((sr + PAD * sr / 20) * 2, (sr + PAD * sr / 20) * 2)
+      r.icon.setPosition(sx, sy).setDisplaySize(sr * 1.25, sr * 1.25).setAlpha(got ? 1 : 0.35)
+      const tx = sx + sr + 10
 
       // progress rail along the bottom of the row
-      const railY = by + rh - 6
-      const railW = colW - 22
-      this.bars.fillStyle(PAL.uiBg, 0.9)
-      this.bars.fillRect(bx + 11, railY, railW, 3)
-      this.bars.fillStyle(got ? PAL.gold : PAL.good, got ? 1 : 0.85)
-      this.bars.fillRect(bx + 11, railY, railW * frac, 3)
+      const railX = tx
+      const railW = bx + colW - 12 - railX
+      const railY = by + rh - (c ? 8 : 10)
+      this.bars.fillStyle(0x3a2616, 0.18)
+      this.bars.fillRect(railX, railY, railW, 3)
+      this.bars.fillStyle(got ? 0x94580e : 0x3d6a24, got ? 0.9 : 0.85)
+      this.bars.fillRect(railX, railY, railW * frac, 3)
 
-      r.name.setFontSize(c ? 12 : 13)
-        .setText(got ? `✦ ${a.title}` : a.title)
-        .setColor(CSS(got ? PAL.gold : PAL.uiText))
-        .setAlpha(got ? 1 : 0.75)
-        .setPosition(bx + 11, by + (c ? 13 : 15))
-      r.desc.setFontSize(c ? 9 : 10).setText(a.desc)
-        .setPosition(bx + 11, by + (c ? 27 : 31))
-      r.score.setFontSize(c ? 9 : 10)
-        .setText(got ? 'EARNED' : `${short(have)} / ${short(a.amount)}`)
-        .setColor(CSS(got ? PAL.gold : PAL.uiDim))
-        .setPosition(bx + colW - 11, by + (c ? 13 : 15))
+      r.name.setFontSize(c ? 13 : 16)
+        .setText(a.title)
+        .setAlpha(got ? 1 : 0.8)
+        .setPosition(tx, by + (c ? 12 : 15))
+      this.ink(r.name, got ? PAL.gold : PAL.uiText)
+      r.desc.setFontSize(c ? 10 : 12).setText(a.desc)
+        .setPosition(tx, by + (c ? 26 : 32))
+      this.fitText(r.desc, c ? 10 : 12, railW, 8)
+      r.score.setFontSize(c ? 10 : 12)
+        .setText(got ? 'Earned' : `${short(have)} / ${short(a.amount)}`)
+        .setPosition(bx + colW - 10, by + (c ? 12 : 15))
+      this.ink(r.score, got ? PAL.gold : PAL.uiDim)
     }
 
-    this.btn.place(cx, y + h - (c ? 20 : 28), Math.min(240, w - 80), c ? 28 : 36)
+    this.btn.place(cx, y + h - (c ? 23 : 33), Math.min(220, w - 80), c ? 28 : 36)
   }
 }

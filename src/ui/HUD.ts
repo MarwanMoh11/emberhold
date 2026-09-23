@@ -1,79 +1,116 @@
 import Phaser from 'phaser'
-import { PAL, CSS } from '../config/palette'
+import { PAL } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { ABILITIES, ABILITY_KEYS, ABILITY_SLOTS } from '../config/abilities'
 import { PLAYER } from '../config/balance'
 import { clamp, short } from '../core/math'
-import { safeAreaInsets, wantsTouchTargets } from '../core/device'
+import { DPR, IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
+import { ABILITY_ICON } from '../art/icons'
 import type { GameScene } from '../scenes/GameScene'
+import { fitWidth, screen, setColour, textStyle, titleCase } from './theme'
+import { medalTexture, ON_PAGE, PlateButton, sealTexture, SkinBar, SkinPanel, vignetteTexture } from './skin'
 
-const FONT = 'Verdana, Geneva, sans-serif'
+/**
+ * The objective needs at least this much room between the hero plate and the
+ * resources; with less, it drops to its own row underneath them instead.
+ */
+const OBJ_MIN = 236
 
-/** Below this width the HUD stacks instead of spreading across three columns. */
-const NARROW = 520
+/** Height of the hero plate, top left. The minimap clears it by this number. */
+export const HERO_PLATE_H = 54
+
+const D = {
+  panel: 1_000_000,
+  bar: 1_000_002,
+  seal: 1_000_003,
+  text: 1_000_005,
+  toast: 1_000_011,
+  death: 1_000_012,
+}
 
 interface ResRow {
   icon: Phaser.GameObjects.Image
   text: Phaser.GameObjects.Text
   rate: Phaser.GameObjects.Text
   type: ResourceType
+  last: number
+  pulse: number
 }
 
 interface AbilityBtn {
   index: number
-  ring: Phaser.GameObjects.Graphics
-  glyph: Phaser.GameObjects.Text
+  seal: Phaser.GameObjects.Image
+  icon: Phaser.GameObjects.Image
+  sweep: Phaser.GameObjects.Graphics
+  count: Phaser.GameObjects.Text
   key: Phaser.GameObjects.Text
   zone: Phaser.GameObjects.Zone
   x: number
   y: number
   r: number
+  wasReady: boolean
+  sweeping: boolean
 }
 
-/** A labelled rectangular control: pause, army stance. */
-interface Chip {
-  label: Phaser.GameObjects.Text
-  key: Phaser.GameObjects.Text
-  zone: Phaser.GameObjects.Zone
-  hover: boolean
-  x: number
-  y: number
-  w: number
-  h: number
-}
+/** Keyboard names as they read in small caps: Space, not SPACE. */
+const keyName = (k: string) => (k.length > 1 ? k.charAt(0) + k.slice(1).toLowerCase() : k)
 
 /**
  * Fixed HUD. Everything is positioned from the four corners in `layout()` so
  * the same code serves a phone in landscape and a desktop window.
+ *
+ * Everything that sits over the world is walnut lacquer with a gilt rule, and
+ * dark on purpose: the painting stays the brightest thing on screen, and the
+ * few colours the HUD does use — health, the gilt of reward, the vermilion of
+ * danger — are the only colour on the chrome, so they are what the eye finds.
  */
 export class HUD {
-  private g: Phaser.GameObjects.Graphics
-  private gTop: Phaser.GameObjects.Graphics
-  private deathCard: Phaser.GameObjects.Graphics
+  private heroPanel: SkinPanel
+  private medal: Phaser.GameObjects.Image
+  private lvlText: Phaser.GameObjects.Text
+  private hpBar: SkinBar
+  private hpText: Phaser.GameObjects.Text
+  private xpBar: SkinBar
 
-  private hpText!: Phaser.GameObjects.Text
-  private lvlText!: Phaser.GameObjects.Text
-  private objTitle!: Phaser.GameObjects.Text
-  private objHint!: Phaser.GameObjects.Text
-  private phaseText!: Phaser.GameObjects.Text
-  private bossText!: Phaser.GameObjects.Text
-  private popText!: Phaser.GameObjects.Text
-  private carryText!: Phaser.GameObjects.Text
-  private comboText!: Phaser.GameObjects.Text
-  private toastText!: Phaser.GameObjects.Text
-  private statsText!: Phaser.GameObjects.Text
-  private hintText!: Phaser.GameObjects.Text
-  private deathTitle!: Phaser.GameObjects.Text
-  private deathHint!: Phaser.GameObjects.Text
+  private objPanel: SkinPanel
+  private objTitle: Phaser.GameObjects.Text
+  private objHint: Phaser.GameObjects.Text
+  private objBar: SkinBar
+  private phaseIcon: Phaser.GameObjects.Image
+  private phaseText: Phaser.GameObjects.Text
+
+  private bossPanel: SkinPanel
+  private bossText: Phaser.GameObjects.Text
+  private bossBar: SkinBar
+
+  private resPanel: SkinPanel
+  private popIcon: Phaser.GameObjects.Image
+  private popText: Phaser.GameObjects.Text
+  private packIcon: Phaser.GameObjects.Image
+  private carryText: Phaser.GameObjects.Text
+  private packBar: SkinBar
+  private outputText: Phaser.GameObjects.Text
+
+  private hintPanel: SkinPanel
+  private hintText: Phaser.GameObjects.Text
+  private toastRibbon: SkinPanel
+  private toastText: Phaser.GameObjects.Text
+  private comboText: Phaser.GameObjects.Text
+  private statsText: Phaser.GameObjects.Text
+  private lowHp: Phaser.GameObjects.Image
+
+  private deathPanel: SkinPanel
+  private deathTitle: Phaser.GameObjects.Text
+  private deathHint: Phaser.GameObjects.Text
 
   private rows: ResRow[] = []
   private buttons: AbilityBtn[] = []
   private ultBtn!: AbilityBtn
   private dodgeBtn!: AbilityBtn
-  private pauseChip!: Chip
-  private holdChip!: Chip
-  /** Bottom of the top-left cluster: health bar plus the two chips under it. */
-  private leftStackH = 46
+  private pauseChip!: PlateButton
+  private holdChip!: PlateButton
+  /** Bottom of the top-left cluster: health plate plus the two chips under it. */
+  private leftStackH = HERO_PLATE_H
 
   private W = 0
   private H = 0
@@ -85,44 +122,72 @@ export class HUD {
   private hintT = 0
   private lastCarryHint = -9999
   private flashCarry = 0
+  private lastCombo = 0
+  private hintSig = ''
 
   showStats = false
   /** True while a modal owns the screen: every HUD tap target goes dead. */
   blocked = false
 
   constructor(private ui: Phaser.Scene, private game: GameScene) {
-    this.g = ui.add.graphics().setScrollFactor(0).setDepth(1_000_000)
-    this.gTop = ui.add.graphics().setScrollFactor(0).setDepth(1_000_004)
-    this.deathCard = ui.add.graphics().setScrollFactor(0).setDepth(1_000_006)
+    const t = (o: Parameters<typeof textStyle>[0], ox = 0.5, oy = 0.5) =>
+      ui.add.text(0, 0, '', textStyle(o)).setOrigin(ox, oy).setScrollFactor(0).setDepth(D.text)
+    const panel = (skin: 'hud' | 'page' | 'ribbon', depth = D.panel) =>
+      new SkinPanel(ui, skin).setScrollFactor(0).setDepth(depth)
+    const bar = (colour: number, ghost = false) =>
+      new SkinBar(ui, colour, { ghost }).setScrollFactor(0).setDepth(D.bar)
 
-    const t = (size: number, colour: number, bold = false) =>
-      ui.add.text(0, 0, '', {
-        fontFamily: FONT, fontSize: `${size}px`, color: CSS(colour),
-        fontStyle: bold ? 'bold' : 'normal', stroke: '#050a12', strokeThickness: 3,
-      }).setScrollFactor(0).setDepth(1_000_005)
+    // ---- hero plate --------------------------------------------------------
+    this.heroPanel = panel('hud')
+    this.hpBar = bar(PAL.good, true)
+    this.xpBar = bar(PAL.xp)
+    this.medal = ui.add.image(0, 0, medalTexture(ui, 22)).setScrollFactor(0).setDepth(D.seal).setScale(1 / DPR)
+    this.lvlText = t({ voice: 'display', size: 20, colour: PAL.bone, stroke: 3 })
+    this.hpText = t({ size: 12, weight: '800', colour: PAL.uiText, stroke: 3 })
 
-    this.hpText = t(12, PAL.uiText, true)
-    this.lvlText = t(13, PAL.gold, true)
-    this.objTitle = t(15, PAL.uiText, true).setOrigin(0.5, 0)
-    this.objHint = t(12, PAL.gold).setOrigin(0.5, 0)
-    this.phaseText = t(13, PAL.uiText, true).setOrigin(0.5, 0)
-    this.bossText = t(14, PAL.danger, true).setOrigin(0.5, 0)
-    this.popText = t(12, PAL.uiText, true).setOrigin(1, 0)
-    this.carryText = t(12, PAL.uiText, true).setOrigin(1, 0)
-    this.comboText = t(22, PAL.gold, true).setOrigin(0.5, 0.5)
-    this.toastText = t(16, PAL.gold, true).setOrigin(0.5, 0)
-    this.statsText = t(10, PAL.uiDim).setOrigin(0, 1)
-    this.hintText = t(13, PAL.uiText, true).setOrigin(0.5, 1)
-    this.deathTitle = t(25, PAL.danger, true).setOrigin(0.5).setDepth(1_000_007).setVisible(false)
-    this.deathHint = t(13, PAL.uiText).setOrigin(0.5).setDepth(1_000_007).setVisible(false)
+    // ---- objective -----------------------------------------------------------
+    this.objPanel = panel('hud')
+    this.objTitle = t({ voice: 'display', size: 20, colour: PAL.bone, shadow: true }, 0.5, 0)
+    this.objHint = t({ size: 13, weight: '700', colour: PAL.gold }, 0.5, 0)
+    this.objBar = bar(PAL.good)
+    this.phaseIcon = ui.add.image(0, 0, 'ico_sun').setScrollFactor(0).setDepth(D.text)
+    this.phaseText = t({ voice: 'caps', size: 13, weight: '800', colour: PAL.uiDim }, 0, 0.5)
+
+    this.bossPanel = panel('hud')
+    this.bossBar = bar(PAL.danger, true)
+    this.bossText = t({ voice: 'display', size: 17, colour: PAL.danger, stroke: 3 }, 0.5, 0.5)
+
+    // ---- resources -------------------------------------------------------------
+    this.resPanel = panel('hud')
+    this.popIcon = ui.add.image(0, 0, 'ico_pop').setScrollFactor(0).setDepth(D.text).setDisplaySize(16, 16)
+    this.popText = t({ size: 13, weight: '800', colour: PAL.uiText }, 0, 0.5)
+    this.packIcon = ui.add.image(0, 0, 'ico_pack').setScrollFactor(0).setDepth(D.text).setDisplaySize(16, 16)
+    this.carryText = t({ size: 13, weight: '800', colour: PAL.uiDim }, 1, 0.5)
+    this.packBar = bar(PAL.gold)
+    this.outputText = t({ voice: 'caps', size: 11, weight: '800', colour: PAL.good }, 0.5, 0.5)
 
     for (const type of RESOURCE_ORDER) {
-      const icon = ui.add.image(0, 0, `res_${type}`).setScrollFactor(0)
-        .setDepth(1_000_005).setScale(0.8).setVisible(false)
-      const text = t(13, PAL.uiText, true).setOrigin(0, 0.5).setVisible(false)
-      const rate = t(10, PAL.good).setOrigin(1, 0.5).setVisible(false)
-      this.rows.push({ icon, text, rate, type })
+      const icon = ui.add.image(0, 0, `ui_res_${type}`).setScrollFactor(0)
+        .setDepth(D.text).setVisible(false)
+      const text = t({ size: 15, weight: '800', colour: PAL.uiText }, 0, 0.5).setVisible(false)
+      const rate = t({ size: 11, weight: '700', colour: PAL.good }, 1, 0.5).setVisible(false)
+      this.rows.push({ icon, text, rate, type, last: -1, pulse: 0 })
     }
+
+    // ---- floating messages ---------------------------------------------------
+    this.hintPanel = panel('hud', D.panel + 1)
+    this.hintText = t({ voice: 'caps', size: 14, weight: '800', colour: PAL.uiText, align: 'center' }, 0.5, 0.5)
+    this.toastRibbon = panel('ribbon', D.toast)
+    this.toastText = t({ voice: 'display', size: 22, colour: PAL.bone, shadow: true }).setDepth(D.toast + 1)
+    this.comboText = t({ voice: 'display', size: 26, colour: PAL.gold, stroke: 5 })
+    this.statsText = t({ size: 11, weight: '500', colour: PAL.uiDim, stroke: 3 }, 0, 1)
+    this.lowHp = ui.add.image(0, 0, vignetteTexture(ui, 0x7a1408)).setOrigin(0, 0)
+      .setScrollFactor(0).setDepth(D.panel - 1).setAlpha(0).setVisible(false)
+
+    this.deathPanel = panel('page', D.death)
+    this.deathTitle = t({ voice: 'display', size: 28, colour: ON_PAGE.danger }).setDepth(D.death + 1).setVisible(false)
+    this.deathHint = t({ voice: 'caps', size: 14, weight: '800', colour: ON_PAGE.dim }).setDepth(D.death + 1).setVisible(false)
+    this.deathPanel.setVisible(false)
 
     // One button per hotbar slot, unlocked or not. The button keeps its place
     // whether or not the ability behind it exists yet, so nothing ever shuffles.
@@ -133,97 +198,76 @@ export class HUD {
     // A finger has no ESC and no H. Without these two, everything behind the
     // pause menu — every volume, the quality switch, SAVE NOW, RESET PROGRESS —
     // and the army's standing order are unreachable on a phone.
-    this.pauseChip = this.makeChip('ESC', () => this.ui.events.emit('togglePause'))
-    this.holdChip = this.makeChip('H', () => this.game.toggleHold())
+    this.pauseChip = this.makeChip('Pause', 'ico_pause', 'Esc', () => this.ui.events.emit('togglePause'))
+    this.holdChip = this.makeChip('Following', 'ico_follow', 'H', () => this.game.toggleHold())
 
-    this.game.bus.on('achievement', p => this.toast(`ACHIEVEMENT — ${p.title}`))
+    this.game.bus.on('achievement', p => this.toast(`Deed earned: ${p.title}`))
     this.game.bus.on('carry:full', () => {
       this.flashCarry = 0.5
       // The bar going red does not explain why loot stopped coming to you.
       if (this.game.time.now - this.lastCarryHint > 6000) {
         this.lastCarryHint = this.game.time.now
-        this.hint('PACK FULL — DUMP AT THE DEPOT')
+        this.hint('Pack full — empty it at the depot')
       }
     })
-    this.game.bus.on('zone:unlocked', () => this.toast('NEW TERRITORY CLAIMED'))
+    this.game.bus.on('zone:unlocked', () => this.toast('New territory claimed'))
 
     this.layout()
     ui.scale.on('resize', () => this.layout())
   }
 
   private makeButton(index: number): AbilityBtn {
-    const ring = this.ui.add.graphics().setScrollFactor(0).setDepth(1_000_002)
-    const glyph = this.ui.add.text(0, 0, '', {
-      fontFamily: FONT, fontSize: '22px', color: CSS(PAL.uiText), fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1_000_005)
-    const key = this.ui.add.text(0, 0, '', {
-      fontFamily: FONT, fontSize: '10px', color: CSS(PAL.uiDim),
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1_000_005)
-    const zone = this.ui.add.zone(0, 0, 10, 10).setScrollFactor(0).setInteractive({ useHandCursor: true })
+    const ui = this.ui
+    const seal = ui.add.image(0, 0, '__WHITE').setScrollFactor(0).setDepth(D.seal).setVisible(false)
+    const icon = ui.add.image(0, 0, 'ico_dodge').setScrollFactor(0).setDepth(D.seal + 1).setVisible(false)
+    const sweep = ui.add.graphics().setScrollFactor(0).setDepth(D.seal + 2)
+    const count = ui.add.text(0, 0, '', textStyle({ size: 18, weight: '800', colour: PAL.bone, stroke: 4 }))
+      .setOrigin(0.5).setScrollFactor(0).setDepth(D.seal + 3).setVisible(false)
+    const key = ui.add.text(0, 0, '', textStyle({ voice: 'caps', size: 11, weight: '800', colour: PAL.uiDim, stroke: 3 }))
+      .setOrigin(0.5, 0).setScrollFactor(0).setDepth(D.text)
+    const zone = ui.add.zone(0, 0, 10, 10).setScrollFactor(0).setInteractive({ useHandCursor: true })
+    const btn: AbilityBtn = {
+      index, seal, icon, sweep, count, key, zone, x: 0, y: 0, r: 30, wasReady: true, sweeping: false,
+    }
     zone.on('pointerdown', () => {
       if (this.blocked) return
+      // the seal gives under the thumb
+      ui.tweens.add({ targets: [seal, icon], scale: '*=0.9', duration: 60, yoyo: true })
       if (index === -2) this.game.tryDodge()
       else if (index < 0) this.game.abilities.castUltimate()
       else this.game.abilities.castSlot(index)
     })
-    return { index, ring, glyph, key, zone, x: 0, y: 0, r: 30 }
+    return btn
   }
 
-  private makeChip(keyLabel: string, onTap: () => void): Chip {
-    const label = this.ui.add.text(0, 0, '', {
-      fontFamily: FONT, fontSize: '11px', color: CSS(PAL.uiText), fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1_000_005)
-    const key = this.ui.add.text(0, 0, keyLabel, {
-      fontFamily: FONT, fontSize: '9px', color: CSS(PAL.uiDim),
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1_000_005)
-    const zone = this.ui.add.zone(0, 0, 10, 10).setScrollFactor(0).setInteractive({ useHandCursor: true })
-    const chip: Chip = { label, key, zone, hover: false, x: 0, y: 0, w: 10, h: 10 }
-    zone.on('pointerover', () => { chip.hover = true })
-    zone.on('pointerout', () => { chip.hover = false })
-    zone.on('pointerdown', onTap)
-    return chip
+  private makeChip(label: string, icon: string, keyHint: string, onTap: () => void) {
+    const b = new PlateButton(this.ui, {
+      label, icon, keyHint: IS_TOUCH ? undefined : keyHint, onClick: onTap, tone: 'quiet', size: 13,
+    })
+    return b.setScrollFactor(0).setDepth(D.text)
   }
 
-  /**
-   * One rectangle decides where the chip is drawn *and* where it can be
-   * pressed, so the two can never drift apart — which is how tap targets in
-   * this HUD have gone wrong before.
-   */
-  private placeChip(c: Chip, x: number, y: number, w: number, h: number) {
-    c.x = x; c.y = y; c.w = w; c.h = h
-    c.zone.setPosition(x + w / 2, y + h / 2).setSize(w, h)
-    // Label over key hint, the same way the hotbar buttons read.
-    c.label.setPosition(x + w / 2, y + h / 2 - 6)
-    c.key.setPosition(x + w / 2, y + h - 11)
-  }
-
-  private drawChip(c: Chip, text: string, colour: number, live: boolean) {
-    const g = this.g
-    g.fillStyle(PAL.uiBg, c.hover ? 0.95 : 0.8)
-    g.fillRoundedRect(c.x, c.y, c.w, c.h, 8)
-    g.lineStyle(1.5, PAL.uiEdge, c.hover ? 1 : 0.9)
-    g.strokeRoundedRect(c.x, c.y, c.w, c.h, 8)
-    c.label.setText(text).setColor(CSS(colour))
-    c.zone.setSize(live ? c.w : 1, live ? c.h : 1)
-  }
-
-  /** Width of the health panel; the chips under it line up with its edges. */
-  private get barW() { return this.W < 720 ? 168 : 224 }
+  /** Width of the health bar; the chips under the plate line up with its edges. */
+  private get barW() { return this.W < 460 ? 118 : this.W < 900 ? 150 : 196 }
+  private get medalR() { return this.W < 720 ? 20 : 22 }
+  private get plateW() { return this.medalR * 2 + 16 + this.barW + 12 }
 
   toast(msg: string) {
     this.toastText.setText(msg)
-    this.toastT = 3
+    this.toastT = 3.2
+    this.toastRibbon.setAlpha(0)
+    this.toastText.setAlpha(0)
   }
 
   hint(msg: string) {
     this.hintText.setText(msg)
-    this.hintT = 4
+    this.hintT = 4.5
   }
 
   layout() {
-    const cam = this.ui.cameras.main
-    this.W = cam.width
-    this.H = cam.height
+    const view = screen(this.ui)
+    this.W = view.w
+    this.H = view.h
     const small = this.W < 720
     const basePad = small ? 10 : 16
     // The notch eats the top corners and the home indicator eats the bottom
@@ -235,44 +279,37 @@ export class HUD {
     const padR = this.padR = basePad + sa.right
     const padB = basePad + sa.bottom
 
-    this.hpText.setPosition(padL + 10, padT + 5)
-    this.lvlText.setPosition(padL + 10, padT + 28)
+    // ---- hero plate ----------------------------------------------------------
+    const mr = this.medalR
+    const plateW = this.plateW
+    this.heroPanel.place(padL, padT, plateW, HERO_PLATE_H)
+    const mx = padL + 8 + mr
+    const my = padT + HERO_PLATE_H / 2
+    this.medal.setTexture(medalTexture(this.ui, mr)).setPosition(mx, my)
+    this.lvlText.setPosition(mx, my - 1).setFontSize(mr > 20 ? 21 : 19)
+    const bx = mx + mr + 8
+    this.hpBar.place(bx, padT + 12, this.barW, 16)
+    this.hpText.setPosition(bx + this.barW / 2, padT + 20)
+    this.xpBar.place(bx, padT + 34, this.barW, 8)
 
-    this.objTitle.setPosition(this.W / 2, padT + 6)
-    this.objHint.setPosition(this.W / 2, padT + 26)
-    this.phaseText.setPosition(this.W / 2, padT + 48)
-    this.bossText.setPosition(this.W / 2, padT + 76)
-    this.toastText.setPosition(this.W / 2, this.H * 0.22)
-    this.comboText.setPosition(this.W / 2, this.H * 0.3)
-    this.hintText.setPosition(this.W / 2, this.H - padB - (small ? 86 : 108))
-    this.hintText.setWordWrapWidth(this.W - padL - padR - 16).setAlign('center')
-    this.hintText.setFontSize(small ? 11 : 13)
-
-    const rx = this.W - padR - 8
-    this.popText.setPosition(rx, padT + 4)
-    this.carryText.setPosition(rx, padT + 22)
-    for (let i = 0; i < this.rows.length; i++) {
-      const y = padT + 48 + i * 20
-      this.rows[i].icon.setPosition(this.W - padR - 92, y)
-      this.rows[i].text.setPosition(this.W - padR - 80, y)
-    }
-
+    this.toastText.setPosition(this.W / 2, this.H * 0.2)
+    this.lowHp.setDisplaySize(this.W, this.H)
     this.statsText.setPosition(padL + 4, this.H - padB - 2)
 
-    // Pause and army stance, side by side under the health bar and lined up
+    // Pause and army stance, side by side under the hero plate and lined up
     // with it. The bottom-right is spoken for by the hotbar and the top-right
     // by the resources, and here they are nowhere near a resting thumb.
     const chipH = wantsTouchTargets(this.W) ? 44 : 34
     // PAUSE is a short word and the stance is a long one, so the row is split
     // to suit rather than down the middle, and the labels always fit.
-    const chipRow = this.barW + 20 - 6
-    const pauseW = Math.floor(chipRow * 0.4)
-    const chipY = padT + 46 + 6
-    this.placeChip(this.pauseChip, padL, chipY, pauseW, chipH)
-    this.placeChip(this.holdChip, padL + pauseW + 6, chipY, chipRow - pauseW, chipH)
+    const pauseW = Math.floor(plateW * 0.4)
+    const chipY = padT + HERO_PLATE_H + 6
+    this.pauseChip.place(padL + pauseW / 2, chipY + chipH / 2, pauseW, chipH)
+    const holdW = plateW - pauseW - 6
+    this.holdChip.place(padL + pauseW + 6 + holdW / 2, chipY + chipH / 2, holdW, chipH)
     this.leftStackH = chipY + chipH - padT
 
-    // ability hotbar bottom-right, thumb reachable.
+    // ---- ability hotbar, bottom right, thumb reachable -------------------------
     // Six circles — five slots plus the larger ultimate — do not fit across a
     // phone in portrait at the size a desktop uses, so solve the radius and the
     // gap from the width actually on offer instead of assuming a number that
@@ -295,132 +332,166 @@ export class HUD {
     r = Math.max(rFloor, r)
 
     const ultR = r + 5
-    const baseY = this.H - padB - ultR - 6
-    const dodgeY = baseY - ultR * 2 - 16
+    // room under each seal for its key name
+    const keyRoom = IS_TOUCH ? 4 : 16
+    const baseY = this.H - padB - ultR - keyRoom
+    const dodgeY = baseY - ultR * 2 - 18
     this.game.uiBands.bottom = this.H - (dodgeY - r - 8)
     let x = right - ultR
-    this.ultBtn.x = x; this.ultBtn.y = baseY; this.ultBtn.r = ultR
-    this.ultBtn.zone.setPosition(x, baseY).setSize(ultR * 2, ultR * 2)
-    this.ultBtn.glyph.setPosition(x, baseY - 2).setFontSize(`${r}px`)
-    this.ultBtn.key.setPosition(x, baseY + ultR + 2)
-    this.dodgeBtn.x = x; this.dodgeBtn.y = dodgeY; this.dodgeBtn.r = r
-    this.dodgeBtn.zone.setPosition(x, dodgeY).setSize(r * 2, r * 2)
-    this.dodgeBtn.glyph.setPosition(x, dodgeY - 2).setFontSize(`${r - 4}px`)
-    this.dodgeBtn.key.setPosition(x, dodgeY + r + 2)
+    this.setButton(this.ultBtn, x, baseY, ultR)
+    this.setButton(this.dodgeBtn, x, dodgeY, r)
     x -= ultR + gap + r
-    for (let i = 0; i < this.buttons.length; i++) {
-      const b = this.buttons[i]
-      b.x = x; b.y = baseY; b.r = r
-      b.zone.setPosition(x, baseY).setSize(r * 2, r * 2)
-      b.glyph.setPosition(x, baseY - 2).setFontSize(`${r - 6}px`)
-      b.key.setPosition(x, baseY + r + 2)
+    for (const b of this.buttons) {
+      this.setButton(b, x, baseY, r)
       x -= r * 2 + gap
     }
+
+    // the tutorial line floats above the hotbar
+    this.hintText.setWordWrapWidth(Math.min(560, this.W - padL - padR - 40)).setFontSize(small ? 12 : 14)
+    this.hintSig = ''
+  }
+
+  private setButton(b: AbilityBtn, x: number, y: number, r: number) {
+    b.x = x; b.y = y; b.r = r
+    b.zone.setPosition(x, y).setSize(r * 2, r * 2)
+    b.key.setPosition(x, y + r + 3).setVisible(!IS_TOUCH)
+    b.count.setPosition(x, y).setFontSize(Math.round(r * 0.62))
+    b.wasReady = true
   }
 
   update(dt: number) {
     const g = this.game
     const p = g.player
     const { padT, padL, padR } = this
-    this.g.clear()
-    this.gTop.clear()
-    this.deathCard.clear()
 
     // Every HUD tap target goes dead behind a modal, so a thumb aimed at the
     // pause menu cannot fire an ability or flip the army through the dim.
     const live = !this.blocked
 
     // ---- top-left: health, xp ------------------------------------------
-    const barW = this.barW
-    const hx = padL, hy = padT
-    this.panel(this.g, hx, hy, barW + 20, 46)
     const hp = clamp(p.hp / p.maxHp, 0, 1)
-    this.bar(this.gTop, hx + 10, hy + 20, barW, 10, hp,
-      hp > 0.5 ? PAL.good : hp > 0.25 ? PAL.gold : PAL.danger)
-    this.hpText.setText(`${Math.ceil(Math.max(0, p.hp))} / ${Math.round(p.maxHp)}${p.respawnShieldT > 0 ? '  SHIELDED' : ''}`)
-      .setColor(CSS(p.respawnShieldT > 0 ? PAL.heroTrim : PAL.uiText))
-    const xp = clamp(p.xp / p.xpToNext, 0, 1)
-    this.bar(this.gTop, hx + 10, hy + 34, barW, 5, xp, PAL.xp)
-    this.lvlText.setText(`LV ${p.level}`).setPosition(hx + 10 + barW - 44, hy + 30)
-    this.hpText.setPosition(hx + 10, hy + 4)
+    const shielded = p.respawnShieldT > 0
+    this.hpBar.set(hp, shielded ? PAL.heroTrim : hp > 0.5 ? PAL.good : hp > 0.25 ? PAL.gold : PAL.danger)
+    this.hpBar.tick(dt)
+    this.hpText.setText(`${Math.ceil(Math.max(0, p.hp))} / ${Math.round(p.maxHp)}${shielded ? '  shielded' : ''}`)
+    this.xpBar.set(clamp(p.xp / p.xpToNext, 0, 1))
+    this.lvlText.setText(`${p.level}`)
+
+    // Low health reads at the edge of your eye, not in a number: the frame
+    // bleeds red and breathes faster the closer it gets.
+    const danger = p.alive && hp < 0.3 && !this.blocked
+    this.lowHp.setVisible(danger)
+    if (danger) {
+      const speed = 0.004 + (0.3 - hp) * 0.02
+      this.lowHp.setAlpha((0.35 + Math.sin(g.now * speed) * 0.2) * (1 - hp / 0.3 * 0.5))
+    }
 
     // ---- top-left: pause + army stance -----------------------------------
-    this.drawChip(this.pauseChip, 'PAUSE', PAL.uiText, live)
     const holding = g.army.holding
-    this.drawChip(this.holdChip, holding ? 'HOLDING' : 'FOLLOWING',
-      holding ? PAL.heroTrim : PAL.uiText, live)
+    this.holdChip.setLabel(holding ? 'Holding' : 'Following')
+      .setIcon(holding ? 'ico_hold' : 'ico_follow')
+      .setTone(holding ? 'primary' : 'quiet')
+      .setLive(live)
+    this.pauseChip.setLive(live)
 
     // ---- objective + phase ---------------------------------------------
     // Three panels do not fit across a phone in portrait, so below NARROW the
     // objective drops to its own full-width row under health and resources
     // instead of being drawn straight through both of them.
     const resRows = RESOURCE_ORDER.filter(t => g.res.discovered.has(t))
-    const resPanelH = 44 + resRows.length * 20
-    const narrow = this.W < NARROW
-    const objW = narrow ? this.W - padL - padR : this.W < 720 ? 240 : 320
+    const bonus = g.buildings.bonus.prod > 0
+    const rowPitch = 23
+    const resPanelH = 50 + resRows.length * rowPitch + (bonus ? 16 : 0)
+    const resW = this.W < 720 ? 140 : 164
+    // Centred between the two top columns, as wide as the gap allows. The old
+    // fixed widths ran the objective straight through the health panel on any
+    // window between a phone and a laptop.
+    const leftEdge = padL + this.plateW + 10
+    const rightEdge = this.W - padR - resW - 10
+    const room = 2 * Math.min(this.W / 2 - leftEdge, rightEdge - this.W / 2)
+    const narrow = room < OBJ_MIN
+    const objW = narrow ? this.W - padL - padR : Math.min(340, room)
     const objX = narrow ? padL : this.W / 2 - objW / 2
     // Below NARROW the objective clears whichever top column is taller — the
-    // health bar with the two chips under it, or the resource panel.
+    // hero plate with the two chips under it, or the resource panel.
     const objY = narrow ? padT + Math.max(this.leftStackH, resPanelH) + 6 : padT
-    const resW = narrow ? 138 : 158
+    const objH = 78
     // tell world-space cards how much of the screen we are covering
-    g.uiBands.top = objY + 66 + 8
+    g.uiBands.top = objY + objH + 8
 
     const q = g.quests.view()
-    this.panel(this.g, objX, objY, objW, 66)
-    this.objTitle.setPosition(objX + objW / 2, objY + 6)
-    this.objHint.setPosition(objX + objW / 2, objY + 26)
+    this.objPanel.place(objX, objY, objW, objH)
+    this.objTitle.setPosition(objX + objW / 2, objY + 7)
+    this.objHint.setPosition(objX + objW / 2, objY + 31)
+    this.objBar.place(objX + 16, objY + 51, objW - 32, 6)
     if (q) {
-      this.objTitle.setText(q.title.toUpperCase())
+      this.objTitle.setText(q.title)
+      this.fit(this.objTitle, 20, objW - 24)
       this.objHint.setText(`${q.hint}${q.need > 1 ? `   ${short(q.have)}/${short(q.need)}` : ''}`)
-      this.bar(this.gTop, objX + 12, objY + 44, objW - 24, 4,
-        q.need > 0 ? clamp(q.have / q.need, 0, 1) : 1, PAL.good)
+      this.fit(this.objHint, 13, objW - 24)
+      this.objBar.set(q.need > 0 ? clamp(q.have / q.need, 0, 1) : 1)
     }
+    this.objTitle.setVisible(!!q)
+    this.objHint.setVisible(!!q)
+    this.objBar.setVisible(!!q)
 
     const w = g.waves
     const mins = Math.floor(w.timeLeft / 60)
     const secs = Math.floor(w.timeLeft % 60)
     const clock = `${mins}:${secs.toString().padStart(2, '0')}`
     if (w.phase === 'night') {
-      this.phaseText.setText(`NIGHT ${w.wave}   ·   ${w.enemiesRemaining} LEFT`).setColor(CSS(PAL.danger))
+      setColour(this.phaseText.setText(`Night ${w.wave}   ·   ${w.enemiesRemaining} left`), PAL.danger)
+      this.phaseIcon.setTexture('ico_moon')
     } else if (w.phase === 'warning') {
       const flash = Math.sin(this.game.now * 0.02) > 0
-      this.phaseText.setText(`${w.bannerText.toUpperCase()}   ${Math.ceil(w.timeLeft)}`)
-        .setColor(flash ? CSS(PAL.danger) : CSS(PAL.gold))
+      const words = w.bannerText.charAt(0).toUpperCase() + w.bannerText.slice(1).toLowerCase()
+      setColour(this.phaseText.setText(`${words}   ${Math.ceil(w.timeLeft)}`), flash ? PAL.danger : PAL.gold)
+      this.phaseIcon.setTexture('ico_moon')
     } else {
-      this.phaseText.setText(`DAY ${w.wave + 1}   ·   NIGHT IN ${clock}`).setColor(CSS(PAL.uiDim))
+      setColour(this.phaseText.setText(`Day ${w.wave + 1}   ·   night in ${clock}`), PAL.uiDim)
+      this.phaseIcon.setTexture('ico_sun')
     }
-    this.phaseText.setPosition(objX + objW / 2, objY + 50)
+    this.fit(this.phaseText, 13, objW - 48)
+    const phaseY = objY + objH - 13
+    const iconS = 17
+    const phaseW = iconS + 6 + this.phaseText.width
+    this.phaseIcon.setDisplaySize(iconS, iconS).setPosition(objX + objW / 2 - phaseW / 2 + iconS / 2, phaseY)
+    this.phaseText.setPosition(objX + objW / 2 - phaseW / 2 + iconS + 6, phaseY)
 
     // ---- boss bar --------------------------------------------------------
     const boss = g.enemies.bossRef
-    if (boss?.alive) {
-      const bw = Math.min(460, this.W - 80)
-      const bx = this.W / 2 - bw / 2
-      const by = objY + 74
-      this.panel(this.g, bx - 8, by - 4, bw + 16, 30)
-      this.bar(this.gTop, bx, by + 12, bw, 12, clamp(boss.hp / boss.maxHp, 0, 1), PAL.danger)
-      this.bossText.setText(`${boss.def.name}   ${short(Math.ceil(boss.hp))}`).setPosition(this.W / 2, by - 2)
-      this.bossText.setVisible(true)
-    } else {
-      this.bossText.setVisible(false)
+    const bossUp = !!boss?.alive
+    this.bossPanel.setVisible(bossUp)
+    this.bossBar.setVisible(bossUp)
+    this.bossText.setVisible(bossUp)
+    if (boss && bossUp) {
+      // the width of the objective above it, so it clears both top columns
+      const bw = objW - 24
+      const bx = objX + 12
+      const by = objY + objH + 6
+      this.bossPanel.place(bx - 12, by, bw + 24, 44)
+      this.bossBar.place(bx, by + 24, bw, 12)
+      this.bossBar.set(clamp(boss.hp / boss.maxHp, 0, 1))
+      this.bossBar.tick(dt)
+      this.bossText.setText(`${titleCase(boss.def.name)}   ${short(Math.ceil(boss.hp))}`).setPosition(objX + objW / 2, by + 12)
+      this.fit(this.bossText, 17, bw)
+      g.uiBands.top = by + 44 + 8
     }
 
     // ---- top-right: resources -------------------------------------------
-    this.panel(this.g, this.W - padR - resW, padT, resW, resPanelH)
-    this.popText.setText(
-      `POP ${g.popUsed}/${g.popCap}${g.buildings.bonus.prod > 0 ? `   OUTPUT +${Math.round(g.buildings.bonus.prod * 100)}%` : ''}`,
-    )
-      .setColor(g.popUsed >= g.popCap ? CSS(PAL.danger) : CSS(PAL.uiText))
-      .setFontSize(narrow ? 10 : 12)
+    const rx = this.W - padR - resW
+    this.resPanel.place(rx, padT, resW, resPanelH)
+    this.popIcon.setPosition(rx + 18, padT + 17)
+    setColour(this.popText.setText(`${g.popUsed}/${g.popCap}`), g.popUsed >= g.popCap ? PAL.danger : PAL.uiText)
+      .setPosition(rx + 30, padT + 17)
     const carried = g.res.carriedTotal
     const full = carried >= g.res.carryCapacity
     this.flashCarry = Math.max(0, this.flashCarry - dt)
-    this.carryText.setText(`PACK ${short(carried)} / ${short(g.res.carryCapacity)}`)
-      .setColor(full || this.flashCarry > 0 ? CSS(PAL.danger) : CSS(PAL.uiDim))
-      .setFontSize(narrow ? 10 : 12)
-    this.bar(this.gTop, this.W - padR - resW + 10, padT + 40, resW - 20, 4,
-      clamp(carried / g.res.carryCapacity, 0, 1), full ? PAL.danger : PAL.gold)
+    setColour(this.carryText.setText(`${short(carried)}/${short(g.res.carryCapacity)}`), full || this.flashCarry > 0 ? PAL.danger : PAL.uiDim)
+      .setPosition(rx + resW - 13, padT + 17)
+    this.packIcon.setPosition(rx + resW - 17 - this.carryText.width - 10, padT + 17)
+    this.packBar.place(rx + 12, padT + 30, resW - 24, 6)
+    this.packBar.set(clamp(carried / g.res.carryCapacity, 0, 1), full || this.flashCarry > 0 ? PAL.danger : PAL.gold)
 
     let i = 0
     for (const row of this.rows) {
@@ -429,18 +500,27 @@ export class HUD {
       row.text.setVisible(visible)
       row.rate.setVisible(visible)
       if (!visible) continue
-      const y = padT + 56 + i * 20
-      row.icon.setPosition(this.W - padR - resW + 16, y)
+      const y = padT + 52 + i * rowPitch
+      row.icon.setPosition(rx + 20, y).setDisplaySize(20, 20)
+      const stored = g.res.stored[row.type]
+      // a count that grows gives a small gilt jump, so income is felt, not read
+      if (row.last >= 0 && stored > row.last) row.pulse = 0.3
+      row.last = stored
+      row.pulse = Math.max(0, row.pulse - dt)
       const held = g.res.carried[row.type]
-      row.text.setPosition(this.W - padR - resW + 28, y)
-        .setText(`${short(g.res.stored[row.type])}${held > 0 ? `  +${short(held)}` : ''}`)
-        .setColor(held > 0 ? CSS(PAL.gold) : CSS(PAL.uiText))
+      setColour(row.text.setPosition(rx + 36, y).setText(`${short(stored)}${held > 0 ? `  +${short(held)}` : ''}`),
+        held > 0 || row.pulse > 0 ? PAL.gold : PAL.uiText)
+        .setScale(1 + row.pulse * 0.35)
       // income readout: the number that makes automation feel worth buying
       const r = g.res.rate[row.type]
-      row.rate.setPosition(this.W - padR - 10, y)
+      row.rate.setPosition(rx + resW - 12, y + 1)
         .setText(r >= 0.05 ? `+${r >= 10 ? Math.round(r) : r.toFixed(1)}/s` : '')
-        .setColor(CSS(PAL.good))
       i++
+    }
+    this.outputText.setVisible(bonus)
+    if (bonus) {
+      this.outputText.setText(`Output +${Math.round(g.buildings.bonus.prod * 100)}%`)
+        .setPosition(rx + resW / 2, padT + resPanelH - 13)
     }
 
     // ---- abilities --------------------------------------------------------
@@ -452,79 +532,106 @@ export class HUD {
       const btn = this.buttons[b]
       const slot = slots[b]?.unlocked ? slots[b] : undefined
       if (!slot) {
-        btn.ring.clear(); btn.glyph.setVisible(false); btn.key.setVisible(false)
-        btn.zone.setSize(1, 1)
+        this.hideButton(btn)
         continue
       }
       const def = ABILITIES[slot.key]
-      const ready = slot.cd <= 0
-      this.drawButton(btn, def.glyph, def.colour, ready ? 1 : 1 - slot.cd / def.cooldown, ready)
-      btn.key.setVisible(true).setText(ABILITY_KEYS[b] ?? '')
+      this.drawButton(btn, ABILITY_ICON[slot.key], def.colour, slot.cd, def.cooldown, false)
+      btn.key.setText(keyName(ABILITY_KEYS[b] ?? ''))
       btn.zone.setSize(live ? btn.r * 2 : 1, live ? btn.r * 2 : 1)
     }
     if (g.abilities.ultimate.unlocked) {
       const def = ABILITIES[g.abilities.ultimate.key]
-      const ready = g.abilities.ultimate.cd <= 0
-      this.drawButton(this.ultBtn, def.glyph, def.colour,
-        ready ? 1 : 1 - g.abilities.ultimate.cd / def.cooldown, ready, true)
-      this.ultBtn.key.setVisible(true).setText('R')
+      this.drawButton(this.ultBtn, ABILITY_ICON[g.abilities.ultimate.key], def.colour,
+        g.abilities.ultimate.cd, def.cooldown, true)
+      this.ultBtn.key.setText('R')
       this.ultBtn.zone.setSize(live ? this.ultBtn.r * 2 : 1, live ? this.ultBtn.r * 2 : 1)
     } else {
-      this.ultBtn.ring.clear()
-      this.ultBtn.glyph.setVisible(false)
-      this.ultBtn.key.setVisible(false)
-      this.ultBtn.zone.setSize(1, 1)
+      this.hideButton(this.ultBtn)
     }
-    const dodgeReady = p.dodgeCd <= 0
-    this.drawButton(this.dodgeBtn, '➜', PAL.heroTrim,
-      dodgeReady ? 1 : 1 - p.dodgeCd / PLAYER.dodgeCooldown, dodgeReady)
-    this.dodgeBtn.key.setVisible(true).setText('X')
+    this.drawButton(this.dodgeBtn, 'ico_dodge', PAL.heroTrim, p.dodgeCd, PLAYER.dodgeCooldown, false)
+    this.dodgeBtn.key.setText('X')
     this.dodgeBtn.zone.setSize(live ? this.dodgeBtn.r * 2 : 1, live ? this.dodgeBtn.r * 2 : 1)
 
+    // ---- the fallen hero ---------------------------------------------------
     // The world keeps fighting while the hero returns. Give the otherwise
     // empty camera a reason and an exact countdown, unless a modal owns it.
     const fallen = !p.alive && !this.blocked
     this.deathTitle.setVisible(fallen)
     this.deathHint.setVisible(fallen)
+    this.deathPanel.setVisible(fallen)
     if (fallen) {
       const compactDeath = this.H < 520 || this.W < 520
-      const ph = compactDeath ? 64 : 86
-      const pw = Math.min(390, this.W - 32)
+      const ph = compactDeath ? 76 : 100
+      const pw = Math.min(380, this.W - 32)
       const px = (this.W - pw) / 2
       const safeTop = g.uiBands.top + 8
       const safeBottom = this.H - g.uiBands.bottom - 8
       const py = safeBottom - safeTop >= ph
         ? clamp(this.H * 0.43, safeTop, safeBottom - ph)
         : (this.H - ph) / 2
-      this.deathCard.fillStyle(PAL.uiBg, 0.96)
-      this.deathCard.fillRoundedRect(px, py, pw, ph, 8)
-      this.deathCard.lineStyle(2, PAL.danger, 0.95)
-      this.deathCard.strokeRoundedRect(px, py, pw, ph, 8)
-      this.deathTitle.setFontSize(compactDeath ? 19 : 25)
-        .setPosition(this.W / 2, py + (compactDeath ? 21 : 28)).setText('HERO FALLEN')
-      this.deathHint.setFontSize(compactDeath ? 11 : 13)
-        .setPosition(this.W / 2, py + (compactDeath ? 46 : 60))
-        .setText(`RETURNING TO THE HALL IN ${Math.max(1, Math.ceil(p.deadTimer))}`)
+      this.deathPanel.place(px, py, pw, ph)
+      this.deathTitle.setFontSize(compactDeath ? 24 : 30)
+        .setPosition(this.W / 2, py + (compactDeath ? 29 : 38)).setText('Hero Fallen')
+      this.deathHint.setFontSize(compactDeath ? 12 : 14)
+        .setPosition(this.W / 2, py + (compactDeath ? 55 : 70))
+        .setText(`Returning to the hall in ${Math.max(1, Math.ceil(p.deadTimer))}`)
     }
 
     // ---- misc ------------------------------------------------------------
     const combo = g.fx.combo
     if (combo >= 5) {
-      this.comboText.setVisible(true).setText(`${combo} KILL STREAK`)
-        .setAlpha(0.85).setScale(1 + Math.min(0.5, combo / 200))
+      if (combo !== this.lastCombo) {
+        this.ui.tweens.killTweensOf(this.comboText)
+        this.comboText.setScale(1.25)
+        this.ui.tweens.add({ targets: this.comboText, scale: 1 + Math.min(0.4, combo / 200), duration: 160, ease: 'Back.easeOut' })
+      }
+      // Low and central, just above the hotbar band: the middle of the screen
+      // belongs to the fight and to the build card that floats over it.
+      const hintUp = this.hintPanel.img.visible ? 40 : 0
+      this.comboText.setVisible(true).setText(`${combo} Kill Streak`).setAlpha(0.92)
+        .setPosition(this.W / 2, this.H - g.uiBands.bottom - 22 - hintUp)
     } else {
       this.comboText.setVisible(false)
     }
+    this.lastCombo = combo
 
+    // A ribbon unfurls with the news and lifts away when it is done.
     if (this.toastT > 0) {
       this.toastT -= dt
-      this.toastText.setVisible(true).setAlpha(Math.min(1, this.toastT))
-    } else this.toastText.setVisible(false)
+      const age = 3.2 - this.toastT
+      const a = Math.min(1, age / 0.18, this.toastT / 0.5)
+      const drop = (1 - Math.min(1, age / 0.25)) * -14
+      const tw = Math.min(this.W - 24, this.toastText.width + 90)
+      const th = 46
+      // below everything the top of the HUD is covering — the boss bar included
+      const ty = Math.max(this.H * 0.2, g.uiBands.top + th / 2 + 6) + drop
+      this.toastRibbon.setVisible(true).setAlpha(a).place(this.W / 2 - tw / 2, ty - th / 2, tw, th)
+      this.fit(this.toastText, 22, tw - 70)
+      this.toastText.setVisible(true).setAlpha(a).setPosition(this.W / 2, ty - 1)
+    } else {
+      this.toastRibbon.setVisible(false)
+      this.toastText.setVisible(false)
+    }
 
-    if (this.hintT > 0) {
+    if (this.hintT > 0 && !this.blocked) {
       this.hintT -= dt
-      this.hintText.setVisible(true).setAlpha(Math.min(1, this.hintT))
-    } else this.hintText.setVisible(false)
+      const a = Math.min(1, this.hintT, (4.5 - this.hintT) / 0.2)
+      const hw = Math.ceil(this.hintText.width) + 36
+      const hh = Math.ceil(this.hintText.height) + 16
+      const hy = this.H - this.game.uiBands.bottom + 8 - hh
+      const sig = `${hw}x${hh}@${hy}`
+      if (sig !== this.hintSig) {
+        this.hintSig = sig
+        this.hintPanel.place(this.W / 2 - hw / 2, hy, hw, hh)
+      }
+      this.hintPanel.setVisible(true).setAlpha(a)
+      this.hintText.setVisible(true).setAlpha(a).setPosition(this.W / 2, hy + hh / 2)
+    } else {
+      if (this.hintT > 0) this.hintT -= dt
+      this.hintPanel.setVisible(false)
+      this.hintText.setVisible(false)
+    }
 
     if (this.showStats) {
       const s = g.stats
@@ -535,39 +642,55 @@ export class HUD {
     } else this.statsText.setVisible(false)
   }
 
-  private drawButton(b: AbilityBtn, glyph: string, colour: number, fill: number, ready: boolean, ult = false) {
-    const g = b.ring
-    g.clear()
-    g.fillStyle(PAL.uiBg, 0.82)
-    g.fillCircle(b.x, b.y, b.r)
-    g.lineStyle(ult ? 4 : 3, ready ? colour : PAL.uiEdge, ready ? 1 : 0.7)
-    g.strokeCircle(b.x, b.y, b.r)
-    if (fill < 1) {
-      g.fillStyle(0x000000, 0.55)
-      g.slice(b.x, b.y, b.r - 2, Phaser.Math.DegToRad(-90), Phaser.Math.DegToRad(-90 + 360 * (1 - fill)), true)
-      g.fillPath()
-    } else if (ready) {
-      g.lineStyle(2, colour, 0.35)
-      g.strokeCircle(b.x, b.y, b.r + 4)
+  private hideButton(b: AbilityBtn) {
+    b.seal.setVisible(false)
+    b.icon.setVisible(false)
+    b.count.setVisible(false)
+    b.key.setVisible(false)
+    if (b.sweeping) { b.sweep.clear(); b.sweeping = false }
+    b.zone.setSize(1, 1)
+  }
+
+  /**
+   * A wax seal stamped with the ability's glyph. Cooling down, the wax goes
+   * dull and a shadow sweeps round it with the seconds left on top; the moment
+   * it is ready the seal takes its colour back and gives a small jump, so a
+   * ready skill is noticed out of the corner of the eye.
+   */
+  private drawButton(b: AbilityBtn, icon: string, colour: number, cd: number, cooldown: number, ult: boolean) {
+    const ready = cd <= 0
+    const key = sealTexture(this.ui, colour, ready, Math.round(b.r), ult)
+    if (b.seal.texture.key !== key) b.seal.setTexture(key)
+    b.seal.setVisible(true).setPosition(b.x, b.y)
+    if (b.icon.texture.key !== icon) b.icon.setTexture(icon)
+    const s = b.r * 1.3
+    b.icon.setVisible(true).setPosition(b.x, b.y).setAlpha(ready ? 1 : 0.5)
+    if (!this.ui.tweens.isTweening(b.icon)) {
+      b.icon.setDisplaySize(s, s)
+      b.seal.setScale(1 / DPR)
     }
-    b.glyph.setVisible(true).setText(glyph)
-      .setColor(ready ? CSS(colour) : CSS(PAL.uiDim))
-      .setAlpha(ready ? 1 : 0.6)
+    b.key.setVisible(!IS_TOUCH)
+    if (!ready) {
+      const fill = clamp(1 - cd / cooldown, 0, 1)
+      b.sweep.clear()
+      b.sweep.fillStyle(0x0c0704, 0.55)
+      b.sweep.slice(b.x, b.y, b.r - 3, Phaser.Math.DegToRad(-90), Phaser.Math.DegToRad(-90 + 360 * (1 - fill)), true)
+      b.sweep.fillPath()
+      b.sweeping = true
+      b.count.setVisible(true).setText(cd >= 10 ? `${Math.ceil(cd)}` : cd >= 1 ? `${Math.ceil(cd)}` : '')
+    } else {
+      if (b.sweeping) { b.sweep.clear(); b.sweeping = false }
+      b.count.setVisible(false)
+      if (!b.wasReady) {
+        const base = b.icon.scaleX
+        this.ui.tweens.add({ targets: b.seal, scale: { from: 1.18 / DPR, to: 1 / DPR }, duration: 260, ease: 'Back.easeOut' })
+        this.ui.tweens.add({ targets: b.icon, scaleX: { from: base * 1.18, to: base }, scaleY: { from: base * 1.18, to: base }, duration: 260, ease: 'Back.easeOut' })
+      }
+    }
+    b.wasReady = ready
   }
 
-  private panel(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
-    g.fillStyle(PAL.uiBg, 0.72)
-    g.fillRoundedRect(x, y, w, h, 8)
-    g.lineStyle(1.5, PAL.uiEdge, 0.9)
-    g.strokeRoundedRect(x, y, w, h, 8)
-  }
-
-  private bar(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, p: number, colour: number) {
-    g.fillStyle(0x050a12, 0.85)
-    g.fillRoundedRect(x - 1, y - 1, w + 2, h + 2, h / 2 + 1)
-    g.fillStyle(colour, 1)
-    g.fillRoundedRect(x, y, Math.max(h, w * p), h, h / 2)
-    g.fillStyle(0xffffff, 0.22)
-    g.fillRoundedRect(x, y, Math.max(h, w * p), h * 0.45, h / 3)
+  private fit(t: Phaser.GameObjects.Text, size: number, maxW: number) {
+    fitWidth(t, size, maxW)
   }
 }

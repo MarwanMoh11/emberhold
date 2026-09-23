@@ -1,12 +1,26 @@
 import Phaser from 'phaser'
-import { PAL, CSS } from '../config/palette'
+import { PAL } from '../config/palette'
 import { WORLD } from '../config/balance'
 import { ZONES, WALL_RING, type ZoneSpec } from '../config/map'
 import { clamp } from '../core/math'
-import { safeAreaInsets, wantsTouchTargets } from '../core/device'
+import { IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
+import { mix } from '../art/ink'
 import type { GameScene } from '../scenes/GameScene'
+import { HERO_PLATE_H } from './HUD'
+import { PlateButton, SkinPanel } from './skin'
+import { screen } from './theme'
 
-const FONT = 'Verdana, Geneva, sans-serif'
+/** The chart's inks: it is drawn as a surveyor's map on the same paper as the world's fog. */
+const CHART = {
+  wild: mix(PAL.grassA, PAL.parchment, 0.5),
+  held: mix(PAL.grassB, PAL.parchment, 0.38),
+  uncharted: PAL.vellum,
+  ink: 0x3a2616,
+  wax: PAL.wax,
+  lapis: 0x24508f,
+  gilt: 0x94580e,
+  moss: 0x3d6a24,
+}
 const OPEN_KEY = 'emberhold.minimap.v1'
 
 /**
@@ -51,23 +65,13 @@ const MAX_W = 188
 const SCREEN_SHARE = 0.34
 /** Below this the panel is unreadable, so it hides rather than shrinking. */
 const MIN_H = 56
-/** Margin between the map and the frame around it. */
-const INSET = 4
+/** Margin between the map and the frame around it: room for the gilt rule. */
+const INSET = 7
 /** Toggle chip: a full thumb target where one is wanted, tighter for a mouse. */
 const CHIP_TALL = 44
 const CHIP_SHORT = 30
-const CHIP_W_TALL = 86
-const CHIP_W_SHORT = 68
-
-/**
- * The frame texture is allocated once at the largest it could ever need to be
- * and never resized. `RenderTexture.resize()` leaves the thing looking healthy —
- * right size, right position — while quietly swallowing every `draw()` after
- * it, so anything that has to change size gets a fixed texture and unused
- * transparent margin instead.
- */
-const CHROME_W = MAX_W + INSET * 2
-const CHROME_H = CHIP_TALL + 6 + Math.ceil(MAX_W * (WORLD.height / WORLD.width)) + INSET * 2
+const CHIP_W_TALL = 104
+const CHIP_W_SHORT = 100
 
 /**
  * A corner map of the settlement.
@@ -75,11 +79,11 @@ const CHROME_H = CHIP_TALL + 6 + Math.ceil(MAX_W * (WORLD.height / WORLD.width))
  * Nothing here is drawn per frame. There are three surfaces, each rebuilt only
  * when its own inputs change:
  *
- * - `chrome` is the panel frame and the toggle chip, baked on layout, hover and
- *   toggle. It is a RenderTexture rather than a live Graphics for a measured
+ * - `tray` is the lacquered frame, and the toggle is a plate button. Both are
+ *   painted once into cached textures rather than drawn live, for a measured
  *   reason: a `fillRoundedRect` is a path Phaser re-triangulates on every frame
- *   it renders, and the four of them here cost 0.13ms — nine times everything
- *   else this class does. Baked, they cost one quad.
+ *   it renders, and the four the old frame used cost 0.13ms — nine times
+ *   everything else this class does. Painted, they cost one quad each.
  * - `cold` is the map itself: ground, territory, the rampart ring, structures,
  *   camps and the fog shroud. Re-baked at most COLD_HZ times a second, and only
  *   when something has actually changed.
@@ -93,16 +97,13 @@ const CHROME_H = CHIP_TALL + 6 + Math.ceil(MAX_W * (WORLD.height / WORLD.width))
  * of walking it.
  */
 export class Minimap {
-  private chrome: Phaser.GameObjects.RenderTexture
+  private tray: SkinPanel
   private cold: Phaser.GameObjects.RenderTexture
   private unitG: Phaser.GameObjects.Graphics
   /** Off-list scratch surface; everything baked is drawn here first. */
   private scratch: Phaser.GameObjects.Graphics
 
-  private chipLabel: Phaser.GameObjects.Text
-  private chipKey: Phaser.GameObjects.Text
-  private chipZone: Phaser.GameObjects.Zone
-  private chip = { x: 0, y: 0, w: 0, h: 0, hover: false }
+  private chipBtn: PlateButton
 
   /** 1 where the hero has been, or where territory has been claimed. */
   private explored = new Uint8Array(COLS * ROWS)
@@ -132,7 +133,7 @@ export class Minimap {
   blocked = false
 
   constructor(private ui: Phaser.Scene, private game: GameScene) {
-    this.open = !wantsTouchTargets(ui.cameras.main.width)
+    this.open = !wantsTouchTargets(screen(ui).w)
     try {
       const saved = localStorage.getItem(OPEN_KEY)
       if (saved === '1' || saved === '0') this.open = saved === '1'
@@ -140,25 +141,16 @@ export class Minimap {
 
     // All of these sit below the floating joystick on purpose: a thumb dragging
     // over the panel should see its own stick, not have it hidden under a map.
-    this.chrome = ui.add.renderTexture(0, 0, CHROME_W, CHROME_H)
-      .setOrigin(0, 0).setScrollFactor(0).setDepth(1_000_006)
+    this.tray = new SkinPanel(ui, 'hud').setScrollFactor(0).setDepth(1_000_006)
     this.cold = ui.add.renderTexture(0, 0, TEX_W, TEX_H)
       .setOrigin(0, 0).setScrollFactor(0).setDepth(1_000_007)
     this.unitG = ui.add.graphics().setScrollFactor(0).setDepth(1_000_008)
     this.scratch = ui.make.graphics({}, false)
 
-    this.chipLabel = ui.add.text(0, 0, 'MAP', {
-      fontFamily: FONT, fontSize: '11px', color: CSS(PAL.uiText), fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1_000_009)
-    this.chipKey = ui.add.text(0, 0, 'M', {
-      fontFamily: FONT, fontSize: '9px', color: CSS(PAL.uiDim),
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1_000_009)
-
-    this.chipZone = ui.add.zone(0, 0, 10, 10).setScrollFactor(0)
-      .setInteractive({ useHandCursor: true })
-    this.chipZone.on('pointerover', () => { this.chip.hover = true; this.drawChrome() })
-    this.chipZone.on('pointerout', () => { this.chip.hover = false; this.drawChrome() })
-    this.chipZone.on('pointerdown', () => this.toggle())
+    this.chipBtn = new PlateButton(ui, {
+      label: 'Map', icon: 'ico_map', keyHint: IS_TOUCH ? undefined : 'M', tone: 'quiet', size: 13,
+      onClick: () => this.toggle(),
+    }).setScrollFactor(0).setDepth(1_000_009)
 
     ui.input.keyboard?.on('keydown-M', () => this.toggle())
 
@@ -240,9 +232,9 @@ export class Minimap {
   // ---- layout ------------------------------------------------------------
 
   private layout() {
-    const cam = this.ui.cameras.main
-    this.W = cam.width
-    this.H = cam.height
+    const view = screen(this.ui)
+    this.W = view.w
+    this.H = view.h
     const base = this.W < 720 ? 10 : 16
     const sa = safeAreaInsets()
     const padL = base + sa.left
@@ -256,19 +248,15 @@ export class Minimap {
     // publishes, and it already covers the objective row — which on a phone
     // drops underneath both the health panel and the resources. It does not
     // cover the PAUSE and stance chips in the corner, so the taller of the two
-    // wins: health panel (46), a 6px gap, and a chip at its full thumb height.
-    const stack = padT + 46 + 6 + CHIP_TALL + 8
+    // wins: hero plate, a 6px gap, and a chip at its full thumb height.
+    const stack = padT + HERO_PLATE_H + 6 + CHIP_TALL + 8
     const top = Math.max(bands.top, stack) + 6
 
     const chipH = touch ? CHIP_TALL : CHIP_SHORT
     const chipW = touch ? CHIP_W_TALL : CHIP_W_SHORT
-    this.chip.x = padL
-    this.chip.y = top
-    this.chip.w = chipW
-    this.chip.h = chipH
 
-    const mapY = top + chipH + 6
-    const availH = this.H - bands.bottom - 10 - mapY
+    const mapY = top + chipH + 6 + INSET
+    const availH = this.H - bands.bottom - 10 - INSET - mapY
     let w = Math.min(MAX_W, this.W * SCREEN_SHARE)
     let h = w * (WORLD.height / WORLD.width)
     if (h > availH) {
@@ -276,7 +264,7 @@ export class Minimap {
       w = h * (WORLD.width / WORLD.height)
     }
     this.roomy = h >= MIN_H
-    this.mapX = padL
+    this.mapX = padL + INSET
     this.mapY = mapY
     this.mapW = w
     this.mapH = h
@@ -287,11 +275,7 @@ export class Minimap {
 
     // One rectangle decides both where the chip draws and where it answers, so
     // the two cannot drift — the failure this HUD has had before.
-    this.chipZone.setPosition(padL + chipW / 2, top + chipH / 2).setSize(chipW, chipH)
-    this.chipLabel.setPosition(padL + chipW / 2, top + chipH / 2 - (touch ? 6 : 4))
-      .setVisible(this.roomy)
-    this.chipKey.setPosition(padL + chipW / 2, top + chipH - (touch ? 11 : 9))
-      .setVisible(this.roomy)
+    this.chipBtn.place(padL + chipW / 2, top + chipH / 2, chipW, chipH)
 
     this.drawChrome()
     this.fastT = 0
@@ -299,40 +283,16 @@ export class Minimap {
   }
 
   /**
-   * The frame: the chip's rounded box and, when the map is open, the tray it
-   * sits in. Baked once per layout rather than drawn live — see the note on the
-   * class. The map is laid over the tray's middle, so the border only ever has
-   * to live in the INSET margin around it.
+   * The frame: a lacquered tray the chart sits in, and the chip's label. The
+   * tray is a cached painted texture; nothing here draws per frame.
    */
   private drawChrome() {
-    const c = this.chip
     const show = this.open && this.roomy
-    const ox = c.x - INSET
-    const oy = c.y - INSET
-
-    this.chrome.setVisible(this.roomy).setPosition(ox, oy)
+    this.chipBtn.setVisible(this.roomy)
+    this.tray.setVisible(show)
     if (!this.roomy) return
-
-    const g = this.scratch
-    g.clear()
-    g.fillStyle(PAL.uiBg, c.hover ? 0.95 : 0.8)
-    g.fillRoundedRect(INSET, INSET, c.w, c.h, 8)
-    g.lineStyle(1.5, this.open ? PAL.heroTrim : PAL.uiEdge, c.hover ? 1 : 0.9)
-    g.strokeRoundedRect(INSET, INSET, c.w, c.h, 8)
-
-    if (show) {
-      const ty = this.mapY - INSET - oy
-      g.fillStyle(PAL.uiBg, 0.8)
-      g.fillRoundedRect(0, ty, this.mapW + INSET * 2, this.mapH + INSET * 2, 6)
-      g.lineStyle(1.5, PAL.uiEdge, 0.9)
-      g.strokeRoundedRect(1, ty + 1, this.mapW + INSET * 2 - 2, this.mapH + INSET * 2 - 2, 6)
-    }
-
-    this.chrome.clear()
-    this.chrome.draw([g])
-
-    this.chipLabel.setText(this.open ? 'MAP' : 'MAP +')
-      .setColor(CSS(this.open ? PAL.heroTrim : PAL.uiText))
+    if (show) this.tray.place(this.mapX - INSET, this.mapY - INSET, this.mapW + INSET * 2, this.mapH + INSET * 2)
+    this.chipBtn.setLabel(this.open ? 'Map' : 'Map +')
   }
 
   // ---- the baked map -----------------------------------------------------
@@ -342,29 +302,30 @@ export class Minimap {
     const gs = this.game
     g.clear()
 
-    // wild ground everything sits on
-    g.fillStyle(PAL.grassC, 0.55)
+    // wild ground everything sits on, washed in over the paper
+    g.fillStyle(CHART.wild, 1)
     g.fillRect(0, 0, TEX_W, TEX_H)
 
     for (const z of ZONES) {
       const x = z.x / T, y = z.y / T, w = z.w / T, h = z.h / T
       if (gs.zones.isUnlocked(z.id)) {
-        g.fillStyle(PAL.grassB, 0.9)
+        g.fillStyle(CHART.held, 1)
         g.fillRect(x, y, w, h)
-        g.lineStyle(1, PAL.heroTrim, 0.4)
+        g.lineStyle(1, CHART.lapis, 0.55)
       } else {
-        g.fillStyle(z.tint, 0.85)
+        // each region keeps its own cast, softened into the paper
+        g.fillStyle(mix(z.tint, PAL.parchmentDark, 0.55), 0.9)
         g.fillRect(x, y, w, h)
-        g.lineStyle(1, PAL.gold, 0.35)
+        g.lineStyle(1, CHART.gilt, 0.5)
       }
       g.strokeRect(x, y, w, h)
     }
 
     // the rampart ring, and the four gaps the horde funnels through
     const wr = WALL_RING
-    g.lineStyle(1.5, PAL.stoneLight, 0.8)
+    g.lineStyle(1.5, CHART.ink, 0.75)
     g.strokeRect(wr.left / T, wr.top / T, (wr.right - wr.left) / T, (wr.bottom - wr.top) / T)
-    g.fillStyle(PAL.gold, 0.8)
+    g.fillStyle(CHART.wax, 0.9)
     for (const gate of wr.gates) g.fillRect(gate.x / T - 1.5, gate.y / T - 1.5, 3, 3)
 
     // structures — claimed territory only, and only where you have actually been
@@ -374,19 +335,21 @@ export class Minimap {
       if (!this.exploredAt(b.x, b.y)) continue
       const x = b.x / T, y = b.y / T
       if (b.level > 0) {
-        const colour = b.key === 'townHall' ? PAL.gold
-          : b.def.category === 'defense' ? PAL.heroTrim
-            : b.def.category === 'military' ? PAL.allyBody
-              : PAL.allyAlt
+        const colour = b.key === 'townHall' ? PAL.gilt
+          : b.def.category === 'defense' ? CHART.lapis
+            : b.def.category === 'military' ? PAL.lapis
+              : CHART.moss
         const s = b.key === 'townHall' ? 7 : 4.5
-        g.fillStyle(colour, 0.95)
+        g.fillStyle(CHART.ink, 0.9)
+        g.fillRect(x - s / 2 - 0.8, y - s / 2 - 0.8, s + 1.6, s + 1.6)
+        g.fillStyle(colour, 1)
         g.fillRect(x - s / 2, y - s / 2, s, s)
       } else {
         // An empty pad: the promise of a building, drawn hollow. One the hall
         // has not earned yet reads colder, exactly as it does out in the world.
         const need = Math.max(b.requiresTownHall, b.def.requiresTownHall ?? 0)
         const gated = need > gs.buildings.townHallLevel
-        g.lineStyle(1, gated ? PAL.uiDim : PAL.gold, gated ? 0.4 : 0.55)
+        g.lineStyle(1, gated ? CHART.ink : CHART.gilt, gated ? 0.3 : 0.7)
         g.strokeRect(x - 2, y - 2, 4, 4)
       }
     }
@@ -396,11 +359,15 @@ export class Minimap {
       const x = rec.spec.x / T, y = rec.spec.y / T
       const s = 4
       if (rec.destroyed) {
-        g.lineStyle(1, PAL.uiDim, 0.55)
+        g.lineStyle(1.2, CHART.ink, 0.6)
         g.lineBetween(x - s, y - s, x + s, y + s)
         g.lineBetween(x - s, y + s, x + s, y - s)
       } else {
-        g.fillStyle(PAL.enemyBody, 0.95)
+        g.fillStyle(CHART.ink, 0.9)
+        g.fillPoints([
+          { x, y: y - s - 1 }, { x: x + s + 1, y }, { x, y: y + s + 1 }, { x: x - s - 1, y },
+        ], true)
+        g.fillStyle(CHART.wax, 1)
         g.fillPoints([
           { x, y: y - s }, { x: x + s, y }, { x, y: y + s }, { x: x - s, y },
         ], true)
@@ -408,9 +375,11 @@ export class Minimap {
     }
 
     // ---- the shroud ------------------------------------------------------
-    // Merged into runs along each row, so a map that is mostly unknown costs a
-    // couple of rectangles a row rather than one per cell.
-    g.fillStyle(PAL.uiBg, 0.94)
+    // Uncharted ground is blank vellum, the way it is out in the world: the
+    // chart simply has not been drawn there yet. Merged into runs along each
+    // row, so a map that is mostly unknown costs a couple of rectangles a row
+    // rather than one per cell.
+    g.fillStyle(CHART.uncharted, 1)
     for (let r = 0; r < ROWS; r++) {
       let c = 0
       while (c < COLS) {
@@ -448,8 +417,8 @@ export class Minimap {
       const c = gs.zones.claimPoint(z.id)
       if (!c) continue
       const ready = gs.zones.canUnlockId(z.id)
-      const colour = ready ? PAL.good : PAL.gold
-      g.lineStyle(1.5, colour, ready ? 1 : 0.6)
+      const colour = ready ? CHART.moss : CHART.gilt
+      g.lineStyle(1.5, colour, ready ? 1 : 0.75)
       g.strokeEllipse(c.x * sx, c.y * sy, 9, 9, 10)
       g.fillStyle(colour, ready ? 1 : 0.5)
       g.fillRect(c.x * sx - 1.4, c.y * sy - 1.4, 2.8, 2.8)
@@ -468,15 +437,15 @@ export class Minimap {
     for (const s of gs.army.soldiers) this.friends[this.cellIndex(s.x, s.y)]++
     for (const w of gs.workers.workers) this.friends[this.cellIndex(w.x, w.y)]++
 
-    g.fillStyle(PAL.heroTrim, 0.75)
+    g.fillStyle(CHART.lapis, 0.85)
     this.blips(g, this.friends, sx, sy, 2, 2.6)
-    g.fillStyle(PAL.danger, 0.9)
+    g.fillStyle(0xc0301c, 0.95)
     this.blips(g, this.hostiles, sx, sy, 2.4, 4.4)
 
     // ---- where the night is coming from ----------------------------------
     if (gs.waves.phase !== 'day') {
       const pulse = 0.55 + Math.sin(gs.now * 0.006) * 0.35
-      g.fillStyle(PAL.danger, pulse)
+      g.fillStyle(CHART.wax, pulse)
       for (const gate of gs.waves.nextGates()) {
         const x = gate.x * sx, y = gate.y * sy
         g.fillPoints([
@@ -487,14 +456,16 @@ export class Minimap {
 
     // ---- what is on screen right now -------------------------------------
     const view = gs.cameras.main.worldView
-    g.lineStyle(1, PAL.uiText, 0.45)
+    g.lineStyle(1, CHART.ink, 0.5)
     g.strokeRect(view.x * sx, view.y * sy, view.width * sx, view.height * sy)
 
     const p = gs.player
     if (p.alive) {
-      g.fillStyle(0x05070c, 0.85)
-      g.fillRect(p.x * sx - 3.2, p.y * sy - 3.2, 6.4, 6.4)
-      g.fillStyle(PAL.heroTrim, 1)
+      g.fillStyle(PAL.bone, 1)
+      g.fillRect(p.x * sx - 3.6, p.y * sy - 3.6, 7.2, 7.2)
+      g.fillStyle(CHART.ink, 1)
+      g.fillRect(p.x * sx - 2.8, p.y * sy - 2.8, 5.6, 5.6)
+      g.fillStyle(PAL.lapis, 1)
       g.fillRect(p.x * sx - 2, p.y * sy - 2, 4, 4)
     }
   }
@@ -523,17 +494,16 @@ export class Minimap {
   // ---- loop --------------------------------------------------------------
 
   update(dt: number) {
-    const cam = this.ui.cameras.main
+    const view = screen(this.ui)
     const bands = this.game.uiBands
     // The HUD moves its own bands about as resource rows are discovered and the
     // objective row comes and goes, so follow them rather than laying out once.
-    if (cam.width !== this.W || cam.height !== this.H
+    if (view.w !== this.W || view.h !== this.H
       || bands.top !== this.lastTop || bands.bottom !== this.lastBottom) {
       this.layout()
     }
 
-    const live = !this.blocked && this.roomy
-    this.chipZone.setSize(live ? this.chip.w : 1, live ? this.chip.h : 1)
+    this.chipBtn.setLive(!this.blocked && this.roomy)
     if (!this.roomy) return
 
     // Fog is tracked whether the panel is open or not, so folding the map away
@@ -576,12 +546,9 @@ export class Minimap {
   }
 
   destroy() {
-    this.chrome.destroy()
+    this.tray.destroy()
     this.cold.destroy()
     this.unitG.destroy()
     this.scratch.destroy()
-    this.chipLabel.destroy()
-    this.chipKey.destroy()
-    this.chipZone.destroy()
   }
 }

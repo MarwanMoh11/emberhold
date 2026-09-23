@@ -1,25 +1,37 @@
 import Phaser from 'phaser'
 import { PAL, CSS } from '../config/palette'
+import { screen, textStyle, type Voice } from './theme'
+import { onPage, PlateButton, SkinPanel, vignetteTexture, type Tone } from './skin'
 
-export const FONT = 'Verdana, Geneva, sans-serif'
-
-/** Shared chrome for the modal panels: dim, card, title, buttons. */
+/**
+ * Shared chrome for the modal panels: the dim, the parchment page, headings
+ * and plate buttons.
+ *
+ * Every modal is a page out of the hold's chronicle: ink on parchment over a
+ * darkened, vignetted world. Colours are passed in their HUD form (bone, gold,
+ * vermilion) and turned into inks that hold up on paper, so a panel never has
+ * to know which surface it sits on.
+ */
 export class Overlay {
   readonly root: Phaser.GameObjects.Container
   protected dim: Phaser.GameObjects.Rectangle
-  protected card: Phaser.GameObjects.Graphics
+  protected vignette: Phaser.GameObjects.Image
+  protected page: SkinPanel
   open = false
 
   constructor(protected scene: Phaser.Scene, depth = 1_100_000) {
     this.root = scene.add.container(0, 0).setDepth(depth).setVisible(false).setScrollFactor(0)
-    this.dim = scene.add.rectangle(0, 0, 10, 10, 0x040810, 0.72).setOrigin(0, 0).setScrollFactor(0)
-    this.card = scene.add.graphics().setScrollFactor(0)
-    this.root.add([this.dim, this.card])
+    this.dim = scene.add.rectangle(0, 0, 10, 10, 0x0c0704, 0.58).setOrigin(0, 0).setScrollFactor(0)
+      // A dim that eats taps: nothing under a modal should answer a thumb.
+      .setInteractive()
+    this.vignette = scene.add.image(0, 0, vignetteTexture(scene)).setOrigin(0, 0).setScrollFactor(0)
+    this.page = new SkinPanel(scene, 'page')
+    this.root.add([this.dim, this.vignette, this.page.img])
     scene.scale.on('resize', () => { if (this.open) this.layout() })
   }
 
-  protected get W() { return this.scene.cameras.main.width }
-  protected get H() { return this.scene.cameras.main.height }
+  protected get W() { return screen(this.scene).w }
+  protected get H() { return screen(this.scene).h }
 
   /**
    * A landscape phone: barely 390px of height for a card that also has to hold
@@ -29,24 +41,38 @@ export class Overlay {
    */
   protected get compact() { return this.H < 470 }
 
-  protected drawCard(x: number, y: number, w: number, h: number, accent = PAL.uiEdge) {
+  /** Lay the dim over the whole screen and the page where it goes. */
+  protected drawCard(x: number, y: number, w: number, h: number, accent: number = PAL.wax) {
     this.dim.setSize(this.W, this.H)
-    this.card.clear()
-    this.card.fillStyle(PAL.uiPanel, 0.97)
-    this.card.fillRoundedRect(x, y, w, h, 14)
-    this.card.lineStyle(2, accent, 1)
-    this.card.strokeRoundedRect(x, y, w, h, 14)
-    this.card.fillStyle(accent, 0.9)
-    this.card.fillRoundedRect(x + 16, y + 8, w - 32, 3, 2)
+    this.vignette.setDisplaySize(this.W, this.H)
+    this.page.setVisible(true).style({ accent }).place(x, y, w, h)
   }
 
-  protected text(size: number, colour: number, bold = false, originX = 0.5, originY = 0.5) {
-    const t = this.scene.add.text(0, 0, '', {
-      fontFamily: FONT, fontSize: `${size}px`, color: CSS(colour),
-      fontStyle: bold ? 'bold' : 'normal', align: originX === 0.5 ? 'center' : 'left',
-    }).setOrigin(originX, originY).setScrollFactor(0)
+  /** The dim alone, for a modal that floats its content without a page. */
+  protected drawDim() {
+    this.dim.setSize(this.W, this.H)
+    this.vignette.setDisplaySize(this.W, this.H)
+    this.page.setVisible(false)
+  }
+
+  /**
+   * Text on the page. Bold and large is a heading and is set in the display
+   * face; everything else is the reading face. Pass `voice` to choose.
+   */
+  protected text(size: number, colour: number, bold = false, originX = 0.5, originY = 0.5, voice?: Voice) {
+    const v: Voice = voice ?? (bold && size >= 18 ? 'display' : 'ui')
+    const t = this.scene.add.text(0, 0, '', textStyle({
+      voice: v, size, colour: onPage(colour),
+      weight: v === 'display' ? '800' : bold ? '800' : '500',
+      align: originX === 0.5 ? 'center' : 'left',
+    })).setOrigin(originX, originY).setScrollFactor(0)
     this.root.add(t)
     return t
+  }
+
+  /** Set a page text's colour from its HUD form. */
+  protected ink(t: Phaser.GameObjects.Text, colour: number) {
+    return t.setColor(CSS(onPage(colour)))
   }
 
   /**
@@ -75,50 +101,48 @@ export class Overlay {
     return g
   }
 
-  protected button(label: string, onClick: () => void, colour = PAL.heroTrim, size = 14) {
-    const g = this.scene.add.graphics().setScrollFactor(0)
-    const t = this.scene.add.text(0, 0, label, {
-      fontFamily: FONT, fontSize: `${size}px`, color: CSS(PAL.uiText), fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0)
-    const zone = this.scene.add.zone(0, 0, 10, 10).setScrollFactor(0).setInteractive({ useHandCursor: true })
-    let hover = false
-    let enabled = true
-    let selected = false
-    const redraw = (x: number, y: number, w: number, h: number) => {
-      g.clear()
-      g.fillStyle((hover || selected) && enabled ? PAL.uiEdge : PAL.uiBg, enabled ? 0.95 : 0.55)
-      g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 8)
-      g.lineStyle(2, colour, enabled ? (hover || selected ? 1 : 0.7) : 0.22)
-      g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 8)
-      t.setColor(CSS(enabled ? PAL.uiText : PAL.uiDim))
-    }
-    zone.on('pointerover', () => { hover = true; api.place(api.x, api.y, api.w, api.h) })
-    zone.on('pointerout', () => { hover = false; api.place(api.x, api.y, api.w, api.h) })
-    zone.on('pointerdown', () => { if (enabled) onClick() })
-    this.root.add([g, t, zone])
-    const api = {
-      x: 0, y: 0, w: 140, h: 40,
-      place(x: number, y: number, w = 140, h = 40) {
-        api.x = x; api.y = y; api.w = w; api.h = h
-        redraw(x, y, w, h)
-        t.setPosition(x, y)
-        zone.setPosition(x, y).setSize(w, h)
-      },
-      setLabel(s: string) { t.setText(s) },
-      setVisible(v: boolean) { g.setVisible(v); t.setVisible(v); zone.setSize(v ? api.w : 1, v ? api.h : 1) },
-      /** A greyed button still draws, but swallows nothing: the tap does nothing. */
-      setEnabled(v: boolean) { enabled = v; redraw(api.x, api.y, api.w, api.h) },
-      setSelected(v: boolean) { selected = v; redraw(api.x, api.y, api.w, api.h) },
-      trigger() { if (enabled) onClick() },
-    }
-    api.place(0, 0)
-    return api
+  protected button(label: string, onClick: () => void, tone: Tone = 'plain', size = 15, icon?: string) {
+    const b = new PlateButton(this.scene, { label, onClick, tone, size, icon })
+    b.setScrollFactor(0)
+    this.root.add(b.objects())
+    b.place(0, 0)
+    return b
   }
 
-  show() { this.open = true; this.root.setVisible(true); this.layout() }
-  hide() { this.open = false; this.root.setVisible(false) }
+  /**
+   * A small inked rule with a lozenge in the middle, the way a chronicle
+   * separates its heading from its body.
+   */
+  protected rule(g: Phaser.GameObjects.Graphics, cx: number, y: number, w: number, accent: number = PAL.wax) {
+    const ink = 0x3a2616
+    g.lineStyle(1, ink, 0.55)
+    g.lineBetween(cx - w / 2, y, cx - 7, y)
+    g.lineBetween(cx + 7, y, cx + w / 2, y)
+    g.fillStyle(ink, 0.8)
+    g.fillPoints([{ x: cx, y: y - 4.5 }, { x: cx + 4.5, y }, { x: cx, y: y + 4.5 }, { x: cx - 4.5, y }], true)
+    g.fillStyle(accent, 1)
+    g.fillPoints([{ x: cx, y: y - 2.6 }, { x: cx + 2.6, y }, { x: cx, y: y + 2.6 }, { x: cx - 2.6, y }], true)
+  }
+
+  show() {
+    this.open = true
+    this.root.setVisible(true)
+    this.layout()
+    // The page settles into place rather than blinking on.
+    this.root.setAlpha(0)
+    this.scene.tweens.killTweensOf(this.root)
+    this.scene.tweens.add({ targets: this.root, alpha: 1, duration: 140, ease: 'Sine.easeOut' })
+  }
+
+  hide() {
+    this.open = false
+    this.scene.tweens.killTweensOf(this.root)
+    this.root.setVisible(false)
+  }
+
   toggle() { this.open ? this.hide() : this.show() }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   protected layout() {}
 }
+

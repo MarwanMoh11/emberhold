@@ -1,4 +1,5 @@
 import { Overlay } from './Overlay'
+import type { Tone } from './skin'
 import { PAL } from '../config/palette'
 import { SaveManager } from '../systems/SaveManager'
 import type { GameScene } from '../scenes/GameScene'
@@ -13,12 +14,14 @@ export class DebugPanel extends Overlay {
 
   constructor(scene: Phaser.Scene, private game: GameScene) {
     super(scene, 1_250_000)
-    this.dim.setFillStyle(0x040810, 0.35)
-    this.heading = this.text(18, PAL.gold, true)
+    // not modal: the game keeps running and answering taps around the panel
+    this.dim.setFillStyle(0x0c0704, 0.2).disableInteractive()
+    this.vignette.setVisible(false)
+    this.heading = this.text(20, PAL.uiText, true)
     this.info = this.text(11, PAL.uiDim)
 
-    const b = (label: string, fn: () => void, colour = PAL.heroTrim) => {
-      const btn = this.button(label, () => { fn(); this.layout() }, colour)
+    const b = (label: string, fn: () => void, tone: Tone = 'quiet') => {
+      const btn = this.button(label, () => { fn(); this.layout() }, tone, 12)
       this.rows.push(btn)
       return btn
     }
@@ -28,17 +31,17 @@ export class DebugPanel extends Overlay {
     b('SPAWN 10', () => this.game.debugSpawn(10))
     b('SPAWN 100', () => this.game.debugSpawn(100))
     b('SPAWN 300', () => this.game.debugSpawn(300))
-    b('SUMMON FINAL BOSS', () => this.game.debugSpawnFinalBoss(), PAL.danger)
+    b('SUMMON FINAL BOSS', () => this.game.debugSpawnFinalBoss(), 'danger')
     b('NEXT WAVE NOW', () => this.game.waves.forceNextWave())
     b('END NIGHT', () => this.game.waves.skipToDay())
-    b('KILL ALL', () => this.game.enemies.killAll(), PAL.danger)
+    b('KILL ALL', () => this.game.enemies.killAll(), 'danger')
     b('LEVEL +1', () => this.game.debugLevel(1))
     b('LEVEL +5', () => this.game.debugLevel(5))
     b('BUILD EVERYTHING', () => this.game.buildings.unlockAll())
     b('UNLOCK MAP', () => { this.game.zones.revealAll(); for (const z of ['whisperwood', 'greyfall', 'hollow', 'deepvein', 'ashgate'] as const) this.game.zones.unlock(z, true) })
     b('TOGGLE GODMODE', () => { this.game.player.invincible = !this.game.player.invincible })
     b('TOGGLE PERF READOUT', () => this.scene.events.emit('toggleStats'))
-    b('RESET SAVE', () => { SaveManager.clear(); window.location.reload() }, PAL.danger)
+    b('RESET SAVE', () => { SaveManager.clear(); window.location.reload() }, 'danger')
   }
 
   protected layout() {
@@ -48,8 +51,8 @@ export class DebugPanel extends Overlay {
     const h = Math.min(this.H - 24, 128 + perCol * 30)
     const x = 14
     const y = this.H / 2 - h / 2
-    this.drawCard(x, y, w, h, PAL.danger)
-    this.heading.setText('DEBUG  ·  F2').setPosition(x + w / 2, y + 24)
+    this.drawCard(x, y, w, h, PAL.wax)
+    this.heading.setText('Debug  ·  F2').setPosition(x + w / 2, y + 24)
     const s = this.game.stats
     this.info.setText(
       `${s.fps} fps   sim p95 ${s.simP95.toFixed(1)} ms\n` +

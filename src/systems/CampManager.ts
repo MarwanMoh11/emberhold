@@ -1,5 +1,6 @@
 import { CAMPS, type CampSpec } from '../config/map'
-import { PAL, CSS } from '../config/palette'
+import { PAL } from '../config/palette'
+import { textStyle } from '../ui/theme'
 import { rr } from '../core/math'
 import type { Enemy } from '../entities/Enemy'
 import type { EnemyKey } from '../config/enemies'
@@ -26,10 +27,9 @@ export class CampManager {
 
   build() {
     for (const spec of CAMPS) {
-      const label = this.scene.add.text(spec.x, spec.y - 128, spec.name.toUpperCase(), {
-        fontFamily: 'Verdana, Geneva, sans-serif', fontSize: '13px',
-        color: CSS(PAL.danger), fontStyle: 'bold', stroke: '#0a1018', strokeThickness: 4,
-      }).setOrigin(0.5).setDepth(780_000).setVisible(false)
+      const label = this.scene.add.text(spec.x, spec.y - 128, spec.name,
+        textStyle({ voice: 'display', size: 20, colour: PAL.danger, stroke: 5 }))
+        .setOrigin(0.5).setDepth(780_000).setVisible(false)
       this.camps.push({ spec, enemy: null, timer: rr(3, 8), destroyed: false, label })
     }
   }
@@ -63,7 +63,7 @@ export class CampManager {
       const near = Math.hypot(p.x - rec.spec.x, p.y - rec.spec.y) < 620
       rec.label.setVisible(near)
       if (near && e) {
-        rec.label.setText(`${rec.spec.name.toUpperCase()}   ${Math.ceil(e.hp)}/${e.maxHp}`)
+        rec.label.setText(`${rec.spec.name}   ${Math.ceil(e.hp)}/${e.maxHp}`)
       }
 
       // keep feeding its region while it stands

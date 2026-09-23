@@ -8,9 +8,12 @@ import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type ResourceBag, type ResourceType } from '../core/types'
 import { clamp, dist, rr, short } from '../core/math'
 import { SOLDIERS, WORKER_FOR, WORKERS, type SoldierKey } from '../config/units'
-import { wantsTouchTargets } from '../core/device'
+import { wantsTouchTargets, DPR } from '../core/device'
 import type { GameScene } from '../scenes/GameScene'
 import { BuildingPanel, type PanelChip, type PanelRow } from '../ui/BuildingPanel'
+
+/** SPEAR → Spear: the card's small caps do the shouting. */
+const cap = (w: string) => w.charAt(0) + w.slice(1).toLowerCase()
 
 /** Seconds the hero must stand on a pad before it starts drawing resources. */
 const DWELL = 0.3
@@ -803,11 +806,11 @@ export class BuildingManager {
     const rows: PanelRow[] = []
 
     if (b.isMax) {
-      title = `${b.def.name.toUpperCase()}  LV.${b.level}`
-      sub = 'FULLY UPGRADED'
+      title = `${b.def.name}  ·  ${b.level}`
+      sub = 'Fully upgraded'
     } else {
       const cost = b.nextCost!
-      title = b.level === 0 ? b.def.name.toUpperCase() : `${b.def.name.toUpperCase()}  LV.${b.level} → ${b.level + 1}`
+      title = b.level === 0 ? b.def.name : `${b.def.name}  ·  ${b.level} → ${b.level + 1}`
       sub = b.level === 0 ? b.def.desc : this.upgradeSummary(b)
       for (const k of RESOURCE_ORDER) {
         const need = cost[k] ?? 0
@@ -822,7 +825,7 @@ export class BuildingManager {
     if (b.level === 0 && this.townHallLevel < hallNeed) {
       this.panel.show(b, {
         title, sub, rows,
-        hint: `LOCKED — RAISE THE COMMAND HALL TO LV.${hallNeed}`,
+        hint: `Locked — raise the Command Hall to level ${hallNeed}`,
         hintBad: true,
       })
       return
@@ -853,8 +856,8 @@ export class BuildingManager {
       // to quietly drain every coin you walked past it with, so raising a level
       // is always a deliberate press — which means saying so when you can
       // already afford it and nothing appears to be happening.
-      const tap = wantsTouchTargets(this.scene.scale.width)
-        ? 'tap UPGRADE' : 'press UPGRADE (or hold SHIFT)'
+      const tap = wantsTouchTargets(this.scene.scale.width / DPR)
+        ? 'tap Upgrade' : 'press Upgrade (or hold Shift)'
       hint = b.committed
         ? 'pouring it in…'
         : res.canAfford(b.remaining())
@@ -877,7 +880,7 @@ export class BuildingManager {
           const shut = sd.tier > b.level
           return {
             key: k,
-            label: shut ? `${sd.short} LV.${sd.tier}` : held > 0 ? `${sd.short} ${held}` : sd.short,
+            label: shut ? `${cap(sd.short)} · lv ${sd.tier}` : held > 0 ? `${cap(sd.short)} ${held}` : cap(sd.short),
             selected: k === unit,
             locked: shut,
             affordable: res.canAfford(sd.cost) && this.scene.popUsed + sd.pop <= this.bonus.pop,
@@ -911,21 +914,22 @@ export class BuildingManager {
     const nxt = b.def.levels[b.level]?.stats ?? {}
     const parts: string[] = []
     const label: Record<string, string> = {
-      dmg: 'DMG', rate: 'RATE', range: 'RANGE', splash: 'SPLASH', pop: 'POP',
-      prod: 'OUTPUT', carry: 'CARRY', workers: 'WORKERS', heal: 'HEAL',
-      heroDmg: 'HERO DMG', troopDmg: 'TROOP DMG', towerDmg: 'TOWER DMG', unlockTier: 'TIER',
+      dmg: 'Damage', rate: 'Rate', range: 'Range', splash: 'Splash', pop: 'Pop',
+      prod: 'Output', carry: 'Carry', workers: 'Workers', heal: 'Heal',
+      heroDmg: 'Hero dmg', troopDmg: 'Troop dmg', towerDmg: 'Tower dmg', unlockTier: 'Tier',
     }
     for (const k of Object.keys(nxt)) {
       if (!label[k]) continue
       const a = cur[k] ?? 0, c = nxt[k] ?? 0
       if (a === c) continue
       const pct = k === 'heroDmg' || k === 'troopDmg' || k === 'towerDmg' || k === 'prod'
-      const fmt = (v: number) => pct ? `+${Math.round(v * 100)}%` : short(v)
-      parts.push(`${label[k]} ${fmt(a)}→${fmt(c)}`)
+      // a rate of 1 → 1.2 must not read as 1 → 1
+      const fmt = (v: number) => pct ? `+${Math.round(v * 100)}%` : v < 10 && v % 1 ? v.toFixed(1) : short(v)
+      parts.push(`${label[k]} ${fmt(a)} → ${fmt(c)}`)
     }
     const hpNext = b.def.levels[b.level].hp
-    if (hpNext !== b.maxHp) parts.push(`HP ${short(b.maxHp)}→${short(hpNext)}`)
-    return parts.slice(0, 3).join('   ') || b.def.desc
+    if (hpNext !== b.maxHp) parts.push(`HP ${short(b.maxHp)} → ${short(hpNext)}`)
+    return parts.slice(0, 3).join('  ·  ') || b.def.desc
   }
 
   // ---- enemy interaction ----------------------------------------------

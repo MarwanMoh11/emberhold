@@ -1,13 +1,14 @@
 import Phaser from 'phaser'
-import { PAL } from '../config/palette'
+import { medalTexture, stickRingTexture } from './skin'
+import { DPR } from '../core/device'
 
 /**
  * Floating thumbstick: appears wherever the left half of the screen is touched,
  * so the player never has to find a fixed pad.
  */
 export class Joystick {
-  private base: Phaser.GameObjects.Graphics
-  private knob: Phaser.GameObjects.Graphics
+  private base: Phaser.GameObjects.Image
+  private knob: Phaser.GameObjects.Image
   private originX = 0
   private originY = 0
   private pointerId = -1
@@ -17,30 +18,16 @@ export class Joystick {
   enabled = true
 
   constructor(private scene: Phaser.Scene) {
-    this.base = scene.add.graphics().setScrollFactor(0).setDepth(1_000_010).setVisible(false)
-    this.knob = scene.add.graphics().setScrollFactor(0).setDepth(1_000_011).setVisible(false)
-    this.drawBase()
-    this.drawKnob()
+    // A compass ring and a gilt-and-lapis boss, painted like the rest of the HUD.
+    this.base = scene.add.image(0, 0, stickRingTexture(scene, this.radius))
+      .setScrollFactor(0).setDepth(1_000_010).setVisible(false).setScale(1 / DPR)
+    this.knob = scene.add.image(0, 0, medalTexture(scene, 26))
+      .setScrollFactor(0).setDepth(1_000_011).setVisible(false).setScale(1 / DPR)
 
     scene.input.on('pointerdown', this.onDown, this)
     scene.input.on('pointermove', this.onMove, this)
     scene.input.on('pointerup', this.onUp, this)
     scene.input.on('pointerupoutside', this.onUp, this)
-  }
-
-  private drawBase() {
-    const g = this.base
-    g.clear()
-    g.fillStyle(PAL.uiBg, 0.35); g.fillCircle(0, 0, this.radius)
-    g.lineStyle(3, PAL.heroTrim, 0.5); g.strokeCircle(0, 0, this.radius)
-    g.lineStyle(1.5, PAL.heroTrim, 0.25); g.strokeCircle(0, 0, this.radius * 0.55)
-  }
-
-  private drawKnob() {
-    const g = this.knob
-    g.clear()
-    g.fillStyle(PAL.heroTrim, 0.55); g.fillCircle(0, 0, 27)
-    g.fillStyle(PAL.uiText, 0.9); g.fillCircle(0, 0, 19)
   }
 
   /** Left half of the screen drives movement; the right half is for buttons. */
@@ -77,16 +64,18 @@ export class Joystick {
     if (!this.isMoveZone(p)) return
     if (this.overControl(p)) return
     this.pointerId = p.id
-    this.originX = p.x
-    this.originY = p.y
-    this.base.setPosition(p.x, p.y).setVisible(true).setAlpha(0.9)
-    this.knob.setPosition(p.x, p.y).setVisible(true).setAlpha(0.9)
+    // Pointer positions arrive in device pixels; the stick is drawn and
+    // measured in the CSS pixels the rest of the HUD is laid out in.
+    this.originX = p.x / DPR
+    this.originY = p.y / DPR
+    this.base.setPosition(this.originX, this.originY).setVisible(true).setAlpha(0.9)
+    this.knob.setPosition(this.originX, this.originY).setVisible(true).setAlpha(0.9)
   }
 
   private onMove(p: Phaser.Input.Pointer) {
     if (p.id !== this.pointerId) return
-    const dx = p.x - this.originX
-    const dy = p.y - this.originY
+    const dx = p.x / DPR - this.originX
+    const dy = p.y / DPR - this.originY
     const d = Math.hypot(dx, dy)
     const clamped = Math.min(d, this.radius)
     const nx = d > 0 ? dx / d : 0

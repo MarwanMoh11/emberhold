@@ -6,7 +6,7 @@ import { SaveManager } from '../systems/SaveManager'
 import type { GameScene } from '../scenes/GameScene'
 import type Phaser from 'phaser'
 
-const QUALITY_NAMES = ['LOW', 'MED', 'HIGH']
+const QUALITY_NAMES = ['low', 'medium', 'high']
 
 /** Which screen a menu row opens. UIScene owns the actual overlays. */
 export type ScreenName = 'quests' | 'deeds' | 'respec' | 'summary'
@@ -26,39 +26,48 @@ export class PauseMenu extends Overlay {
   private heading!: Phaser.GameObjects.Text
   private stats!: Phaser.GameObjects.Text
   private controls!: Phaser.GameObjects.Text
+  private rules!: Phaser.GameObjects.Graphics
   private rows: ReturnType<Overlay['button']>[] = []
   private confirmingReset = false
   private focusIndex = 0
+  private saveNote = ''
+  private exportNote = ''
 
   constructor(scene: Phaser.Scene, private game: GameScene) {
     super(scene, 1_150_000)
-    this.heading = this.text(28, PAL.gold, true)
-    this.stats = this.text(12, PAL.uiDim)
-    this.controls = this.text(11, PAL.uiText)
+    this.rules = this.gfx()
+    this.heading = this.text(30, PAL.uiText, true)
+    this.stats = this.text(13, PAL.uiDim)
+    this.stats.setFontStyle('italic 500')
+    this.controls = this.text(11, PAL.uiDim)
 
     const open = (s: ScreenName) => () => {
       this.game.audio.play('ui')
       this.scene.events.emit('openScreen', s)
     }
     this.rows = [
-      this.button('RESUME', () => this.scene.events.emit('togglePause'), PAL.good),
-      this.button('QUEST LOG', open('quests'), PAL.gold, 12),
-      this.button('DEEDS', open('deeds'), PAL.gold, 12),
-      this.button('RESPEC', open('respec'), PAL.heroTrim, 12),
-      this.button('RUN SUMMARY', open('summary'), PAL.heroTrim, 12),
-      this.button('MASTER', () => this.cycle('master'), PAL.heroTrim, 12),
-      this.button('EFFECTS', () => this.cycle('sfx'), PAL.heroTrim, 12),
-      this.button('MUSIC', () => this.cycle('music'), PAL.heroTrim, 12),
-      this.button('QUALITY', () => this.cycleQuality(), PAL.heroTrim, 12),
-      this.button('NUMBERS', () => this.toggleSetting('showDamage'), PAL.heroTrim, 12),
-      this.button('MOTION', () => this.toggleSetting('reducedMotion'), PAL.heroTrim, 12),
-      this.button('SAVE NOW', () => {
-        this.rows[11].setLabel(this.game.saves.save() ? 'SAVED ✓' : 'SAVE FAILED')
-      }),
-      this.button('EXPORT FILE', () => {
-        this.rows[12].setLabel(this.game.saves.download() ? 'FILE READY ✓' : 'EXPORT FAILED')
-      }, PAL.heroTrim, 12),
-      this.button('RESET PROGRESS', () => this.resetProgress(), PAL.danger),
+      this.button('Resume', () => this.scene.events.emit('togglePause'), 'primary', 17),
+      this.button('Quest log', open('quests'), 'plain', 14),
+      this.button('Deeds', open('deeds'), 'plain', 14),
+      this.button('Respec', open('respec'), 'plain', 14),
+      this.button('Run summary', open('summary'), 'plain', 14),
+      this.button('Master', () => this.cycle('master'), 'quiet', 13),
+      this.button('Effects', () => this.cycle('sfx'), 'quiet', 13),
+      this.button('Music', () => this.cycle('music'), 'quiet', 13),
+      this.button('Quality', () => this.cycleQuality(), 'quiet', 13),
+      this.button('Numbers', () => this.toggleSetting('showDamage'), 'quiet', 13),
+      this.button('Motion', () => this.toggleSetting('reducedMotion'), 'quiet', 13),
+      this.button('Save now', () => {
+        this.saveNote = this.game.saves.save() ? 'Saved' : 'Save failed'
+        this.layout()
+      }, 'plain', 14),
+      this.button('Export file', () => {
+        this.exportNote = this.game.saves.download() ? 'File ready' : 'Export failed'
+        this.layout()
+      }, 'plain', 14),
+      // Quiet plate, vermilion letters: findable, but not the brightest thing
+      // on a menu whose first job is to get you back into the game.
+      this.button('Reset progress', () => this.resetProgress(), 'quiet', 14),
     ]
   }
 
@@ -92,10 +101,10 @@ export class PauseMenu extends Overlay {
   private resetProgress() {
     if (!this.confirmingReset) {
       this.confirmingReset = true
-      this.rows[13].setLabel('TAP AGAIN TO WIPE')
+      this.rows[13].setLabel('Tap again to wipe')
       this.scene.time.delayedCall(2600, () => {
         this.confirmingReset = false
-        this.rows[13].setLabel('RESET PROGRESS')
+        this.rows[13].setLabel('Reset progress')
       })
       return
     }
@@ -104,6 +113,9 @@ export class PauseMenu extends Overlay {
   }
 
   show() {
+    this.rows[13].setTextColour(PAL.danger)
+    this.saveNote = ''
+    this.exportNote = ''
     super.show()
     this.focus(0)
   }
@@ -132,74 +144,82 @@ export class PauseMenu extends Overlay {
   protected layout() {
     const c = this.compact
     const g = this.game
-    const w = Math.min(c ? 540 : 380, this.W - (c ? 24 : 48))
+    const w = Math.min(c ? 560 : 400, this.W - (c ? 24 : 40))
 
     // The control crib is set and measured before the card is sized, because
     // on a narrow card it wraps — it used to run out past both edges on a
-    // portrait phone and on any window narrow enough to pin the card to 380.
-    this.controls.setFontSize(c ? 9 : 11).setWordWrapWidth(w - 36).setText(
+    // portrait phone and on any window narrow enough to pin the card to 400.
+    this.controls.setFontSize(c ? 10 : 12).setWordWrapWidth(w - 44).setText(
       c
         ? `WASD move  ·  X dodge  ·  ${ABILITY_KEYS.join(' ')} skills  ·  R ultimate  ·  H army`
         : `WASD move  ·  X dodge  ·  ${ABILITY_KEYS.join(' ')} skills\n` +
           'R ultimate  ·  H army  ·  ESC pause  ·  F2 debug\n' +
           'Stand at a site to build, recruit or claim',
-    ).setAlpha(0.8)
+    ).setLineSpacing(2)
 
-    const headH = c ? 68 : 118
-    const footH = Math.round(this.controls.height) + (c ? 14 : 22)
+    const headH = c ? 74 : 126
+    const footH = Math.round(this.controls.height) + (c ? 22 : 34)
     const pitch0 = c ? 34 : 44
-    const h = Math.min(this.H - 20, headH + LINES.length * pitch0 + footH)
+    const h = Math.min(this.H - 16, headH + LINES.length * pitch0 + footH)
     const x = this.W / 2 - w / 2
     const y = this.H / 2 - h / 2
     const cx = this.W / 2
-    this.drawCard(x, y, w, h, PAL.gold)
+    this.drawCard(x, y, w, h, PAL.wax)
 
-    this.heading.setFontSize(c ? 20 : 28).setText('EMBERHOLD').setPosition(cx, y + (c ? 26 : 40))
+    this.heading.setText('Emberhold').setPosition(cx, y + (c ? 30 : 46))
+    this.fitText(this.heading, c ? 24 : 34, w - 60)
     const mins = Math.floor(g.saves.playtime / 60)
-    this.stats.setFontSize(c ? 10 : 12).setText(
-      `night ${g.waves.wave}   ·   level ${g.player.level}   ·   ${g.combat.kills} slain\n` +
-      `${g.army.count} troops   ·   ${g.workers.count} workers   ·   ${mins} min played`,
-    ).setPosition(cx, y + (c ? 48 : 74))
+    this.stats.setFontSize(c ? 11 : 13).setText(
+      c
+        ? `Night ${g.waves.wave}  ·  level ${g.player.level}  ·  ${g.combat.kills} slain  ·  ${g.army.count} troops  ·  ${mins} min`
+        : `Night ${g.waves.wave}  ·  level ${g.player.level}  ·  ${g.combat.kills} slain\n` +
+          `${g.army.count} troops  ·  ${g.workers.count} workers  ·  ${mins} min played`,
+    ).setLineSpacing(2).setPosition(cx, y + (c ? 54 : 88))
+    this.fitText(this.stats, c ? 11 : 13, w - 44)
+    this.rules.clear()
+    if (!c) this.rule(this.rules, cx, y + headH - 12, Math.min(220, w - 80))
 
     const earned = g.quests.unlockedAchievements.size
     const labels = [
-      'RESUME',
-      `QUEST LOG  ${g.quests.index}/${QUESTS.length}`,
-      `DEEDS  ${earned}/${ACHIEVEMENTS.length}`,
-      'RESPEC',
-      'RUN SUMMARY',
-      `MASTER  ${Math.round(g.settings.master * 100)}%`,
-      `EFFECTS  ${Math.round(g.settings.sfx * 100)}%`,
-      `MUSIC  ${Math.round(g.settings.music * 100)}%`,
-      `QUALITY  ${QUALITY_NAMES[g.settings.quality]}`,
-      `NUMBERS  ${g.settings.showDamage ? 'ON' : 'OFF'}`,
-      `MOTION  ${g.settings.reducedMotion ? 'LOW' : 'FULL'}`,
-      'SAVE NOW',
-      'EXPORT FILE',
-      this.confirmingReset ? 'TAP AGAIN TO WIPE' : 'RESET PROGRESS',
+      'Resume',
+      `Quest log  ${g.quests.index}/${QUESTS.length}`,
+      `Deeds  ${earned}/${ACHIEVEMENTS.length}`,
+      'Respec',
+      'Run summary',
+      `Master  ${Math.round(g.settings.master * 100)}%`,
+      `Effects  ${Math.round(g.settings.sfx * 100)}%`,
+      `Music  ${Math.round(g.settings.music * 100)}%`,
+      `Quality  ${QUALITY_NAMES[g.settings.quality]}`,
+      `Numbers  ${g.settings.showDamage ? 'on' : 'off'}`,
+      `Motion  ${g.settings.reducedMotion ? 'low' : 'full'}`,
+      this.saveNote || 'Save now',
+      this.exportNote || 'Export file',
+      this.confirmingReset ? 'Tap again to wipe' : 'Reset progress',
     ]
 
-    const bw = w - (c ? 48 : 72)
+    const bw = w - (c ? 48 : 64)
     const gap = 10
     const half = (bw - gap) / 2
     const top = y + headH
     const pitch = Math.min(pitch0, (h - headH - footH) / LINES.length)
-    const bh = Math.min(c ? 28 : 38, pitch - 6)
+    const bh = Math.min(c ? 28 : 36, pitch - 7)
 
     for (let l = 0; l < LINES.length; l++) {
       const line = LINES[l]
-      const by = top + l * pitch + pitch / 2
+      // Resume is the one row that is not a peer of the others: taller, and
+      // set apart from the rows that follow it.
+      const by = top + l * pitch + pitch / 2 + (l > 0 && !c ? 4 : 0)
       for (let i = 0; i < line.length; i++) {
         const idx = line[i]
         this.rows[idx].setLabel(labels[idx])
         if (line.length === 1) {
-          this.rows[idx].place(cx, by, bw, bh)
+          this.rows[idx].place(cx, by, l === 0 ? bw : bw, l === 0 ? Math.min(bh + 6, pitch - 2) : bh)
         } else {
           this.rows[idx].place(cx + (i === 0 ? -1 : 1) * (half + gap) / 2, by, half, bh)
         }
       }
     }
 
-    this.controls.setPosition(cx, y + h - footH / 2 - 2)
+    this.controls.setPosition(cx, y + h - footH / 2 - (c ? 2 : 4))
   }
 }

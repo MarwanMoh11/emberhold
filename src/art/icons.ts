@@ -250,8 +250,18 @@ export const UPGRADE_ICON: Record<UpgradeId, string> = {
   masteryArms: 'ico_crown', masteryVigor: 'ico_heart', masteryCommand: 'ico_banner',
 }
 
+/**
+ * Glyphs are only ever shown by the interface, always at a set display size,
+ * and on a screen that may be two or three device pixels to the CSS pixel. So
+ * they are painted at twice their nominal 48px and scaled down, not up.
+ */
+const U = 2
+
 export function buildIconTextures(scene: Phaser.Scene) {
   for (const [name, draw] of Object.entries(GLYPHS)) {
-    bake(scene, `ico_${name}`, S, S, { body: draw, outline: 2, grain: 0.05 })
+    bake(scene, `ico_${name}`, S * U, S * U, {
+      body: x => { x.save(); x.scale(U, U); draw(x); x.restore() },
+      outline: 2 * U, grain: 0.05,
+    })
   }
 }
