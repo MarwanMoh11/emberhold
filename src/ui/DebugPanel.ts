@@ -62,7 +62,7 @@ export class DebugPanel extends Overlay {
       `troops ${s.soldiers}   workers ${s.workers}\n` +
       `drops ${s.pickups}   shots ${s.projectiles}\n` +
       `chunks ${s.chunks.resident} held  ${s.chunks.queued} queued  ${s.chunks.baked} baked\n` +
-      `bake ${s.chunks.frameMs.toFixed(1)} ms  worst ${s.chunks.worstFrameMs.toFixed(1)} ms\n` +
+      `bake ${s.chunks.frameMs.toFixed(1)} ms  worst ${s.chunks.worstFrameMs.toFixed(1)} ms  chunk ${s.chunks.chunkMs.toFixed(1)} worst ${s.chunks.worstChunkMs.toFixed(1)} ms\n` +
       `static ${s.cull.shown} drawn  ${s.cull.total - s.cull.shown} culled\n` +
       `nav v${s.nav.version} ${s.nav.building ? 'rebuilding' : 'ready'} slice ${s.nav.worstFrameMs.toFixed(1)} · paths ${s.nav.paths.searches} worst ${s.nav.paths.worstMs.toFixed(1)} ms\n` +
       `godmode ${this.game.player.invincible ? 'ON' : 'off'}`,

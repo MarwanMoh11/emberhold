@@ -35,6 +35,10 @@ export interface TerrainChunkStats {
   frameMs: number
   /** the most any update has spent baking (prime excluded) */
   worstFrameMs: number
+  /** ms of painting the last whole chunk took, summed over its slices */
+  chunkMs: number
+  /** the most any whole chunk has taken, prime included (S07's ≤ 12 ms target) */
+  worstChunkMs: number
 }
 
 /** What the streamer needs from a camera: Phaser's, or anything shaped like it. */
@@ -54,6 +58,8 @@ interface Chunk {
   canvas: HTMLCanvasElement | null
   ctx: CanvasRenderingContext2D | null
   next: number
+  /** ms spent painting this bake so far */
+  ms: number
   /** never baked, evicted, or invalidated */
   dirty: boolean
   wanted: boolean
@@ -95,6 +101,8 @@ export class TerrainChunks {
   private sliceEstimate = 1
   private frameMs = 0
   private worstFrameMs = 0
+  private chunkMs = 0
+  private worstChunkMs = 0
   private warned = false
 
   constructor(
@@ -118,7 +126,7 @@ export class TerrainChunks {
           cx, cy, x, y,
           w: Math.min(this.chunk, opts.width - x),
           h: Math.min(this.chunk, opts.height - y),
-          image: null, texKey: null, canvas: null, ctx: null, next: 0,
+          image: null, texKey: null, canvas: null, ctx: null, next: 0, ms: 0,
           dirty: true, wanted: false, seen: 0,
         })
       }
@@ -160,7 +168,7 @@ export class TerrainChunks {
     for (const c of this.grid) {
       if (rect && (c.x >= rect.x + rect.width || c.x + c.w <= rect.x || c.y >= rect.y + rect.height || c.y + c.h <= rect.y)) continue
       c.dirty = true
-      c.next = 0
+      c.next = 0; c.ms = 0
     }
   }
 
@@ -168,7 +176,7 @@ export class TerrainChunks {
     let resident = 0, queued = 0
     for (const c of this.grid) if (c.image || c.canvas) resident++
     for (const c of this.want) if (c.dirty) queued++
-    return { resident, baked: this.baked, queued, frameMs: this.frameMs, worstFrameMs: this.worstFrameMs }
+    return { resident, baked: this.baked, queued, frameMs: this.frameMs, worstFrameMs: this.worstFrameMs, chunkMs: this.chunkMs, worstChunkMs: this.worstChunkMs }
   }
 
   destroy() {
@@ -220,7 +228,12 @@ export class TerrainChunks {
     x.clearRect(sx, sy, S, S)
     this.painter(x, sx - this.overdraw, sy - this.overdraw, S + this.overdraw * 2, this.scale)
     x.restore()
-    if (++c.next >= count) this.publish(c)
+    c.ms += performance.now() - t0
+    if (++c.next >= count) {
+      this.chunkMs = c.ms
+      this.worstChunkMs = Math.max(this.worstChunkMs, c.ms)
+      this.publish(c)
+    }
     const ms = performance.now() - t0
     // a decaying max, not a mean: one slow slice should make the next frames cautious
     this.sliceEstimate = Math.max(ms, this.sliceEstimate * 0.95)
@@ -249,7 +262,7 @@ export class TerrainChunks {
     canvas.height = Math.ceil(c.h * this.scale)
     c.canvas = canvas
     c.ctx = canvas.getContext('2d') as CanvasRenderingContext2D
-    c.next = 0
+    c.next = 0; c.ms = 0
     return true
   }
 
@@ -278,7 +291,7 @@ export class TerrainChunks {
     c.texKey = null
     c.canvas = null
     c.ctx = null
-    c.next = 0
+    c.next = 0; c.ms = 0
     c.dirty = true
   }
 }

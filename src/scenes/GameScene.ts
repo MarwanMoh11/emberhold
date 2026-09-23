@@ -9,6 +9,7 @@ import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type Targetable } from '../core/types'
 import { paintTerrainRect, warmTerrain } from '../world/Terrain'
 import { TerrainChunks } from '../world/TerrainChunks'
+import { addScatter } from '../world/scatter'
 import { Culler } from '../systems/Culler'
 import { NavGrid } from '../world/NavGrid'
 import { NavDebug } from '../world/NavDebug'
@@ -167,6 +168,7 @@ export class GameScene extends Phaser.Scene {
     this.nodes.build()
     this.buildings.build()
     this.camps.build()
+    addScatter(this)
 
     this.player = new Player(this)
     this.abilities = new AbilitySystem(this)

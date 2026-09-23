@@ -141,6 +141,14 @@ const tint = (c: number, t: number) => {
 
 /** The wash colour at a world point, into R, G, B. */
 function washAt(F: TerrainFields, px: number, py: number) {
+  // open water far from any shore: no ground under it to work out
+  if (cellValue(F, F.wet, px, py) < -150) {
+    // exactly what the shore path below gives at full depth, so no seam where it hands over
+    const deep = smooth(0.04, 0.34, sample(F, F.sea, px, py)) > 0.5 ? DEEP_SEA : DEEP
+    R = (deep >> 16) & 255; G = (deep >> 8) & 255; B = deep & 255
+    tint(0x8ec2cc, Math.max(0, fbm(px * 0.016, py * 0.016, 202, 2) - 0.62) * 0.6)
+    return
+  }
   // the blended recipe, looked up at a warped point
   const pal = paletteGrid()
   const { GW, GH, C } = F.r
@@ -205,7 +213,7 @@ function washAt(F: TerrainFields, px: number, py: number) {
       const d = -sd
       R = (MELT >> 16) & 255; G = (MELT >> 8) & 255; B = MELT & 255
       tint(CORE, smooth(18, 110, d) * 0.9)
-      tint(CRUST, smooth(0.56, 0.64, fbm(px * 0.016, py * 0.016, 505, 2)) * 0.8)
+      tint(CRUST, smooth(0.56, 0.64, fbm(px * 0.028, py * 0.028, 505, 2)) * 0.8)
       tint(CRUST_EDGE, (1 - smooth(0, 12, d)) * 0.9)
     } else {
       tint(SCORCH, 0.75 * (1 - smooth(0, 28, sd)))

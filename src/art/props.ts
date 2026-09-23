@@ -11,7 +11,7 @@ import { bake, css, fill, form, glow, line, lightOf, mix, P, Rng, rimLight, shad
 
 const FOOT = 8
 
-function groundShadow(x: Ctx, cx: number, by: number, rx: number, ry: number, a = 0.28) {
+export function groundShadow(x: Ctx, cx: number, by: number, rx: number, ry: number, a = 0.28) {
   const g = x.createRadialGradient(cx, by, 0, cx, by, rx)
   g.addColorStop(0, css(0x1a1208, a))
   g.addColorStop(0.7, css(0x1a1208, a * 0.6))
@@ -25,7 +25,7 @@ function groundShadow(x: Ctx, cx: number, by: number, rx: number, ry: number, a 
 
 // ---- trees ----------------------------------------------------------------
 
-function trunk(x: Ctx, cx: number, by: number, w: number, h: number, c = 0x6e4a2c) {
+export function trunk(x: Ctx, cx: number, by: number, w: number, h: number, c = 0x6e4a2c) {
   form(x, x2 => {
     x2.moveTo(cx - w * 0.9, by)
     x2.quadraticCurveTo(cx - w * 0.5, by - h * 0.15, cx - w * 0.5, by - h)
@@ -61,7 +61,7 @@ function oak(x: Ctx, cx: number, by: number, base: number, r: Rng) {
   ], base, r)
 }
 
-function pine(x: Ctx, cx: number, by: number, base: number) {
+export function pine(x: Ctx, cx: number, by: number, base: number) {
   trunk(x, cx, by, 4, 16, 0x5e3e26)
   const tiers = [[by - 12, 22, 22], [by - 28, 18, 20], [by - 42, 14, 18], [by - 54, 9, 15]]
   for (const [ty, hw, th] of tiers) {
@@ -87,7 +87,7 @@ function birch(x: Ctx, cx: number, by: number, base: number, r: Rng) {
 
 // ---- rocks and seams --------------------------------------------------------
 
-function boulder(x: Ctx, cx: number, by: number, s: number, base: number, r: Rng, moss = false) {
+export function boulder(x: Ctx, cx: number, by: number, s: number, base: number, r: Rng, moss = false) {
   const pts = [
     [cx - 22 * s, by], [cx - 21 * s, by - 16 * s], [cx - 10 * s, by - 29 * s], [cx + 6 * s, by - 31 * s],
     [cx + 19 * s, by - 20 * s], [cx + 23 * s, by - 6 * s], [cx + 18 * s, by],
