@@ -172,6 +172,18 @@ export class BuildingManager {
 
   get townHall() { return this.byPad.get('hall')! }
   get depot() { return this.byPad.get('depot')! }
+
+  /**
+   * Where a hauler standing at (x, y) unloads: the depot, or the hall's door
+   * while the depot is down. The one place drop-offs are chosen; S11 adds the
+   * nearest outpost by path.
+   */
+  dropoffFor(_x: number, _y: number): { x: number; y: number } {
+    const d = this.depot
+    if (d && d.level > 0) return { x: d.x, y: d.y + 14 }
+    const h = this.townHall
+    return { x: h.x, y: h.y + 30 }
+  }
   get townHallLevel() { return this.townHall?.level ?? 1 }
 
   countBuilt(key: BuildingKey) {

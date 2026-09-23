@@ -165,13 +165,16 @@ export class ArmyManager {
       } else {
         s.state = this.holding ? 'hold' : 'form'
         const p = this.slotPosition(s.slot, anchorX, anchorY, heading)
-        const dx = p.x - s.x, dy = p.y - s.y
-        const d = Math.hypot(dx, dy)
+        const d = Math.hypot(p.x - s.x, p.y - s.y)
         if (d > 16) {
-          mx = dx / d
-          my = dy / d
-          // catch-up sprint so the formation does not string out forever
-          speed = def.speed * (d > 220 ? 1.7 : d > 110 ? 1.25 : 1)
+          const g = this.route(s, anchorX, anchorY, p.x, p.y, dt)
+          const dx = g.x - s.x, dy = g.y - s.y
+          const dg = Math.hypot(dx, dy) || 1
+          mx = dx / dg
+          my = dy / dg
+          // catch-up sprint so the formation does not string out forever; a detour is always behind
+          const far = s.follower.active ? Math.max(d, 240) : d
+          speed = def.speed * (far > 220 ? 1.7 : far > 110 ? 1.25 : 1)
           if (Math.abs(dx) > 4) s.facing = dx > 0 ? 1 : -1
         }
       }
@@ -193,8 +196,8 @@ export class ArmyManager {
           n++
         }
       }
-      // terrain collision (S05): fords slow, banks stop. No pathing until S06, so a
-      // soldier chasing straight across a river snags on the bank.
+      // terrain collision (S05): fords slow, banks stop. Formation moves path round
+      // them (route); a chase stays straight, so it can still end at a bank.
       const nav = scene.nav
       const slow = nav.speedAt(s.x, s.y)
       const p = nav.slide(s.x, s.y, sx * 56 * dt + s.vx * dt * slow, sy * 56 * dt + s.vy * dt * slow, walkRadius(s.radius))
@@ -224,6 +227,43 @@ export class ArmyManager {
     }
 
     this.drawBars()
+  }
+
+  /**
+   * Where a soldier heading for its slot should steer (S06). With sight of
+   * the anchor (the hero, or the hall when holding) it walks straight to the
+   * slot, or to the nearest ground if the slot is in the water. Without, it
+   * walks a path to the anchor, asked for again every second, whenever the
+   * anchor has moved 200 px since, or when the soldier stops closing on it.
+   */
+  private route(s: Soldier, ax: number, ay: number, px: number, py: number, dt: number): { x: number; y: number } {
+    const nav = this.scene.nav
+    s.losT -= dt
+    if (s.losT <= 0) {
+      s.losT = 0.3 + (s.id % 7) * 0.02
+      s.los = nav.paths.segClear(s.x, s.y, ax, ay, walkRadius(s.radius))
+    }
+    if (s.los) {
+      s.follower.clear()
+      s.pathTicket = null
+      if (nav.passableAt(px, py)) return { x: px, y: py }
+      const i = nav.nearestPassable(px, py)
+      if (i < 0) return { x: ax, y: ay }
+      const [cx, cy] = nav.r.xy(i)
+      return { x: cx, y: cy }
+    }
+    s.pathT -= dt
+    if (s.pathTicket?.done) { s.follower.set(s.pathTicket.path); s.pathTicket = null }
+    if (!s.pathTicket && (s.pathT <= 0 || s.follower.stuck > 1.5 || Math.hypot(ax - s.pathAx, ay - s.pathAy) > 200)) {
+      s.pathT = 1
+      s.pathAx = ax; s.pathAy = ay
+      s.pathTicket = nav.requestPath(s.x, s.y, ax, ay)
+    }
+    if (s.follower.active) {
+      const w = s.follower.step(s.x, s.y, dt)
+      if (!w.done) return w
+    }
+    return { x: px, y: py }
   }
 
   private strike(s: Soldier, target: Enemy) {

@@ -2,6 +2,8 @@ import Phaser from 'phaser'
 import type { SoldierDef, SoldierKey } from '../config/units'
 import type { Targetable } from '../core/types'
 import { nextId } from '../core/ids'
+import { PathFollower } from '../world/PathFollower'
+import type { PathTicket } from '../world/PathFind'
 
 export type SoldierState = 'form' | 'engage' | 'hold' | 'dead'
 
@@ -28,6 +30,13 @@ export class Soldier implements Targetable {
   flashT = 0
   bobSeed = 0
   spawnT = 0
+  /** S06 pathing: sight to the anchor, the path being walked, a search in flight, where the anchor was when it was asked for, and the timers */
+  los = true
+  readonly follower = new PathFollower()
+  pathTicket: PathTicket | null = null
+  pathAx = 0; pathAy = 0
+  pathT = 0
+  losT = 0
 
   sprite!: Phaser.GameObjects.Image
 
@@ -53,6 +62,11 @@ export class Soldier implements Targetable {
     this.flashT = 0
     this.bobSeed = Math.random() * 10
     this.spawnT = 0.3
+    this.los = true
+    this.follower.clear()
+    this.pathTicket = null
+    this.pathT = 0
+    this.losT = 0
 
     this.sprite.setTexture(`sol_${def.key}`)
     this.sprite.setOrigin(0.5, 1 - 8 / this.sprite.height)
