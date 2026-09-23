@@ -69,15 +69,13 @@ export function buildScatterTextures(scene: Phaser.Scene) {
     })
   }
 
-  // highland: cold pines, some dusted with snow
-  for (const snow of [false, true]) {
-    item(snow ? 'sc_pineSnow' : 'sc_pine', 56, 84, (x, cx, by) => {
-      pine(x, cx, by, snow ? 0x3e5e56 : 0x355448)
-      if (snow) for (const [ty, hw] of [[by - 12, 22], [by - 28, 18], [by - 42, 14], [by - 54, 9]]) {
-        fill(x, P.blob([[cx - hw * 0.5, ty - 5], [cx, ty - hw * 0.9 - 4], [cx + hw * 0.45, ty - 6], [cx, ty - 8]], 0.4), 0xeef4f4, 0.95)
-      }
-    })
-  }
+  // highland: cold pines dusted with snow (the choppable pines are not)
+  item('sc_pineSnow', 56, 84, (x, cx, by) => {
+    pine(x, cx, by, 0x3e5e56)
+    for (const [ty, hw] of [[by - 12, 22], [by - 28, 18], [by - 42, 14], [by - 54, 9]]) {
+      fill(x, P.blob([[cx - hw * 0.5, ty - 5], [cx, ty - hw * 0.9 - 4], [cx + hw * 0.45, ty - 6], [cx, ty - 8]], 0.4), 0xeef4f4, 0.95)
+    }
+  })
   // marsh
   item('sc_reeds', 40, 50, (x, cx, by) => reeds(x, cx, by, r, 9, 34), 0.5, 1.2)
   // moor and the scorched lands

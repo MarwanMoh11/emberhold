@@ -34,7 +34,7 @@ test('each region reads at a glance: the card\'s props stand in their biomes', (
     const b = W.REGIONS[r.region[r.cell(s.x, s.y)]].biome
     by.set(b, (by.get(b) ?? new Set()).add(s.key))
   }
-  assert.ok(by.get('highland').has('sc_pineSnow') && by.get('highland').has('sc_pine'))
+  assert.ok(by.get('highland').has('sc_pineSnow'))
   assert.ok(by.get('marsh').has('sc_reeds'))
   assert.ok(by.get('moor').has('sc_deadTree'))
   assert.ok(by.get('ash').has('sc_bones') && by.get('ash').has('sc_standard'))

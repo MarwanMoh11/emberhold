@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S07** ([card](sessions/S07-paint-the-frontier.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S08** ([card](sessions/S08-regions-and-claims.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -23,6 +23,14 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S07 · Paint the frontier: done (2026-09-23)
+- Painters: `Terrain.ts` holds the wash (`BIOME` recipes blended per cell and warped, ~96 px borders; water, ice, banks, cliff face and cast shadow, lava core, crust and glow, per 8 px sample) and the decals (`paintDecals`, batched). `TerrainFeatures.ts` holds feature lines (flow, ripples, cracks, cliff hatching, rubble, shore, crest and lava ink, foam), `paintRoads` and `paintCrossings`. `terrainField.ts` holds the signed distance fields, `cliffS` and contours built from `under`. Props: `world/scatter.ts` (placement) and `art/scatter.ts` (20 `sc_` textures). Map in CONTRACTS §S07.
+- Bake cost: steady 5.3 ms per 1024 px chunk (median), p95 6.4, slices ≤ 4.6 ms. Over 528 in-game bakes (two full pans), 3 were over 12 ms: 21.9 on the first chunk after a map-wide jump, plus 12.3 and 12.4. Different chunks spike on each run (GC). A cold boot prime reaches ~15 ms, and `warmTerrain` takes ~140 ms once at scene create. Direct painter passes: max 8.3 ms. The old flat painter took 13–28 ms per chunk.
+- 1,019 props (cap 1,500), placed deterministically per chunk, ≥ 100 px from pads and clear of fields, camps (240), POIs and claim stones (90), roads (40) and crossings (96). Highland pines are snow-dusted so nobody tries to chop them.
+- For S14's landmarks: use the `bake()` ink style with a 1.6–2 px outline, `groundShadow`, feet 8 px up, depth y, and `culler.add`. Pick tones from the region's `BIOME` recipe. Props leave 90 px around every POI.
+- Deviations: roads are Chaikin-smoothed, so they run ≤ ~10 px off the raster's road cells at bends. Drawn shores can sit ≤ 16 px from the nav edge (blurred signed distance fields). The wash is sampled every 8 px (was 4). Any bridge over lava draws as obsidian. `TerrainChunks.stats` gained `chunkMs` and `worstChunkMs` (F2). Verify used 4 screenshots, all composites: 2 of the painter alone, and 2 in-game covering all six card locations. No seams.
+- Trips: the TEMP spawn-gate posts still stand by the bridges (S09). HMR reloads sometimes throw S04's `glTexture` null error; a clean load plus a full pan throws none. The claim tint goes after `paintCrossings` and before the set pieces. Saves restored byte-identical. No blueprint moves, no new open decisions.
+
 ### S06 · Ally pathing and roads: done (2026-09-23)
 - `src/world/PathFind.ts` (A*, pull, LRU, queue), `PathFollower.ts`, `heap.ts` (shared with the fields); `nav.findPath/requestPath/onRoad/allySpeedAt`, `ROAD_SPEED` per CONTRACTS §S06. F2: TOGGLE ROAD TINT; the nav line shows path searches. Harness `H.watch(s)`, `H.run(dx, dy, s)`.
 - **`dropoffFor(x, y)` lives on BuildingManager** (depot, else hall door). Workers haul there (see Open decisions), pick nodes by walking distance ≤ 760 from the camp door (cached per camp and node), steer straight when a 5.5 px lane is clear and path otherwise (re-asked after 1.5 s stuck); fleeing workers path to their door. Soldiers: sight of the anchor every ~0.3 s; without it a path to the anchor, re-asked every 1 s or 200 px; a slot in the water becomes the nearest ground.
@@ -42,15 +50,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - `balance.WORLD` re-export removed. No new open decisions; no blueprint moves.
 
 ### S04 · Move in: done (2026-09-23)
-- The game runs on the 10240×9216 frontier from `src/config/world/index.ts` (CONTRACTS §S04); `map.ts` deleted. `ZoneId` → `RegionId`, and every `zone` field (pads, camps, clusters, `Building`, `ResourceNode`) is `region`. The hero starts at `HALL` + 340 px south.
-- Files: config/{balance, world/index, world/blueprint (header comment only)}, entities/{Building, Player}, scenes/GameScene, systems/{Building, Camp, Enemy, Node, Quest, Save, Wave, Zone}Manager, ui/{Minimap, RunSummary}, world/Terrain, dev/harness; tests/{world-module (new), save-portability}.
-- **`balance.ts` re-exports `WORLD`** for this card only: S05 removes the line. `WORLD.centerX/Y` is now the map's middle (5120, 4608), not home; every old use moved to `HALL`.
-- **`SPAWN_GATES` are TEMP until S09**: the six card positions, all inside still-locked regions (ferrow, barrowmoor, irontooth, downs, greyfall, saltmere). Terrain still draws the gate posts.
-- ZoneManager: `zoneAt` reads the region raster; locked regions are one filled polygon plus a fence on shared borders, both culled. Claim points are the blueprint's `claim` (no more margin projection). The soft barrier aims at the nearest border with claimed ground behind it, else the hall (so `H.tp` into the wild walks you home).
-- Terrain is flat v2: atlas biome colours dimmed for a lit scene, water/sea/cliff/lava straight from the raster (sample jittered ±14 px so 32 px cell stairs read as a ragged shore), crossings on top, blueprint roads at 60% plus the hold's footpaths. Marks borrow the old sets per biome (`MARK`). Vellum sketches and names each region; its page noise is sampled 2× coarser and smoothed. Minimap bakes 320×288 and fills region polygons (S12 replaces it).
-- Save v2 per CONTRACTS; a v1 save is never touched. Browser: `H.start()` boots at the hall in ~0.4 s, lumber1 → quest q5 by night 1, nights 1–4 with no console errors while the hero defends (idle, the six seed grunts plus night 1 raze the hall), v2 save → `H.start(true)` restored regions/wave/buildings, v1 and settings byte-identical throughout (test save removed afterwards).
-- Trips for S05: enemies walk over water and cliffs, and EnemyManager still steers at `WALL_RING` gates (gateN/S/E/W now). The Old Bridge is the first night's route only by coincidence of the south gate. Quest guidance ignores enemies in locked regions, which is where every gate is.
-- Watch: two `glTexture` null errors appeared once in the session's first page load and never again (fresh load, four nights, teleports corner to corner with chunk eviction, zoom-out). Not traced. No new open decisions; no blueprint moves.
+- The game runs on the 10240×9216 frontier from `src/config/world/index.ts` (`ZoneId` → `RegionId`, `zone` → `region`, `map.ts` gone); save v2 keys, v1 untouched; `SPAWN_GATES` TEMP until S09.
 
 ### S03 · Fog and culling: done (2026-09-23)
 - Fog saves as `r:` runs or a `b:` bitset (ceiling `maxEncodedLength`); `FOG_SCALE` 8; `Culler` hides static sprites through `cameraFilter` (register new static objects with `scene.culler.add`).

@@ -42,10 +42,10 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `.update(camera)` plans the chunks in view (nearest first), then a 1-chunk margin (nearest first, trimmed to `maxResident`), and bakes `slice`-px slices until the budget. A chunk shows only when whole. Call it every frame.
   - `.prime(camera) → n` bakes every chunk in view synchronously. Call it after any camera jump (spawn now; fast travel in S11).
   - `.invalidate(rect?: { x, y, width, height })` re-bakes the chunks it meets (all without a rect); the old texture stays up until the new one is whole.
-  - `.stats() → { resident, baked, queued, frameMs, worstFrameMs }`. `GameScene.stats.chunks` carries it to the F2 panel.
+  - `.stats() → { resident, baked, queued, frameMs, worstFrameMs, chunkMs, worstChunkMs }` (`chunkMs`: a whole chunk's slices summed, S07). `GameScene.stats.chunks` carries it to the F2 panel.
   - `type ChunkCamera = Pick<Camera, 'scrollX' | 'scrollY' | 'width' | 'height' | 'zoom'>`.
 - `type ChunkPainter = (ctx, wx, wy, size, scale) => void` paints world rect `[wx, wx+size)²`. `ctx` arrives already transformed world px → canvas px (`scale`, origin at world 0,0) and clipped; strokes may land past the rect. It must be a pure function of world position and static config, so slices and chunks agree at every join.
-- `paintTerrainRect` in `src/world/Terrain.ts` is the painter. Its brushwork draws in texels at `S = 0.5` after `ctx.scale(1/S)`. Per-biome colour: `biomeAt` (which biome), `TONES` (palette per biome), `toneAt` (wash colour), `markAt` (per-biome marks). Scatter is dealt per 128 px cell with `strokeRng(cell, k, seed)`; set pieces (roads, plaza, camps, gates) are laid out once and drawn where their box meets the rect.
+- `paintTerrainRect` in `src/world/Terrain.ts` is the painter; since S07 it draws in world px and its layers are listed under §S07. Only the old set pieces (plaza, camps, gates) still draw in texels at `S = 0.5`.
 
 ## S03: fog and culling
 
@@ -78,7 +78,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `raster(): WorldRaster` (:44), built once and memoised.
 - `ZoneId` is now `RegionId`. `PadSpec`, `CampSpec`, `NodeCluster`, `Building` and `ResourceNode` carry `region` (was `zone`).
 - `ZoneManager` keeps its method names: `zoneAt(x, y)` reads `raster().region` (:280), `lockedZoneAt → RegionDef | null`, `isUnlocked(id)`, `claimPoint(id)` (the blueprint's `claim.{x,y}`), `unlock(id, silent?)`, `canUnlockId(id)`. Locked regions are one `Graphics` each (fill + fence), registered with the culler. The soft barrier (`exitToward`, :391) pushes toward the nearest border whose far side is claimed, else toward `HALL`.
-- `src/world/Terrain.ts`: `biomeAt` (:104) returns a `Ground` (biome, `sea|water|cliff|lava`, crossing kind, or `plaza`); `biomeColour(b: Biome) → number` (:140) is the flat mid tone, used by the minimap.
+- `src/world/Terrain.ts`: `biomeColour(b: Biome) → number` is the biome's base tone, used by the minimap. (`biomeAt` is internal since S07.)
 - Dev harness ([src/dev/harness.ts](../../src/dev/harness.ts)):
   - `H.tp(x, y)` teleports, centres the camera and primes the chunks.
   - `H.claim(id)` calls `zones.unlock(id, true)` (silent: no event, no bonus recompute).
@@ -117,6 +117,17 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - `buildings.dropoffFor(x, y) → { x, y }`: where a hauler unloads (the depot, else the hall's door). The only drop-off chooser.
 - Workers: `NodeManager.candidates(resource, x, y, radius, claimer | null)` (nearest first); node choice by walking distance ≤ 760 from the camp door, cached per camp and node. `workers.delivered` counts drop-offs. `findAny` is gone.
 - Harness: `H.watch(s)` → deliveries, off-ground frames, workers on crossings, worst soldier stall, path stats; `H.run(dx, dy, s)` → hero px/s and road share.
+
+## S07: terrain art
+
+*Status: landed (S07). `paintTerrainRect` at [src/world/Terrain.ts:499](../../src/world/Terrain.ts#L499), `terrainFields` at [src/world/terrainField.ts:45](../../src/world/terrainField.ts#L45), `scatterProps` at [src/world/scatter.ts:52](../../src/world/scatter.ts#L52).*
+
+- `warmTerrain()` builds the fields, the blended palette and every feature layout (~140 ms, once); GameScene calls it before `TerrainChunks`.
+- `paintTerrainRect` layers, in order: `paintWash` (per-sample, every 8 px: biome recipe `BIOME[biome]` blended per cell, then cliff, water, lava from the fields), `paintDecals` (per 128 px cell, batched), then from `TerrainFeatures.ts` `paintFeatureLines`, `paintRoads`, `paintCrossings`, then plaza, camps, gates, grain and vignette. A claim tint (S08) belongs after the crossings, before the set pieces.
+- `src/world/terrainField.ts` (pure): `terrainFields() → { r, wet, cliff, lava, cliffS, sea, contours: { wet, cliff, lava } }`. Per-cell `Float32Array`s: signed px distances from `under` (negative inside, blurred; drawn shores may stray ≤ 16 px from the NavGrid's), `cliffS` (-1 crest … +1 foot), `sea` (0–1). `sample(f, grid, x, y)` is bilinear, `cellValue` is the cell's own value. `downhill(a, b) → [nx, ny]`, `contours(sd, …) → Contour[] { pts, box, side }`.
+- `src/world/noise.ts`: `hash32, hash, vnoise, fbm, Mulberry, smooth` (moved out of Terrain.ts).
+- `TerrainFeatures.ts`: `Batch` (`fill(c, a)`, `stroke(c, a, w, op?)` → a `Path2D` per style, `flush(ctx)`), `type Rect { x0, y0, x1, y1 }` in world px.
+- `src/world/scatter.ts`: `scatterProps() → PropSpot[] { key, x, y, flip, scale }` (memoised, deterministic per 1024 px chunk), `PROP_BUDGET = 1500`, `PROP_CLEAR` (distances kept from pads, fields, camps, POIs, claim stones, roads, crossings), `addScatter(scene)` (depth y, culled). Textures `sc_*` from `buildScatterTextures` in `src/art/scatter.ts`; `props.ts` now exports `groundShadow, trunk, pine, boulder`.
 
 ## S08: regions and claims
 

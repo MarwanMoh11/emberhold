@@ -26,7 +26,8 @@ const TRIES = 80
 
 /** Per biome: props per chunk of that ground, and which. 'fence' lays a run of fence segments. */
 const SCATTER: Record<Biome, { n: number; props: [string, number][] }> = {
-  highland:  { n: 50, props: [['sc_pineSnow', 3], ['sc_pine', 2]] },
+  // snow-dusted, so they never pass for the choppable pines of Frostmere's fields
+  highland:  { n: 44, props: [['sc_pineSnow', 5], ['sc_scree', 1]] },
   marsh:     { n: 44, props: [['sc_reeds', 1]] },
   moor:      { n: 28, props: [['sc_deadTree', 3], ['sc_heath', 4]] },
   ash:       { n: 26, props: [['sc_bones', 4], ['sc_standard', 2], ['sc_charred', 1]] },
