@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S03** ([card](sessions/S03-fog-and-culling.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S04** ([card](sessions/S04-move-in.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -21,6 +21,14 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s. Tuned in S20.
 
 ## Log
+
+### S03 · Fog and culling: done (2026-09-23)
+- Fog encoding: the shorter of `r:` runs (base64url varints) and `b:` unpadded base64 bitset; bare base64 (v1) still loads. Measured on 10240×9216: 30% explored in blobs 799 chars, a walked trail clearing 30% of the view 1,040. Fully explored: every cell marked is 6 chars, but a walk that clears the whole map marks ~28% of cells in trails and falls back to the bitset, the 3,842 ceiling (`maxEncodedLength`). Old map ceiling is 398, and a v1 save's 396-char fog still validates and loads.
+- `validSave` uses `FogMemory.maxEncodedLength(WORLD…)` in place of 10000. Tests cover both world sizes, the legacy string and damaged strings. Browser: new game, walk, save, reload, `H.start(true)` restored the fog string exactly (189 chars, `r:`).
+- `FOG_SCALE` 4 → 8 (RT 426×350 now, 1280×1152 after S04); brush `2 / FOG_SCALE`. Edge ramp measured at ~240 world px, as before. The vellum keeps its noise at world scale and deals its ink marks a quarter as often; its names and symbols read blurrier at 8 px/texel (S07 may want to repaint it).
+- `Culler` per CONTRACTS §S03: nodes, building sprites and ghosts, camp labels; F2 "static N drawn N culled". Old map: 391 static, ~270 drawn at the hall, ~60 in a corner. A 1,560-step walk corner to corner never had a culled object inside the view.
+- Deviation: the culler hides through `cameraFilter`, not `visible`/`active`, because game logic sets `visible` (felled rocks, ghosts) and would get it clobbered. No game logic reads a culled sprite's `visible`; `Building.visible` is the manager's own flag.
+- Trips for S04: register anything new and static (POIs, border stones, region labels) with `scene.culler.add`; ZoneManager's zone banners and post graphics are not registered. Rebuild the vellum from regions. No new open decisions.
 
 ### S02 · Chunked terrain: done (2026-09-23)
 - `paintTerrainRect(ctx, wx, wy, size, scale)` in `src/world/Terrain.ts` is the deterministic painter (ctx arrives world-transformed; brushwork in texels at S = 0.5). Per-biome colour is `biomeAt`/`TONES`/`toneAt`, per-biome marks `markAt`. Scatter is dealt per 128 px cell from `strokeRng(cell, k)`; roads, plaza, camp scorch and gates are laid out once. `buildTerrain` is gone; `buildVellumTexture` untouched.

@@ -49,15 +49,19 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S03: fog and culling
 
-*Status: planned.*
+*Status: landed (S03). `FogMemory` at [src/core/FogMemory.ts](../../src/core/FogMemory.ts), `Culler` at [src/systems/Culler.ts](../../src/systems/Culler.ts).*
 
-- `FogMemory(width, height, cell = 64)`, sized from the world.
-  - `toJSON()` returns a compact string.
-  - The static `FogMemory.maxEncodedLength(width, height, cell)` is what save validation uses in place of the old hard limit of 10000.
-- `src/systems/Culler.ts`:
-  - `culler.add(obj, x, y, radius)` and `culler.remove(obj)`.
-  - `culler.update(camera)` makes objects whose bounds miss the view (plus a 256 px margin) invisible and inactive.
-  - Nodes, building sprites and props register with it. Enemies do not: they are few and they move.
+- `new FogMemory(width, height, cell = 64)`, sized from the world; `.cols`, `.rows`, `mark(x, y)`, `forEachMarked(fn)`, `load(encoded)` (ORs in; malformed or other-size strings load nothing).
+  - `toJSON()` returns the shorter of `b:` + unpadded base64 bitset and `r:` + alternating run lengths (unexplored first) as base64url varints (5 value bits, bit 6 = more). A bare base64 string is the v1 bitset, still read until S19.
+  - `static maxEncodedLength(width, height, cell = 64)` = the `b:` length (3842 new world, 398 old). `validSave` checks `exploredFog` against it.
+  - `static fromJSON(encoded, width, height, cell = 64) → FogMemory`.
+- `ZoneManager` exports `FOG_SCALE = 8`; the fog RenderTexture is `ceil(WORLD / 8)` and the brush scales by `2 / FOG_SCALE` (~960 px reveal).
+- `src/systems/Culler.ts` (type-only Phaser import; node-testable):
+  - `new Culler({ bucket = 1024, margin = 256, interval = 150, moveStep = 64 })`; `GameScene.culler`, updated every frame after `terrain.update`.
+  - `culler.add(obj, x, y, radius)` (obj: anything with `cameraFilter`; the disc should cover the sprite at its largest) and `culler.remove(obj)`.
+  - `culler.update(camera, now?)` hides objects whose disc misses the view plus 256 px by setting the camera's bit in `cameraFilter`. It never touches `visible` or `active`: game logic owns those.
+  - `culler.stats() → { total, shown }`; F2 shows it.
+  - Registered: node sprites (`NodeManager.add`), building sprite and ghost (`BuildingManager.addPad`), camp labels. Enemies, allies, projectiles and TerrainChunks images are not.
 
 ## S04: world seam
 
@@ -205,5 +209,5 @@ Each session that adds persistent state lists its field here: the owner, then a 
 | Field | Owner | Shape |
 |---|---|---|
 | `version` | S04 | `2` |
-| `exploredFog` | S03 | FogMemory string, length ≤ `maxEncodedLength` |
+| `exploredFog` | S03 | `FogMemory.toJSON()`: `r:` runs or `b:` bitset (v1 bare base64 still read), length ≤ `FogMemory.maxEncodedLength(WORLD.width, WORLD.height)` |
 | _(add rows as they land)_ | | |
