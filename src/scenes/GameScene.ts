@@ -7,7 +7,7 @@ import { clamp, dist, rr, short, srand } from '../core/math'
 import { Bus } from '../core/Events'
 import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type Targetable } from '../core/types'
-import { paintTerrainRect } from '../world/Terrain'
+import { paintTerrainRect, warmTerrain } from '../world/Terrain'
 import { TerrainChunks } from '../world/TerrainChunks'
 import { Culler } from '../systems/Culler'
 import { NavGrid } from '../world/NavGrid'
@@ -131,6 +131,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height)
     this.physics?.world?.setBounds(0, 0, WORLD.width, WORLD.height)
 
+    warmTerrain()
     this.terrain = new TerrainChunks(this, paintTerrainRect, { width: WORLD.width, height: WORLD.height, depth: DEPTH.terrain })
     this.culler = new Culler()
     this.nav = new NavGrid(raster(), { hall: HALL })

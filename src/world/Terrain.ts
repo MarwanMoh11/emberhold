@@ -1,207 +1,239 @@
 import Phaser from 'phaser'
-import { WORLD, HALL, REGIONS, PADS, SPAWN_GATES, CAMPS, CROSSINGS, ROADS, raster, type Biome } from '../config/world'
-import { T, TNAME, inPoly, polyArea, polyCentroid, samplePolyline } from './raster'
-import { PAL } from '../config/palette'
-import { applyGrain, css, fill, form, glow, line, makeCanvas, mix, P, Rng, register, shade, INK, type Ctx } from '../art/ink'
+import { WORLD, HALL, REGIONS, SPAWN_GATES, CAMPS, raster, type Biome } from '../config/world'
+import { T, inPoly, polyArea, polyCentroid } from './raster'
+import { applyGrain, css, fill, form, glow, line, makeCanvas, mix, P, Rng, register, INK, type Ctx } from '../art/ink'
+import { fbm, hash32, Mulberry, smooth, vnoise } from './noise'
+import { boxBlur, cellValue, sample, terrainFields, type TerrainFields } from './terrainField'
+import { Batch, paintCrossings, paintFeatureLines, paintRoads, warmFeatures, type Rect } from './TerrainFeatures'
 
 /**
- * The ground, painted a piece at a time.
- *
- * The old ground was 64px tiles stamped into a grid, and every biome edge and
- * the hold's dirt clearing gave the grid away in hard squares. This paints it
- * instead: a colour field sampled from noise-warped biomes, laid down at
- * quarter resolution so the upscale blends it like a wash, and then brushed
- * over in ink — tufts, flowers, slabs, rubble, embers, roads and a cobbled
- * plaza around the hall.
+ * The ground, painted a piece at a time (S07).
  *
  * `paintTerrainRect` paints any rectangle of the world, and every stroke in it
- * is a function of world position alone. The wash samples noise on a grid
- * pinned to the world's origin; the scattered brushwork is dealt per 128 px
- * cell, each stroke seeded from its cell and its index; the set pieces (roads,
- * the plaza, camps, gates) are laid out once and drawn wherever they overlap.
- * So two pieces that meet paint the same pixels along the join, and
- * TerrainChunks can bake the world in any order without a seam.
+ * is a function of world position alone, so TerrainChunks can bake slices in
+ * any order without a seam. Layers, bottom up:
+ *
+ * 1. The wash (here): each biome's base and two noise-driven tints, blended
+ *    across region borders over ~96 px, then the features read from the
+ *    raster's signed distances: sand and mud banks, shelf and deep water, ice
+ *    on Frostmere, cliff crest, face and cast shadow, lava core, crust,
+ *    scorch and glow. Sampled every 8 px and smoothed up.
+ * 2. Decals (here): per-biome ground marks dealt per 128 px cell and drawn in
+ *    batches, one path per colour.
+ * 3. Feature lines (TerrainFeatures): shore ink, foam, river flow, cliff
+ *    hatching and rubble, lava cracks and edges.
+ * 4. Roads, then crossings (TerrainFeatures).
+ * 5. Set pieces (here): the hall's plaza, scorched camps, the spawn gates.
+ * 6. Paper grain and the page's vignette.
+ *
+ * Props standing on the ground (pines, reeds, bones...) are sprites: see scatter.ts.
  */
 
-/** The texture scale the brushwork was drawn for: its sizes are texels at this scale. */
+/** The texture scale the old brushwork (plaza, camps, gates) was drawn for: its sizes are texels at this scale. */
 const S = 0.5
-const FIELD = 0.25       // the colour field underneath is quarter world resolution
-const CELL = 128         // brushwork is dealt per cell of this many world px
-const DABS_EXTRA = 0.47  // a cell gets 4 mottling dabs, or 5 this often (2,600 over the old world)
-const MARKS = 24         // detail marks per cell (14,000 over the old world)
-const MARK_REACH = 48    // world px a detail mark can stray from where it is dealt
-
-/** What a patch of ground is painted as: a region's biome, blocked terrain, a crossing, or the plaza. */
-type Ground = Biome | 'plaza' | 'sea' | 'water' | 'cliff' | 'lava' | 'bridge' | 'ford' | 'pass' | 'causeway'
-
-// ---- noise -----------------------------------------------------------------
-
-function hash32(ix: number, iy: number, seed: number) {
-  let h = Math.imul(ix | 0, 374761393) ^ Math.imul(iy | 0, 668265263) ^ Math.imul(seed | 0, 1274126177)
-  h = Math.imul(h ^ (h >>> 13), 1274126177)
-  return (h ^ (h >>> 16)) >>> 0
-}
-
-function hash(ix: number, iy: number, seed: number) {
-  return hash32(ix, iy, seed) / 4294967296
-}
-
-function vnoise(x: number, y: number, seed: number) {
-  const ix = Math.floor(x), iy = Math.floor(y)
-  const fx = x - ix, fy = y - iy
-  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy)
-  const a = hash(ix, iy, seed), b = hash(ix + 1, iy, seed)
-  const c = hash(ix, iy + 1, seed), d = hash(ix + 1, iy + 1, seed)
-  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy
-}
-
-function fbm(x: number, y: number, seed: number, oct = 4) {
-  let v = 0, amp = 0.5, f = 1, norm = 0
-  for (let o = 0; o < oct; o++) {
-    v += vnoise(x * f, y * f, seed + o * 17) * amp
-    norm += amp
-    amp *= 0.5
-    f *= 2.03
-  }
-  return v / norm
-}
-
-/** The generator for stroke `k` of cell (cx, cy): the same stroke wherever it is painted from. */
-function strokeRng(cx: number, cy: number, k: number, seed: number) {
-  return new Rng(hash32(cx * 64 + k, cy, seed))
-}
+/** The wash is sampled once per this many world px. */
+const WASH_STEP = 8
+const CELL = 128         // decals are dealt per cell of this many world px
+const DECAL_REACH = 20   // world px a decal can stray from where it is dealt
 
 // ---- biomes ------------------------------------------------------------------
-//
-// Per-biome colour lives here: `biomeAt` says which biome a point is in, TONES
-// holds each biome's palette, and `toneAt` mixes the wash colour from it. The
-// brushwork in `paintMarks` switches on the biome for its marks.
 
-const CX = HALL.x, CY = HALL.y
+type Decal = 'tuft' | 'flowers' | 'pebbles' | 'crack' | 'drift' | 'rust' | 'crust' | 'frost' | 'leaves'
+  | 'moss' | 'heather' | 'furrow' | 'puddle' | 'flag' | 'glint' | 'slag' | 'ember'
 
-/**
- * Flat v2 colours (S04): the atlas palette from docs/world/tools/render.mjs,
- * one per biome, plus the blocked terrain and the crossings over it. Real art
- * for the frontier arrives in S07.
- */
-const FLAT: Record<Exclude<Ground, 'plaza'>, number> = {
-  rise: 0xdccb98, meadow: 0xcfdd9c, forest: 0xa3c488, oldgrowth: 0x86ad7a, village: 0xd8cca2, marsh: 0xb3c7a6,
-  scarp: 0xcdbf9c, highland: 0xd4dfdb, rust: 0xd3a986, sulphur: 0xe3d58a, farmland: 0xe6d98e, moor: 0xaeb08e,
-  badlands: 0xbba48a, deeprock: 0xa39a91, ash: 0x958a84, obsidian: 0x7a6b6e, slag: 0x907569,
-  sea: 0x8fb3c9, water: 0x78a6c3, cliff: 0x4a3b2c, lava: 0xe0662e,
-  bridge: 0xa58a64, ford: 0xa9c8d6, pass: 0xd9c6a1, causeway: 0xb59c7a,
-}
-const CROSSING_GROUND = { bridge: 'bridge', ford: 'ford', pass: 'pass', stair: 'pass', causeway: 'causeway' } as const
-/** Blocked terrain by raster code. */
-const BLOCKED_GROUND = TNAME as readonly Ground[]
-
-/**
- * What the ground at a world point is painted as. Blocked terrain and
- * crossings come straight from the 32 px raster the NavGrid will read, with
- * the sample jittered a little so the cell stairs read as a ragged shore.
- * Region borders are warped by noise the way the old biome borders were.
- */
-function biomeAt(wx: number, wy: number): Ground {
-  const r = raster()
-  const jx = (vnoise(wx * 0.03, wy * 0.03, 41) - 0.5) * 28
-  const jy = (vnoise(wx * 0.03, wy * 0.03, 43) - 0.5) * 28
-  const i = r.cell(Math.min(WORLD.width - 1, Math.max(0, wx + jx)), Math.min(WORLD.height - 1, Math.max(0, wy + jy)))
-  if (i >= 0) {
-    if (r.terrain[i] !== T.LAND) return BLOCKED_GROUND[r.terrain[i]]
-    const k = r.crossing[i]
-    if (k >= 0 && r.under[i] !== T.LAND) return CROSSING_GROUND[CROSSINGS[k].kind]
-  }
-  // the hold's trodden clearing around the hall
-  const d = Math.hypot(wx - CX, (wy - CY) * 1.15)
-  if (d < 205 + (fbm(wx * 0.012, wy * 0.012, 5, 3) - 0.5) * 110) return 'plaza'
-  const wxp = wx + (fbm(wx * 0.004, wy * 0.004, 11, 3) - 0.5) * 220
-  const wyp = wy + (fbm(wx * 0.004, wy * 0.004, 29, 3) - 0.5) * 220
-  const j = r.cell(Math.min(WORLD.width - 1, Math.max(0, wxp)), Math.min(WORLD.height - 1, Math.max(0, wyp)))
-  const g = j >= 0 ? r.region[j] : -1
-  if (g >= 0) return REGIONS[g].biome
-  const h = i >= 0 ? r.region[i] : -1
-  return h >= 0 ? REGIONS[h].biome : 'rise'
+/** A biome's paint: a base, two tints the noise pulls toward, the grass colour, and its decals. */
+interface Recipe {
+  base: number
+  /** the broad tint (large patches) */
+  a: number
+  /** the fine tint (small patches) */
+  b: number
+  grass: number
+  /** decals per 128 px cell */
+  n: number
+  decals: [Decal, number][]
 }
 
-interface Tones { lo: number; mid: number; hi: number; accent?: number }
-
-/** Game-weight tones from a pale atlas colour: the atlas is drawn for paper, the ground for a lit scene. */
-function tonesFrom(c: number, dim: number): Tones {
-  const dark = 0x1e1a12
-  return { lo: mix(c, dark, dim + 0.12), mid: mix(c, dark, dim), hi: mix(c, dark, Math.max(0, dim - 0.12)), accent: mix(c, 0x6e5a36, 0.35) }
+const BIOME: Record<Biome, Recipe> = {
+  rise:      { base: 0x8c8a58, a: 0xa29664, b: 0x757f4c, grass: 0x55602e, n: 12, decals: [['tuft', 5], ['flowers', 1], ['pebbles', 1]] },
+  meadow:    { base: 0x86955a, a: 0x9ca45e, b: 0x6c8248, grass: 0x4e6428, n: 14, decals: [['tuft', 5], ['flowers', 4]] },
+  forest:    { base: 0x5f7a46, a: 0x6f8a4c, b: 0x4b603a, grass: 0x39502a, n: 14, decals: [['leaves', 4], ['tuft', 3], ['moss', 1]] },
+  oldgrowth: { base: 0x4a663f, a: 0x3a5436, b: 0x5f7a46, grass: 0x2c4424, n: 14, decals: [['moss', 4], ['leaves', 3], ['tuft', 2]] },
+  village:   { base: 0x8d8a62, a: 0xa0906a, b: 0x747a50, grass: 0x566030, n: 10, decals: [['tuft', 4], ['flag', 2], ['pebbles', 1]] },
+  marsh:     { base: 0x6d8062, a: 0x5a7058, b: 0x8a8d64, grass: 0x44562e, n: 14, decals: [['puddle', 3], ['tuft', 5]] },
+  scarp:     { base: 0x8c876f, a: 0x9e9a87, b: 0x767a58, grass: 0x55602e, n: 12, decals: [['pebbles', 5], ['crack', 2], ['tuft', 2]] },
+  highland:  { base: 0x84928a, a: 0xb0bcb8, b: 0x6a7a64, grass: 0x4a5a44, n: 14, decals: [['frost', 5], ['tuft', 3], ['pebbles', 1]] },
+  farmland:  { base: 0x9a9358, a: 0xb0a05c, b: 0x7c8a4c, grass: 0x6a6428, n: 12, decals: [['furrow', 5], ['tuft', 2], ['flowers', 1]] },
+  rust:      { base: 0x93735a, a: 0xa6684a, b: 0x7c7462, grass: 0x5a5a34, n: 12, decals: [['rust', 5], ['pebbles', 2], ['tuft', 1]] },
+  moor:      { base: 0x78765a, a: 0x6c5e5a, b: 0x888a62, grass: 0x4c5030, n: 13, decals: [['heather', 5], ['tuft', 3], ['pebbles', 1]] },
+  sulphur:   { base: 0x98905e, a: 0xb2a652, b: 0x847a62, grass: 0x5e5a30, n: 12, decals: [['crust', 5], ['crack', 2], ['pebbles', 1]] },
+  badlands:  { base: 0x8d7560, a: 0xa08468, b: 0x6c584a, grass: 0x5a4a30, n: 12, decals: [['crack', 5], ['pebbles', 2]] },
+  deeprock:  { base: 0x6f6a66, a: 0x827b72, b: 0x585452, grass: 0x444a38, n: 11, decals: [['pebbles', 4], ['crack', 3], ['glint', 1]] },
+  ash:       { base: 0x69615d, a: 0x7f7773, b: 0x4c4442, grass: 0x3a3430, n: 13, decals: [['drift', 5], ['ember', 2], ['crack', 2]] },
+  obsidian:  { base: 0x4d4347, a: 0x393135, b: 0x61555a, grass: 0x2a2226, n: 12, decals: [['glint', 5], ['crack', 3], ['ember', 1]] },
+  slag:      { base: 0x69574f, a: 0x7d6153, b: 0x4b3d39, grass: 0x3a2e28, n: 12, decals: [['slag', 5], ['ember', 2], ['rust', 1]] },
 }
-
-const TONES = Object.fromEntries([
-  ...Object.entries(FLAT).map(([k, c]) => [k, tonesFrom(c, k === 'lava' ? 0.08 : k === 'cliff' ? 0.1 : 0.38)]),
-  ['plaza', { lo: 0x9a7a52, mid: 0xae8e62, hi: 0xc2a476, accent: 0x8a6a48 }],
-]) as Record<Ground, Tones>
 
 /** A biome's middle tone, for the minimap and anything else that wants the ground's colour. */
-export const biomeColour = (b: Biome): number => TONES[b].mid
+export const biomeColour = (b: Biome): number => BIOME[b].base
 
-/** Which of the old brushwork sets a ground borrows until S07 gives each biome its own. */
-type MarkSet = 'hold' | 'whisperwood' | 'greyfall' | 'hollow' | 'deepvein' | 'ashgate' | 'plaza' | 'none'
-const MARK: Record<Ground, MarkSet> = {
-  rise: 'hold', meadow: 'hold', farmland: 'hold', highland: 'greyfall',
-  forest: 'whisperwood', oldgrowth: 'whisperwood', marsh: 'whisperwood',
-  scarp: 'greyfall', village: 'hollow', moor: 'hollow', badlands: 'hollow',
-  rust: 'deepvein', sulphur: 'deepvein', deeprock: 'deepvein',
-  ash: 'ashgate', obsidian: 'ashgate', slag: 'ashgate',
-  plaza: 'plaza',
-  sea: 'none', water: 'none', cliff: 'none', lava: 'none', bridge: 'none', ford: 'none', pass: 'none', causeway: 'none',
-}
+// water, banks, cliff and lava
+const DEEP = 0x2d5a70, DEEP_SEA = 0x284e66, SHELF = 0x5e98aa, ICE = 0xc2d6dc
+const SAND = 0xc9b489, MUD = 0x6e6446, FROST_BANK = 0xc8d0cc
+const CREST = 0xc8c0a8, FACE = 0x80786a, FOOT = 0x3a332c, CAST = 0x1e1a18
+const CORE = 0xffc245, MELT = 0xef6420, CRUST = 0x3a2420, CRUST_EDGE = 0x1c1210, SCORCH = 0x2c1e18, HEAT = 0xd8602a
+const PLAZA = 0xae8e62
 
-function toneAt(b: Ground, wx: number, wy: number) {
-  const t = TONES[b]
-  const n = fbm(wx * 0.006, wy * 0.006, 101, 4)
-  const m = fbm(wx * 0.02, wy * 0.02, 202, 2)
-  let c = n < 0.5 ? mix(t.lo, t.mid, n * 2) : mix(t.mid, t.hi, (n - 0.5) * 2)
-  c = mix(c, m > 0.5 ? t.hi : t.lo, Math.abs(m - 0.5) * 0.5)
-  // sun-bleached patches of dry grass, and dark hollows
-  if (t.accent !== undefined) {
-    const a = fbm(wx * 0.0035, wy * 0.0035, 303, 3)
-    if (a > 0.62) c = mix(c, t.accent, Math.min(0.55, (a - 0.62) * 3))
+// ---- the blended palette ---------------------------------------------------------
+
+/** Channels per raster cell: base, a, b (rgb each), then how cold (Frostmere's ice). */
+const K = 10
+let palette: Float32Array | null = null
+
+/** Each cell's recipe colours, box-blurred twice across ~96 px so region borders soften. */
+function paletteGrid(): Float32Array {
+  if (palette) return palette
+  const r = raster()
+  const g = new Float32Array(r.N * K)
+  for (let i = 0; i < r.N; i++) {
+    const reg = r.region[i]
+    const biome: Biome = reg >= 0 ? REGIONS[reg].biome : 'rise'
+    const rc = BIOME[biome]
+    const o = i * K
+    for (const [k, c] of [[0, rc.base], [3, rc.a], [6, rc.b]] as const) {
+      g[o + k] = (c >> 16) & 255; g[o + k + 1] = (c >> 8) & 255; g[o + k + 2] = c & 255
+    }
+    g[o + 9] = biome === 'highland' ? 1 : 0
   }
-  return c
+  boxBlur(g, r.GW, r.GH, K, 1)
+  boxBlur(g, r.GW, r.GH, K, 1)
+  return (palette = g)
 }
 
-// ---- the painting ---------------------------------------------------------------
+/** Build the fields, palette and feature layouts now, not in the first chunk's bake. */
+export function warmTerrain() {
+  terrainFields()
+  paletteGrid()
+  warmFeatures()
+}
 
-/** A rectangle in texels at scale S, which is where the brushwork draws. */
-interface Box { x0: number; y0: number; x1: number; y1: number }
+/** How far a point's palette lookup is warped, so the soft borders wander instead of following the polygons. */
+const warpX = (x: number, y: number) => x + (vnoise(x * 0.005, y * 0.005, 41) - 0.5) * 110
+const warpY = (x: number, y: number) => y + (vnoise(x * 0.005, y * 0.005, 43) - 0.5) * 110
 
-const meets = (b: Box, x0: number, y0: number, x1: number, y1: number) =>
-  x1 >= b.x0 && x0 <= b.x1 && y1 >= b.y0 && y0 <= b.y1
+/** The biome whose recipe a decal at (x, y) uses: the region under the warped point. */
+function biomeAt(x: number, y: number): Biome {
+  const r = raster()
+  const i = r.cell(Math.min(WORLD.width - 1, Math.max(0, warpX(x, y))), Math.min(WORLD.height - 1, Math.max(0, warpY(x, y))))
+  const g = i >= 0 ? r.region[i] : -1
+  return g >= 0 ? REGIONS[g].biome : 'rise'
+}
 
-/** Visit, in row-major order, every cell whose strokes could reach the rect. */
-function forCells(wx: number, wy: number, size: number, reach: number, visit: (cx: number, cy: number) => void) {
-  const last = Math.ceil(WORLD.width / CELL) - 1, lastRow = Math.ceil(WORLD.height / CELL) - 1
-  const i0 = Math.max(0, Math.floor((wx - reach) / CELL)), i1 = Math.min(last, Math.floor((wx + size + reach) / CELL))
-  const j0 = Math.max(0, Math.floor((wy - reach) / CELL)), j1 = Math.min(lastRow, Math.floor((wy + size + reach) / CELL))
-  for (let cy = j0; cy <= j1; cy++) for (let cx = i0; cx <= i1; cx++) visit(cx, cy)
+// ---- the wash ------------------------------------------------------------------------
+
+let R = 0, G = 0, B = 0
+const acc = new Float32Array(K)
+
+const tint = (c: number, t: number) => {
+  if (t <= 0) return
+  R += (((c >> 16) & 255) - R) * t; G += (((c >> 8) & 255) - G) * t; B += ((c & 255) - B) * t
+}
+
+/** The wash colour at a world point, into R, G, B. */
+function washAt(F: TerrainFields, px: number, py: number) {
+  // the blended recipe, looked up at a warped point
+  const pal = paletteGrid()
+  const { GW, GH, C } = F.r
+  let u = warpX(px, py) / C - 0.5, v = warpY(px, py) / C - 0.5
+  u = u < 0 ? 0 : u > GW - 1.001 ? GW - 1.001 : u
+  v = v < 0 ? 0 : v > GH - 1.001 ? GH - 1.001 : v
+  const i = u | 0, j = v | 0, fu = u - i, fv = v - j
+  const k0 = (j * GW + i) * K, k1 = k0 + K, k2 = k0 + GW * K, k3 = k2 + K
+  const w0 = (1 - fu) * (1 - fv), w1 = fu * (1 - fv), w2 = (1 - fu) * fv, w3 = fu * fv
+  for (let c = 0; c < K; c++) acc[c] = pal[k0 + c] * w0 + pal[k1 + c] * w1 + pal[k2 + c] * w2 + pal[k3 + c] * w3
+  const n1 = fbm(px * 0.0042, py * 0.0042, 101, 3)
+  const n2 = fbm(px * 0.016, py * 0.016, 202, 2)
+  const ta = smooth(0.4, 0.7, n1) * 0.9, tb = smooth(0.48, 0.76, n2) * 0.75
+  R = acc[0] + (acc[3] - acc[0]) * ta; G = acc[1] + (acc[4] - acc[1]) * ta; B = acc[2] + (acc[5] - acc[2]) * ta
+  R += (acc[6] - R) * tb; G += (acc[7] - G) * tb; B += (acc[8] - B) * tb
+  const lum = 0.94 + 0.12 * vnoise(px * 0.045, py * 0.045, 303)
+  R *= lum; G *= lum; B *= lum
+  const cold = acc[9]
+
+  // the hold's trodden clearing around the hall
+  const dh = Math.hypot(px - HALL.x, (py - HALL.y) * 1.15)
+  if (dh < 320) tint(PLAZA, 1 - smooth(150, 205 + (n1 - 0.5) * 120, dh))
+
+  // cliffs: crest, face darkening to the foot, and the shadow cast downhill
+  if (cellValue(F, F.cliff, px, py) < 120) {
+    const sd = sample(F, F.cliff, px, py)
+    const s = sample(F, F.cliffS, px, py)
+    if (sd < 0) {
+      const t = Math.max(0, Math.min(1, (s + 1) / 2))
+      const ground = (R + G + B) / 3
+      R = G = B = ground
+      tint(t < 0.16 ? CREST : FACE, 0.82)
+      if (t >= 0.16) tint(FOOT, smooth(0.12, 0.95, t) * 0.9)
+      tint(CREST, (vnoise(px * 0.06, py * 0.02, 606) - 0.55) * 0.5)
+    } else if (s > 0) tint(CAST, 0.5 * (1 - smooth(0, 80, sd)))
+    else tint(CREST, 0.16 * (1 - smooth(0, 20, sd)))
+  }
+
+  // water: the bank, the shelf, the deep
+  if (cellValue(F, F.wet, px, py) < 150) {
+    const sd = sample(F, F.wet, px, py) + (n2 - 0.5) * 10
+    const sea = smooth(0.04, 0.34, sample(F, F.sea, px, py))
+    if (sd < 0) {
+      const deep = smooth(4, 120, -sd)
+      const shelf = mix(SHELF, ICE, Math.min(1, cold * 1.2) * (1 - smooth(0, 40, -sd)))
+      R = (shelf >> 16) & 255; G = (shelf >> 8) & 255; B = shelf & 255
+      tint(sea > 0.5 ? DEEP_SEA : DEEP, deep)
+      tint(0x8ec2cc, Math.max(0, n2 - 0.62) * 1.2 * (1 - deep * 0.5))
+    } else {
+      const w = 14 + 8 * n1 + (46 + 30 * n1) * sea
+      if (sd < w) {
+        tint(cold > 0.5 ? FROST_BANK : mix(MUD, SAND, sea), (1 - smooth(w * 0.45, w, sd)) * 0.9)
+        tint(0x3a3a2c, (1 - smooth(0, 6, sd)) * 0.45)
+      }
+    }
+  }
+
+  // lava: core, crust plates, a dark rim, and the scorch and glow around it
+  if (cellValue(F, F.lava, px, py) < 150) {
+    const sd = sample(F, F.lava, px, py)
+    if (sd < 0) {
+      const d = -sd
+      R = (MELT >> 16) & 255; G = (MELT >> 8) & 255; B = MELT & 255
+      tint(CORE, smooth(18, 110, d) * 0.9)
+      tint(CRUST, smooth(0.56, 0.64, fbm(px * 0.016, py * 0.016, 505, 2)) * 0.8)
+      tint(CRUST_EDGE, (1 - smooth(0, 12, d)) * 0.9)
+    } else {
+      tint(SCORCH, 0.75 * (1 - smooth(0, 28, sd)))
+      const h = 1 - smooth(0, 130, sd)
+      tint(HEAT, 0.3 * h * h)
+    }
+  }
 }
 
 let scratch: [HTMLCanvasElement, Ctx] | null = null
 
-/** 1. The colour field, as a wash, sampled on a grid pinned to the world's origin. */
-function paintWash(x: Ctx, wx: number, wy: number, size: number, scale: number) {
-  const f = Math.min(FIELD, scale / 2)
-  const i0 = Math.floor(wx * f) - 2, j0 = Math.floor(wy * f) - 2
+/** 1. The wash, sampled on a grid pinned to the world's origin and smoothed up. */
+function paintWash(x: Ctx, wx: number, wy: number, size: number) {
+  const F = terrainFields()
+  const f = 1 / WASH_STEP
+  const i0 = Math.floor(wx * f) - 1, j0 = Math.floor(wy * f) - 1
   const cols = Math.ceil((wx + size) * f) + 2 - i0, rows = Math.ceil((wy + size) * f) + 2 - j0
   scratch ??= makeCanvas(cols, rows)
   const [field, fx] = scratch
   if (field.width !== cols || field.height !== rows) { field.width = cols; field.height = rows }
   const img = fx.createImageData(cols, rows)
+  const d = img.data
   for (let j = 0; j < rows; j++) {
     const py = (j0 + j + 0.5) / f
     for (let i = 0; i < cols; i++) {
-      const px = (i0 + i + 0.5) / f
-      const c = toneAt(biomeAt(px, py), px, py)
+      washAt(F, (i0 + i + 0.5) / f, py)
       const k = (j * cols + i) * 4
-      img.data[k] = (c >> 16) & 255
-      img.data[k + 1] = (c >> 8) & 255
-      img.data[k + 2] = c & 255
-      img.data[k + 3] = 255
+      d[k] = R; d[k + 1] = G; d[k + 2] = B; d[k + 3] = 255
     }
   }
   fx.putImageData(img, 0, 0)
@@ -212,105 +244,180 @@ function paintWash(x: Ctx, wx: number, wy: number, size: number, scale: number) 
   x.restore()
 }
 
-/** 2. Brush mottling: soft dabs so the wash reads as paint, not a gradient. */
-function paintDabs(x: Ctx, b: Box, wx: number, wy: number, size: number) {
-  forCells(wx, wy, size, 70, (cx, cy) => {
-    const n = hash(cx, cy, 211) < DABS_EXTRA ? 5 : 4
-    for (let k = 0; k < n; k++) {
-      const r = strokeRng(cx, cy, k, 212)
-      const wxd = (cx + r.next()) * CELL, wyd = (cy + r.next()) * CELL
-      const rad = r.range(10, 34)
-      const px = wxd * S, py = wyd * S
-      if (wxd >= WORLD.width || wyd >= WORLD.height || !meets(b, px - rad, py - rad, px + rad, py + rad)) continue
-      const t = TONES[biomeAt(wxd, wyd)]
-      const c = r.next() < 0.5 ? t.hi : t.lo
-      x.save()
-      x.translate(px, py); x.rotate(r.range(0, Math.PI)); x.scale(1, r.range(0.35, 0.7))
-      const g = x.createRadialGradient(0, 0, 0, 0, 0, rad)
-      g.addColorStop(0, css(c, 0.22)); g.addColorStop(1, css(c, 0))
-      x.fillStyle = g
-      x.beginPath(); x.arc(0, 0, rad, 0, Math.PI * 2); x.fill()
-      x.restore()
-    }
-  })
+// ---- decals ---------------------------------------------------------------------------
+
+
+const FLOWERS = [0xf1e4c3, 0xf2c24e, 0xe8a0b8, 0xc8d8f0]
+
+function dot(p: Path2D, x: number, y: number, rx: number, ry = rx, rot = 0) {
+  p.moveTo(x + Math.cos(rot) * rx, y + Math.sin(rot) * rx)
+  p.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2)
 }
 
-/** 3. Roads: trodden earth with ruts and an inked verge. Laid out once. */
-interface Road { pts: [number, number][]; width: number; box: Box }
-let roads: Road[] | null = null
-
-function boxOf(pts: [number, number][], pad: number): Box {
-  const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
-  for (const [px, py] of pts) {
-    box.x0 = Math.min(box.x0, px - pad); box.y0 = Math.min(box.y0, py - pad)
-    box.x1 = Math.max(box.x1, px + pad); box.y1 = Math.max(box.y1, py + pad)
+function zigzag(p: Path2D, rng: Mulberry, x: number, y: number, n: number, step: number) {
+  let a = rng.range(0, Math.PI * 2)
+  p.moveTo(x, y)
+  for (let k = 0; k < n; k++) {
+    a += rng.range(-0.9, 0.9)
+    x += Math.cos(a) * step * rng.range(0.6, 1.2); y += Math.sin(a) * step * 0.6 * rng.range(0.6, 1.2)
+    p.lineTo(x, y)
   }
-  return box
 }
 
-function layRoads(): Road[] {
-  if (roads) return roads
-  const out: Road[] = []
-  const road = (ax: number, ay: number, bx: number, by: number, width: number) => {
-    const n = Math.max(2, Math.ceil(Math.hypot(bx - ax, by - ay) / 40))
-    const pts: [number, number][] = []
-    const nx = -(by - ay), ny = bx - ax
-    const nl = Math.hypot(nx, ny) || 1
-    for (let i = 0; i <= n; i++) {
-      const t = i / n
-      const wob = i === 0 || i === n ? 0 : (fbm(t * 3, ax * 0.01, 77, 2) - 0.5) * 70
-      pts.push([(ax + (bx - ax) * t + (nx / nl) * wob) * S, (ay + (by - ay) * t + (ny / nl) * wob) * S])
-    }
-    out.push({ pts, width, box: boxOf(pts, width * S + 6) })
-  }
-  // the blueprint's roads, exactly where the raster's road layer has them
-  for (const rd of ROADS) {
-    const pts = samplePolyline(rd.pts, 40).map(([px, py]): [number, number] => [px * S, py * S])
-    out.push({ pts, width: rd.width, box: boxOf(pts, rd.width * S + 6) })
-  }
-  // footpaths out to the nearer sites; the towers on the rampart are reached
-  // across the grass, which keeps the hold from reading as a starburst
-  for (const pad of PADS) {
-    if (pad.region !== 'hold' || pad.key === 'wall' || pad.key === 'gate') continue
-    if (pad.key === 'watchtower' || pad.key === 'cannonTower') continue
-    const dx = pad.x - CX, dy = pad.y - CY
-    const d = Math.hypot(dx, dy) || 1
-    if (d > 420) continue
-    road(CX + (dx / d) * 170, CY + (dy / d) * 150, pad.x, pad.y + 10, 20)
-  }
-  return (roads = out)
-}
-
-function paintRoads(x: Ctx, b: Box) {
-  for (const { pts, width, box } of layRoads()) {
-    if (!meets(b, box.x0, box.y0, box.x1, box.y1)) continue
-    const trace = (xx: Ctx) => {
-      xx.moveTo(pts[0][0], pts[0][1])
-      for (let i = 1; i < pts.length - 1; i++) {
-        const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2
-        xx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my)
+function decal(bt: Batch, rng: Mulberry, kind: Decal, rc: Recipe, x: number, y: number) {
+  switch (kind) {
+    case 'tuft': {
+      const s = rng.range(0.8, 1.3)
+      const p = bt.stroke(rc.grass, 0.6, 1.8)
+      for (const [dx, h] of [[-2.2, 8], [0, 11], [2.2, 8.4], [-1, 9.6]]) {
+        p.moveTo(x + dx * 0.8 * s, y)
+        p.quadraticCurveTo(x + dx * 1.6 * s, y - h * 0.5 * s, x + dx * 2.6 * s, y - h * s)
       }
-      xx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1])
+      const q = bt.stroke(mix(rc.grass, 0xfff0c0, 0.45), 0.45, 1.4)
+      q.moveTo(x - 0.8 * s, y); q.quadraticCurveTo(x - 1.2 * s, y - 5 * s, x - 2.8 * s, y - 8.4 * s)
+      break
     }
-    x.save()
-    // earth laid over the ground at 60%, so the biome still shows through
-    x.globalAlpha = 0.6
-    x.lineCap = 'round'; x.lineJoin = 'round'
-    x.beginPath(); trace(x)
-    x.strokeStyle = css(0x5a4a30, 0.22); x.lineWidth = width * S + 5; x.stroke()
-    x.strokeStyle = css(0xa8875a, 0.75); x.lineWidth = width * S; x.stroke()
-    x.strokeStyle = css(PAL.path, 0.55); x.lineWidth = width * S * 0.62; x.stroke()
-    if (width > 30) {
-      x.setLineDash([6, 5])
-      x.strokeStyle = css(0x7a5e3c, 0.35); x.lineWidth = 1.2
-      x.save(); x.translate(-width * S * 0.18, 0); x.beginPath(); trace(x); x.stroke(); x.restore()
-      x.save(); x.translate(width * S * 0.18, 0); x.beginPath(); trace(x); x.stroke(); x.restore()
+    case 'flowers': {
+      const p = bt.fill(FLOWERS[(rng.next() * FLOWERS.length) | 0], 0.9)
+      for (let k = 0, n = 3 + ((rng.next() * 4) | 0); k < n; k++) dot(p, x + rng.range(-9, 9), y + rng.range(-5, 5), rng.range(1.3, 2.1))
+      break
     }
-    x.restore()
+    case 'pebbles': {
+      const f = bt.fill(mix(rc.a, 0x9a9480, 0.5), 0.9), l = bt.stroke(INK, 0.35, 1)
+      for (let k = 0, n = 1 + ((rng.next() * 3) | 0); k < n; k++) {
+        const px = x + rng.range(-8, 8), py = y + rng.range(-4, 4), rx = rng.range(2, 4.5), ry = rx * rng.range(0.55, 0.8)
+        dot(f, px, py, rx, ry); dot(l, px, py, rx, ry)
+      }
+      break
+    }
+    case 'crack': zigzag(bt.stroke(0x241a14, 0.45, 1.5), rng, x, y, 3 + ((rng.next() * 2) | 0), 11); break
+    case 'drift': dot(bt.fill(0xa8a09a, 0.22), x, y, rng.range(10, 22), rng.range(3, 6), rng.range(-0.3, 0.3)); break
+    case 'rust': {
+      const p = bt.stroke(0x9a4a28, 0.32, rng.range(2.5, 4.5))
+      const a = fbm(x * 0.002, y * 0.002, 707, 2) * Math.PI, L = rng.range(10, 24)
+      p.moveTo(x, y); p.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L * 0.6)
+      break
+    }
+    case 'crust': {
+      dot(bt.fill(0xd8c040, 0.5), x, y, rng.range(5, 11), rng.range(3, 6), rng.range(0, Math.PI))
+      const w = bt.fill(0xf4f0c8, 0.8)
+      for (let k = 0; k < 3; k++) dot(w, x + rng.range(-6, 6), y + rng.range(-3, 3), 1.1)
+      break
+    }
+    case 'frost': {
+      const p = bt.stroke(0xeef4f4, 0.55, 1.2)
+      const s = rng.range(3, 5)
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI
+        p.moveTo(x - Math.cos(a) * s, y - Math.sin(a) * s); p.lineTo(x + Math.cos(a) * s, y + Math.sin(a) * s)
+      }
+      dot(bt.fill(0xe4eef0, 0.3), x + rng.range(-12, 12), y + rng.range(-6, 6), rng.range(6, 12), rng.range(2, 4))
+      break
+    }
+    case 'leaves': {
+      const p = bt.fill([0x8a6a36, 0x6e5a36, 0x9a7a3a][(rng.next() * 3) | 0], 0.7)
+      for (let k = 0; k < 3; k++) dot(p, x + rng.range(-8, 8), y + rng.range(-5, 5), rng.range(2, 3.6), rng.range(1, 1.8), rng.range(0, Math.PI))
+      break
+    }
+    case 'moss': dot(bt.fill(0x2e4a26, 0.3), x, y, rng.range(8, 16), rng.range(4, 8), rng.range(0, Math.PI)); break
+    case 'heather': {
+      const p = bt.fill(rng.next() < 0.6 ? 0x8a5a7a : 0x6e4a66, 0.75)
+      for (let k = 0; k < 5; k++) dot(p, x + rng.range(-7, 7), y + rng.range(-4, 4), rng.range(1.2, 2))
+      break
+    }
+    case 'furrow': {
+      // rows keep one direction across a field; fields change it
+      const a = Math.floor(fbm(x * 0.0015, y * 0.0015, 808, 2) * 4) * (Math.PI / 4) + 0.1
+      const p = bt.stroke(0x6a5a30, 0.3, 1.6)
+      const cx = Math.cos(a), cy = Math.sin(a) * 0.6
+      for (let k = -1; k <= 1; k++) {
+        const ox = -cy * k * 6, oy = cx * k * 6
+        p.moveTo(x + ox - cx * 14, y + oy - cy * 14); p.lineTo(x + ox + cx * 14, y + oy + cy * 14)
+      }
+      break
+    }
+    case 'puddle': {
+      const rx = rng.range(6, 14), ry = rx * 0.45
+      dot(bt.fill(0x4a6a6a, 0.55), x, y, rx, ry)
+      dot(bt.stroke(0xb8d0cc, 0.4, 1.2), x - 1, y - 1, rx * 0.8, ry * 0.7)
+      break
+    }
+    case 'flag': {
+      const s = rng.range(5, 9), a = rng.range(-0.4, 0.4)
+      const pts = [[-s, -s * 0.6], [s, -s * 0.6], [s, s * 0.6], [-s, s * 0.6]].map(([u, v]) => [x + u * Math.cos(a) - v * Math.sin(a), y + u * Math.sin(a) + v * Math.cos(a)])
+      for (const p of [bt.fill(0xa8a08a, 0.8), bt.stroke(INK, 0.4, 1.1)]) {
+        p.moveTo(pts[0][0], pts[0][1]); for (const q of pts) p.lineTo(q[0], q[1]); p.closePath()
+      }
+      break
+    }
+    case 'glint': {
+      const p = bt.stroke(0xc8b8e8, 0.7, 1.2)
+      const L = rng.range(3, 6)
+      p.moveTo(x - L, y + L * 0.4); p.lineTo(x + L, y - L * 0.4)
+      dot(bt.fill(0x1a1418, 0.6), x, y + 2, L * 1.4, L * 0.5)
+      break
+    }
+    case 'slag': {
+      dot(bt.fill(0x3a2e2a, 0.8), x, y, rng.range(4, 8), rng.range(2.5, 4.5))
+      dot(bt.fill(0x8a6a58, 0.5), x - 1.5, y - 1.5, 2, 1.2)
+      break
+    }
+    case 'ember': {
+      const pts = [x, y]
+      let a = rng.range(0, Math.PI * 2), px = x, py = y
+      for (let k = 0; k < 3; k++) { a += rng.range(-0.9, 0.9); px += Math.cos(a) * 10; py += Math.sin(a) * 6; pts.push(px, py) }
+      for (const p of [bt.stroke(0xff5a1a, 0.18, 5, 'lighter'), bt.stroke(0xff8a3a, 0.8, 1.6)]) {
+        p.moveTo(pts[0], pts[1]); for (let k = 2; k < pts.length; k += 2) p.lineTo(pts[k], pts[k + 1])
+      }
+      break
+    }
   }
 }
 
-/** 4. The plaza: laid cobbles around the hall, feathering out at the edge. */
+/** 2. Per-biome decals, dealt per 128 px cell and drawn in batches. */
+function paintDecals(x: Ctx, rect: Rect) {
+  const F = terrainFields()
+  const r = F.r
+  const bt = new Batch()
+  const lastX = Math.ceil(WORLD.width / CELL) - 1, lastY = Math.ceil(WORLD.height / CELL) - 1
+  const i0 = Math.max(0, Math.floor((rect.x0 - DECAL_REACH) / CELL)), i1 = Math.min(lastX, Math.floor((rect.x1 + DECAL_REACH) / CELL))
+  const j0 = Math.max(0, Math.floor((rect.y0 - DECAL_REACH) / CELL)), j1 = Math.min(lastY, Math.floor((rect.y1 + DECAL_REACH) / CELL))
+  for (let cy = j0; cy <= j1; cy++) for (let cx = i0; cx <= i1; cx++) {
+    const rc0 = BIOME[biomeAt((cx + 0.5) * CELL, (cy + 0.5) * CELL)]
+    const n = rc0.n + 4
+    for (let k = 0; k < n; k++) {
+      const rng = new Mulberry(hash32(cx * 64 + k, cy, 404))
+      const wx = (cx + rng.next()) * CELL, wy = (cy + rng.next()) * CELL
+      if (wx < rect.x0 - DECAL_REACH || wx > rect.x1 + DECAL_REACH || wy < rect.y0 - DECAL_REACH || wy > rect.y1 + DECAL_REACH) continue
+      if (wx >= WORLD.width || wy >= WORLD.height) continue
+      const rc = BIOME[biomeAt(wx, wy)]
+      if (k >= rc.n) continue
+      const i = r.cell(wx, wy)
+      if (r.terrain[i] !== T.LAND || r.crossing[i] >= 0 || (r.road[i] && rng.next() < 0.8)) continue
+      if (cellValue(F, F.wet, wx, wy) < 24 || cellValue(F, F.lava, wx, wy) < 40 || cellValue(F, F.cliff, wx, wy) < 16) continue
+      if (Math.hypot(wx - HALL.x, (wy - HALL.y) * 1.15) < 190) continue
+      // clustered: most decals gather where the noise says so, a few stray
+      if (fbm(wx * 0.01, wy * 0.01, 405, 2) < 0.42 && rng.next() < 0.6) continue
+      let pick = rng.next() * rc.decals.reduce((s, d) => s + d[1], 0)
+      let kind = rc.decals[0][0]
+      for (const [d, w] of rc.decals) { if ((pick -= w) < 0) { kind = d; break } }
+      decal(bt, rng, kind, rc, wx, wy)
+    }
+  }
+  bt.flush(x)
+}
+
+// ---- set pieces, in texels at S ---------------------------------------------------------
+
+/** A rectangle in texels at scale S, which is where the old brushwork draws. */
+interface Box { x0: number; y0: number; x1: number; y1: number }
+
+const meets = (b: Box, x0: number, y0: number, x1: number, y1: number) =>
+  x1 >= b.x0 && x0 <= b.x1 && y1 >= b.y0 && y0 <= b.y1
+
+const CX = HALL.x, CY = HALL.y
+
+/** The plaza: laid cobbles around the hall, feathering out at the edge. */
 function paintPlaza(x: Ctx, b: Box) {
   const pcx = CX * S, pcy = (CY + 30) * S
   const reach = (70 + 8 * 11) * S + 4
@@ -344,122 +451,7 @@ function paintPlaza(x: Ctx, b: Box) {
   }
 }
 
-function tuft(x: Ctx, px: number, py: number, c: number, s = 1) {
-  x.save()
-  x.lineCap = 'round'
-  x.strokeStyle = css(shade(c, -0.45), 0.7)
-  x.lineWidth = 0.9
-  x.beginPath()
-  for (const [dx, h] of [[-2.2, 4], [0, 5.5], [2.2, 4.2], [-1, 4.8], [1.2, 5]]) {
-    x.moveTo(px + dx * 0.4 * s, py)
-    x.quadraticCurveTo(px + dx * 0.8 * s, py - h * 0.5 * s, px + dx * 1.3 * s, py - h * s)
-  }
-  x.stroke()
-  x.strokeStyle = css(mix(c, 0xfff0c0, 0.3), 0.55)
-  x.beginPath()
-  x.moveTo(px - 0.4 * s, py); x.quadraticCurveTo(px - 0.6 * s, py - 2.4 * s, px - 1.4 * s, py - 4.2 * s)
-  x.stroke()
-  x.restore()
-}
-
-/** 5. Biome detail: the per-biome brushwork. */
-function paintMarks(x: Ctx, b: Box, wx: number, wy: number, size: number) {
-  const reach = MARK_REACH * S
-  forCells(wx, wy, size, MARK_REACH, (cx, cy) => {
-    for (let k = 0; k < MARKS; k++) {
-      const r = strokeRng(cx, cy, k, 404)
-      const wxm = (cx + r.next()) * CELL, wym = (cy + r.next()) * CELL
-      const px = wxm * S, py = wym * S
-      if (wxm >= WORLD.width || wym >= WORLD.height || !meets(b, px - reach, py - reach, px + reach, py + reach)) continue
-      markAt(x, r, biomeAt(wxm, wym), wxm, wym, px, py)
-    }
-  })
-}
-
-function markAt(x: Ctx, r: Rng, b: Ground, wx: number, wy: number, px: number, py: number) {
-  const cluster = fbm(wx * 0.01, wy * 0.01, 404, 2)
-  const t = TONES[b]
-  switch (MARK[b]) {
-    case 'hold': {
-      if (cluster > 0.52) tuft(x, px, py, t.mid, r.range(0.8, 1.3))
-      else if (r.next() < 0.08) fill(x, P.circle(px, py, r.range(0.7, 1.2)), r.pick([0xf1e4c3, 0xf2c24e, 0xe8a0b8, 0xc8d8f0]), 0.9)
-      else if (r.next() < 0.03) {
-        fill(x, P.ellipse(px, py, r.range(1.2, 2.4), r.range(0.8, 1.5)), 0x9a9480)
-        line(x, P.ellipse(px, py, r.range(1.2, 2.4), r.range(0.8, 1.5)), 0.5, INK, 0.5)
-      }
-      break
-    }
-    case 'whisperwood': {
-      if (cluster > 0.45) tuft(x, px, py, t.mid, r.range(1, 1.5))
-      else if (r.next() < 0.3) {
-        // fallen leaves and needles
-        fill(x, P.ellipse(px, py, r.range(1, 2), r.range(0.5, 1), r.range(0, Math.PI)), r.pick([0x8a6a36, 0x6e5a36, 0x9a7a3a]), 0.7)
-      } else if (r.next() < 0.05) {
-        line(x, xx => { xx.moveTo(px - 4, py); xx.lineTo(px + 4, py - 1.5) }, 1, 0x4a3420, 0.7)
-      }
-      break
-    }
-    case 'greyfall': {
-      if (r.next() < 0.06) {
-        const s = r.range(3, 7)
-        const pts: number[][] = []
-        for (let k = 0; k < 5; k++) { const a = (k / 5) * Math.PI * 2 + r.range(-0.3, 0.3); pts.push([px + Math.cos(a) * s * r.range(0.7, 1.2), py + Math.sin(a) * s * 0.55 * r.range(0.7, 1.2)]) }
-        form(x, P.blob(pts, 0.3), mix(t.hi, 0xffffff, r.range(0, 0.12)), { rim: 0.6, core: s * 0.4 })
-        line(x, P.blob(pts, 0.3), 0.7, INK, 0.55)
-      } else if (r.next() < 0.1) {
-        line(x, xx => { xx.moveTo(px, py); xx.lineTo(px + r.range(-6, 6), py + r.range(-3, 3)); xx.lineTo(px + r.range(-10, 10), py + r.range(-4, 4)) }, 0.6, INK, 0.35)
-      } else if (cluster > 0.64) tuft(x, px, py, 0x7f8a54, 0.9)
-      break
-    }
-    case 'hollow': {
-      if (r.next() < 0.035) {
-        // broken flagstones from what was a village square
-        const s = r.range(3, 6)
-        const a = r.range(-0.4, 0.4)
-        x.save(); x.translate(px, py); x.rotate(a)
-        form(x, P.rect(-s, -s * 0.6, s * 2, s * 1.2), mix(0xa8a08a, 0x000000, r.range(0, 0.15)), { rim: 0.5, core: 1 })
-        line(x, P.rect(-s, -s * 0.6, s * 2, s * 1.2), 0.6, INK, 0.5)
-        x.restore()
-      } else if (cluster > 0.55) tuft(x, px, py, t.mid, 1.1)
-      else if (r.next() < 0.03) fill(x, P.circle(px, py, r.range(0.8, 1.6)), 0x6a6050, 0.8)
-      break
-    }
-    case 'deepvein': {
-      if (r.next() < 0.06) {
-        line(x, xx => { xx.moveTo(px, py); xx.lineTo(px + r.range(-7, 7), py + r.range(-3, 3)); xx.lineTo(px + r.range(-12, 12), py + r.range(-5, 5)) }, 0.8, 0x2a1e16, 0.6)
-      } else if (r.next() < 0.05) {
-        fill(x, P.ellipse(px, py, r.range(2, 6), r.range(1, 2.5)), 0x8a4a2e, 0.35)
-      } else if (r.next() < 0.02) {
-        fill(x, P.circle(px, py, 0.9), 0xd8e0ea, 0.9)
-      }
-      break
-    }
-    case 'ashgate': {
-      if (r.next() < 0.05) {
-        // cracks that still glow
-        const pts: number[][] = [[px, py]]
-        for (let k = 0; k < 3; k++) pts.push([pts[k][0] + r.range(-6, 6), pts[k][1] + r.range(-3, 3)])
-        x.save()
-        x.globalCompositeOperation = 'lighter'
-        line(x, xx => { xx.moveTo(pts[0][0], pts[0][1]); for (const p of pts) xx.lineTo(p[0], p[1]) }, 2.4, 0xff5a1a, 0.18)
-        x.restore()
-        line(x, xx => { xx.moveTo(pts[0][0], pts[0][1]); for (const p of pts) xx.lineTo(p[0], p[1]) }, 0.8, 0xff8a3a, 0.8)
-      } else if (r.next() < 0.08) {
-        fill(x, P.circle(px, py, r.range(0.6, 1.2)), 0xffa050, 0.7)
-      } else if (r.next() < 0.1) {
-        fill(x, P.ellipse(px, py, r.range(3, 8), r.range(1, 2.4)), 0x8a8078, 0.25)
-      }
-      break
-    }
-    case 'plaza': {
-      if (r.next() < 0.12) fill(x, P.ellipse(px, py, r.range(1, 2.5), r.range(0.6, 1.4)), r.next() < 0.5 ? 0x8a6a48 : 0xc8ae84, 0.6)
-      else if (r.next() < 0.03) tuft(x, px, py, 0x7f8c4c, 0.7)
-      break
-    }
-  }
-}
-
-/** 6. Scorched earth around every warcamp. */
+/** Scorched earth around every warcamp. */
 function paintCamps(x: Ctx, b: Box) {
   CAMPS.forEach((c, ci) => {
     const cx = c.x * S, cy = (c.y - 10) * S
@@ -476,7 +468,7 @@ function paintCamps(x: Ctx, b: Box) {
   })
 }
 
-/** 7. The spawn gates: burned-out waymarks where the horde comes through. */
+/** The spawn gates: burned-out waymarks where the horde comes through. */
 function paintSpawnGates(x: Ctx, b: Box) {
   for (const gate of SPAWN_GATES) {
     const gx = gate.x * S, gy = gate.y * S
@@ -492,23 +484,25 @@ function paintSpawnGates(x: Ctx, b: Box) {
 
 /**
  * Paint world rect [wx, wx+size) × [wy, wy+size). `x` arrives with a
- * transform from world px to canvas px (scaled by `scale`), usually clipped to
- * the part the caller keeps; strokes may land past the rect. The same world
- * pixel always comes out the same, whichever rect it was painted as part of.
+ * transform from world px to canvas px, usually clipped to the part the
+ * caller keeps; strokes may land past the rect. The same world pixel always
+ * comes out the same, whichever rect it was painted as part of.
  */
-export function paintTerrainRect(x: Ctx, wx: number, wy: number, size: number, scale: number) {
+export function paintTerrainRect(x: Ctx, wx: number, wy: number, size: number, _scale: number) {
+  const rect: Rect = { x0: wx, y0: wy, x1: wx + size, y1: wy + size }
   x.save()
-  paintWash(x, wx, wy, size, scale)
-  // the brushwork is drawn in texels at S, the resolution it was designed at
+  paintWash(x, wx, wy, size)
+  paintDecals(x, rect)
+  paintFeatureLines(x, rect)
+  paintRoads(x, rect)
+  paintCrossings(x, rect)
+  // the set pieces are drawn in texels at S, the resolution they were designed at
   x.scale(1 / S, 1 / S)
   const b: Box = { x0: wx * S, y0: wy * S, x1: (wx + size) * S, y1: (wy + size) * S }
-  paintDabs(x, b, wx, wy, size)
-  paintRoads(x, b)
   paintPlaza(x, b)
-  paintMarks(x, b, wx, wy, size)
   paintCamps(x, b)
   paintSpawnGates(x, b)
-  // 8. paper tooth over everything, pinned to the world's origin
+  // paper tooth over everything, pinned to the world's origin
   const W = WORLD.width * S, H = WORLD.height * S
   applyGrain(x, W, H, 0.07)
   // a whisper of warm vignette toward the world's edge, as if the page ends
@@ -519,6 +513,16 @@ export function paintTerrainRect(x: Ctx, wx: number, wy: number, size: number, s
 }
 
 // ---- the unexplored: blank vellum with a cartographer's sketch -------------------------
+
+/** Which of the surveyor's symbol sets sketches each biome on the vellum. */
+type MarkSet = 'hold' | 'whisperwood' | 'greyfall' | 'hollow' | 'deepvein' | 'ashgate' | 'plaza' | 'none'
+const MARK: Record<Biome, MarkSet> = {
+  rise: 'hold', meadow: 'hold', farmland: 'hold', highland: 'greyfall',
+  forest: 'whisperwood', oldgrowth: 'whisperwood', marsh: 'whisperwood',
+  scarp: 'greyfall', village: 'hollow', moor: 'hollow', badlands: 'hollow',
+  rust: 'deepvein', sulphur: 'deepvein', deeprock: 'deepvein',
+  ash: 'ashgate', obsidian: 'ashgate', slag: 'ashgate',
+}
 
 /**
  * What the fog of war is painted with. Unwalked ground is not black; it is
