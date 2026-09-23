@@ -1,4 +1,5 @@
 import type Phaser from 'phaser'
+import { REGIONS, WORLD } from '../config/world'
 
 /**
  * Dev-only scripted-play harness, stripped from production builds.
@@ -10,6 +11,13 @@ import type Phaser from 'phaser'
  *
  * Open the console and try:
  *   H.start(); H.build('lumber1'); H.pump(60); H.snap('one night')
+ *
+ * World v2 helpers:
+ *   H.tp(5120, 4230)     teleport the hero (camera and terrain follow at once)
+ *   H.claim('downs')     claim a region without paying (zones.unlock(id, true))
+ *   H.reveal()           clear the fog everywhere
+ *   H.where()            { x, y, region } of the hero
+ *   H.world()            counts: size, regions claimed, pads, camps, nodes, enemies, chunks
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -110,5 +118,50 @@ export function installHarness(game: Phaser.Game) {
     return keys.length
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery }
+  const tp = (x: number, y: number) => {
+    const g = gs(); const p = g.player
+    p.x = Math.max(24, Math.min(WORLD.width - 24, x))
+    p.y = Math.max(24, Math.min(WORLD.height - 24, y))
+    const cam = g.cameras.main
+    cam.centerOn(p.x, p.y)
+    g.terrain.prime(cam)
+    pump(0.1)
+    return where()
+  }
+
+  const claim = (id: string) => {
+    const z = gs().zones
+    if (!REGIONS.some(r => r.id === id)) return `no region "${id}"`
+    z.unlock(id, true)
+    return `${id}: ${z.isUnlocked(id) ? 'claimed' : 'locked'}`
+  }
+
+  const reveal = () => { gs().zones.revealAll(); return 'fog cleared' }
+
+  const where = () => {
+    const g = gs(); const p = g.player
+    return { x: Math.round(p.x), y: Math.round(p.y), region: g.zones.zoneAt(p.x, p.y)?.spec.id ?? null }
+  }
+
+  const world = () => {
+    const g = gs()
+    const pads = [...g.buildings.byPad.values()]
+    return {
+      size: `${WORLD.width}x${WORLD.height}`,
+      regions: REGIONS.length,
+      claimed: REGIONS.filter(r => g.zones.isUnlocked(r.id)).map(r => r.id),
+      pads: pads.length,
+      built: pads.filter((b: any) => b.level > 0).length,
+      camps: g.camps.camps.length,
+      campsLive: g.camps.camps.filter((c: any) => !c.destroyed).length,
+      nodes: g.nodes.nodes.length,
+      enemies: g.enemies.walkerCount,
+      wave: g.waves.wave,
+      phase: g.waves.phase,
+      chunks: g.terrain.stats(),
+      cull: g.culler.stats(),
+    }
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, reveal, where, world }
 }
