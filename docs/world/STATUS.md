@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S04** ([card](sessions/S04-move-in.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S05** ([card](sessions/S05-navgrid.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -22,6 +22,17 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S04 · Move in: done (2026-09-23)
+- The game runs on the 10240×9216 frontier from `src/config/world/index.ts` (CONTRACTS §S04); `map.ts` deleted. `ZoneId` → `RegionId`, and every `zone` field (pads, camps, clusters, `Building`, `ResourceNode`) is `region`. The hero starts at `HALL` + 340 px south.
+- Files: config/{balance, world/index, world/blueprint (header comment only)}, entities/{Building, Player}, scenes/GameScene, systems/{Building, Camp, Enemy, Node, Quest, Save, Wave, Zone}Manager, ui/{Minimap, RunSummary}, world/Terrain, dev/harness; tests/{world-module (new), save-portability}.
+- **`balance.ts` re-exports `WORLD`** for this card only: S05 removes the line. `WORLD.centerX/Y` is now the map's middle (5120, 4608), not home; every old use moved to `HALL`.
+- **`SPAWN_GATES` are TEMP until S09**: the six card positions, all inside still-locked regions (ferrow, barrowmoor, irontooth, downs, greyfall, saltmere). Terrain still draws the gate posts.
+- ZoneManager: `zoneAt` reads the region raster; locked regions are one filled polygon plus a fence on shared borders, both culled. Claim points are the blueprint's `claim` (no more margin projection). The soft barrier aims at the nearest border with claimed ground behind it, else the hall (so `H.tp` into the wild walks you home).
+- Terrain is flat v2: atlas biome colours dimmed for a lit scene, water/sea/cliff/lava straight from the raster (sample jittered ±14 px so 32 px cell stairs read as a ragged shore), crossings on top, blueprint roads at 60% plus the hold's footpaths. Marks borrow the old sets per biome (`MARK`). Vellum sketches and names each region; its page noise is sampled 2× coarser and smoothed. Minimap bakes 320×288 and fills region polygons (S12 replaces it).
+- Save v2 per CONTRACTS; a v1 save is never touched. Browser: `H.start()` boots at the hall in ~0.4 s, lumber1 → quest q5 by night 1, nights 1–4 with no console errors while the hero defends (idle, the six seed grunts plus night 1 raze the hall), v2 save → `H.start(true)` restored regions/wave/buildings, v1 and settings byte-identical throughout (test save removed afterwards).
+- Trips for S05: enemies walk over water and cliffs, and EnemyManager still steers at `WALL_RING` gates (gateN/S/E/W now). The Old Bridge is the first night's route only by coincidence of the south gate. Quest guidance ignores enemies in locked regions, which is where every gate is.
+- Watch: two `glTexture` null errors appeared once in the session's first page load and never again (fresh load, four nights, teleports corner to corner with chunk eviction, zoom-out). Not traced. No new open decisions; no blueprint moves.
+
 ### S03 · Fog and culling: done (2026-09-23)
 - Fog encoding: the shorter of `r:` runs (base64url varints) and `b:` unpadded base64 bitset; bare base64 (v1) still loads. Measured on 10240×9216: 30% explored in blobs 799 chars, a walked trail clearing 30% of the view 1,040. Fully explored: every cell marked is 6 chars, but a walk that clears the whole map marks ~28% of cells in trails and falls back to the bitset, the 3,842 ceiling (`maxEncodedLength`). Old map ceiling is 398, and a v1 save's 396-char fog still validates and loads.
 - `validSave` uses `FogMemory.maxEncodedLength(WORLD…)` in place of 10000. Tests cover both world sizes, the legacy string and damaged strings. Browser: new game, walk, save, reload, `H.start(true)` restored the fog string exactly (189 chars, `r:`).
@@ -39,12 +50,4 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - No sprite needed absorbing: Terrain.ts drew none. The minimap never read the terrain texture, so nothing is left for S12. No new open decisions.
 
 ### S01 · Blueprint home: done (2026-09-23)
-- Branch `world-v2` created from `main` (df51e0f). `docs/world/` committed as "Chart the new frontier".
-- Blueprint moved to `src/config/world/blueprint.ts`; typecheck green with no data changes. `check.ts` pins pad keys to `BuildingKey`.
-- `src/world/raster.ts` (rasterise, geometry, `blockedWithin`, `T`) and `src/world/flow.ts` (flowField, descend, nearestPassable, `step`, `NB8`): no Phaser, type-only blueprint import. Nothing in game code imports them yet.
-- New `road` layer: 2,088 cells. The game doesn't read it until S06.
-- Signature change from the tool's JS: `sealed` is now an options bag, `flowField(r, src, { sealed, cost })`, `descend(r, f, from, { sealed })`, `nearestPassable(r, x, y, { sealed })`. `passable(i, sealed?)` is unchanged. CONTRACTS §S01 updated.
-- Port proof: every tool mode and `map.svg` are byte-identical apart from the blueprint path. terrain, under, crossing, region, passable, slowCost and both flow fields match the old code cell for cell.
-- `render.mjs` loads the modules with top-level `await loadTs(...)`, so anything that imports it (the test does) pays about 0.1 s of esbuild.
-- `npm run world:lint`, `npm run world:map` and `tests/world-blueprint.test.mjs` added (6 tests: lint clean, raster size, roads, routes reach the hall, `via` order, spawn keys).
-- `.claude/` stays untracked on purpose. No deviations from the blueprint, and no new open decisions.
+- Blueprint moved to `src/config/world/blueprint.ts`; shared `src/world/raster.ts` and `flow.ts` (options-bag `sealed`); `world:lint`, `world:map` and the blueprint test added; `.claude/` stays untracked.

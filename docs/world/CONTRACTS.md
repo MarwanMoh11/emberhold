@@ -65,25 +65,30 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S04: world seam
 
-*Status: planned.*
+*Status: landed (S04). `WORLD` at [src/config/world/index.ts:20](../../src/config/world/index.ts#L20), `raster()` at [:44](../../src/config/world/index.ts#L44), `ZoneManager.zoneAt` at [src/systems/ZoneManager.ts:280](../../src/systems/ZoneManager.ts#L280), save `KEY` at [src/systems/SaveManager.ts:13](../../src/systems/SaveManager.ts#L13).*
 
 - `src/config/world/index.ts` replaces `src/config/map.ts`, which is deleted, and exports:
-  - `WORLD = { width, height, centerX, centerY, tile }`: the old `balance.WORLD` shape, which moves here.
-  - `HALL = { x, y }` and `REGIONS: RegionDef[]`, where `RegionDef` is the blueprint's `RegionBP` plus `index`.
-  - `PADS: PadSpec[]`, `CAMPS: CampSpec[]`, `NODE_CLUSTERS: NodeCluster[]`. These keep the old field names, with `zone` becoming `region`.
-  - `WALL_LINES: WallLineSpec[]` (only the palisade is active until S10).
-  - `APPROACHES`, `MAWS`, `CROSSINGS`, `ROADS`, `POIS`, all passed through from the blueprint.
-  - `raster(): WorldRaster`, built once and memoised.
-- `ZoneId` becomes `RegionId`. `ZoneManager` keeps its method names (`zoneAt`, `isUnlocked`, `claimPoint`, `unlock`), backed by the region raster.
-- New dev-harness helpers:
-  - `H.tp(x, y)` teleports.
-  - `H.claim(id)` claims without paying.
+  - `WORLD = { width, height, centerX, centerY, tile }` (:20). `centerX/Y` is the map's middle, **not** home: use `HALL`. `balance.ts` re-exports `WORLD` until S05 removes the line.
+  - `HALL = { x, y }` (:40, from the `hall` pad), `REGIONS: RegionDef[]` (:34, `RegionBP & { index }`), `REGION_BY_ID`, and `type RegionId, Biome`.
+  - `PADS: PadSpec[]` (:75; `region`, `requiresTownHall` from `hall`, `startLevel`) and `FUTURE_PADS: PadBP[]` (:78; outpost, fishery, tradingPost).
+  - `CAMPS: CampSpec[]` (:146; `region`, `reward: ResourceBag`, bracketed spawn keys resolved by `resolveSpawnKey`), `NODE_CLUSTERS: NodeCluster[]` (:167; `region`, no fish), `NODE_DEFS`.
+  - `WALL_LINES: WallLineSpec[]` (:87; `WallLineBP & { active }`, only the palisade active) and `WALL_RING` (:94; the palisade's bounds, `step` and gates `gateN/S/E/W`).
+  - `SPAWN_GATES`, `GATE_BY_ID` (:116): **TEMP until S09**, six `GateId`s at the hold's edge.
+  - `APPROACHES`, `MAWS`, `CROSSINGS`, `ROADS`, `POIS`, `THRONE`, `FEATURES`, passed through from the blueprint.
+  - `raster(): WorldRaster` (:44), built once and memoised.
+- `ZoneId` is now `RegionId`. `PadSpec`, `CampSpec`, `NodeCluster`, `Building` and `ResourceNode` carry `region` (was `zone`).
+- `ZoneManager` keeps its method names: `zoneAt(x, y)` reads `raster().region` (:280), `lockedZoneAt → RegionDef | null`, `isUnlocked(id)`, `claimPoint(id)` (the blueprint's `claim.{x,y}`), `unlock(id, silent?)`, `canUnlockId(id)`. Locked regions are one `Graphics` each (fill + fence), registered with the culler. The soft barrier (`exitToward`, :391) pushes toward the nearest border whose far side is claimed, else toward `HALL`.
+- `src/world/Terrain.ts`: `biomeAt` (:104) returns a `Ground` (biome, `sea|water|cliff|lava`, crossing kind, or `plaza`); `biomeColour(b: Biome) → number` (:140) is the flat mid tone, used by the minimap.
+- Dev harness ([src/dev/harness.ts](../../src/dev/harness.ts)):
+  - `H.tp(x, y)` teleports, centres the camera and primes the chunks.
+  - `H.claim(id)` calls `zones.unlock(id, true)` (silent: no event, no bonus recompute).
   - `H.reveal()` clears the fog.
   - `H.where()` returns `{ x, y, region }`.
-  - `H.world()` returns counts.
+  - `H.world()` returns `{ size, regions, claimed[], pads, built, camps, campsLive, nodes, enemies, wave, phase, chunks, cull }`.
 - Save:
-  - The storage key becomes `emberhold.save.v2`, with `version: 2`. The v1 key is never written or deleted.
-  - Loading a v1-shaped save into v2 is refused quietly: the game starts fresh.
+  - Keys `emberhold.save.v2` and `emberhold.save.backup.v2`, blob `v: 2`. The v1 keys are never read, written or deleted.
+  - `validSave` rejects `v !== 2`, so a v1-shaped save or file is refused quietly and the game starts fresh.
+  - `regions: RegionId[]` replaces `zones`; every id must be in `REGION_BY_ID`.
 
 ## S05: NavGrid
 
@@ -208,6 +213,7 @@ Each session that adds persistent state lists its field here: the owner, then a 
 
 | Field | Owner | Shape |
 |---|---|---|
-| `version` | S04 | `2` |
+| `v` | S04 | `2` (the blob field is `v`, not `version`) |
+| `regions` | S04 | `RegionId[]` claimed, `hold` included; replaces v1 `zones` |
 | `exploredFog` | S03 | `FogMemory.toJSON()`: `r:` runs or `b:` bitset (v1 bare base64 still read), length ≤ `FogMemory.maxEncodedLength(WORLD.width, WORLD.height)` |
 | _(add rows as they land)_ | | |
