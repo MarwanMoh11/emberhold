@@ -19,6 +19,8 @@ import { REGIONS, WORLD } from '../config/world'
  *   H.where()            { x, y, region } of the hero
  *   H.world()            counts: size, regions claimed, pads, camps, nodes, enemies, chunks
  *   H.nav()              NavGrid version and rebuild timings; walkers standing off the ground
+ *   H.watch(120)         pump while watching allies: deliveries, off-ground frames, soldiers stuck, path cost
+ *   H.run(0, 1, 3)       hold a move direction for 3 s: the hero's speed and time on a road
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -179,5 +181,60 @@ export function installHarness(game: Phaser.Game) {
     }
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, reveal, where, world, nav }
+  /**
+   * Pump `seconds` while watching the allies (S06): drop-offs made, frames a
+   * worker or soldier stood on impassable ground, frames a worker was on a
+   * crossing, and the longest a soldier more than 160 px from the hero (or
+   * the hall when holding) went moving under 10 px per half second.
+   */
+  const watch = (seconds: number, stepMs = 33) => {
+    const g = gs(); const n = g.nav; const r = n.r
+    const d0 = g.workers.delivered
+    let badWorker = 0, badSoldier = 0, workerOnCrossing = 0, worstStuck = 0
+    const last = new Map<number, { x: number; y: number; t: number }>()
+    const steps = Math.round((seconds * 1000) / stepMs)
+    for (let k = 0; k < steps; k++) {
+      t += stepMs; game.loop.step(t); auto()
+      for (const w of g.workers.workers) {
+        if (!w.alive || w.sheltered) continue
+        if (!n.passableAt(w.x, w.y)) badWorker++
+        if (r.crossing[r.cell(w.x, w.y)] >= 0) workerOnCrossing++
+      }
+      const ax = g.army.holding ? g.buildings.townHall.x : g.player.x
+      const ay = g.army.holding ? g.buildings.townHall.y + 60 : g.player.y
+      const sample = k % Math.max(1, Math.round(500 / stepMs)) === 0
+      for (const s of g.army.soldiers) {
+        if (!s.alive) continue
+        if (!n.passableAt(s.x, s.y)) badSoldier++
+        if (!sample) continue
+        const l = last.get(s.id) ?? { x: s.x, y: s.y, t: 0 }
+        const far = Math.hypot(ax - s.x, ay - s.y) > 160
+        l.t = far && Math.hypot(s.x - l.x, s.y - l.y) < 10 ? l.t + 0.5 : 0
+        l.x = s.x; l.y = s.y
+        last.set(s.id, l)
+        worstStuck = Math.max(worstStuck, l.t)
+      }
+    }
+    return {
+      seconds, deliveries: g.workers.delivered - d0, badWorker, badSoldier, workerOnCrossing, worstStuck,
+      paths: n.paths.stats(),
+    }
+  }
+
+  /** Hold a move direction for `seconds`: the hero's average speed, and the share of it spent on a road. */
+  const run = (dx: number, dy: number, seconds: number, stepMs = 33) => {
+    const g = gs(); const p = g.player
+    const x0 = p.x, y0 = p.y
+    let road = 0
+    const steps = Math.round((seconds * 1000) / stepMs)
+    for (let k = 0; k < steps; k++) {
+      g.moveInput.x = dx; g.moveInput.y = dy
+      t += stepMs; game.loop.step(t); auto()
+      if (g.nav.onRoad(p.x, p.y)) road++
+    }
+    g.moveInput.x = 0; g.moveInput.y = 0
+    return { pxPerSec: Math.round(Math.hypot(p.x - x0, p.y - y0) / seconds), onRoad: +(road / steps).toFixed(2), at: where() }
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, reveal, where, world, nav, watch, run }
 }

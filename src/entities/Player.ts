@@ -210,7 +210,7 @@ export class Player implements Targetable {
 
     // terrain: fords slow, water and cliffs stop (slide along the edge)
     const nav = this.scene.nav
-    const slow = nav.speedAt(this.x, this.y)
+    const slow = nav.allySpeedAt(this.x, this.y) // fords slow, roads speed up (S06)
     const p = nav.slide(this.x, this.y, this.vx * dt * slow, this.vy * dt * slow, walkRadius(this.radius))
     this.x = clamp(p.x, 24, WORLD.width - 24)
     this.y = clamp(p.y, 24, WORLD.height - 24)

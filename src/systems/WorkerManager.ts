@@ -357,7 +357,7 @@ export class WorkerManager {
 
       const prevX = w.x, prevY = w.y
       // terrain collision (S05); paths keep workers off the banks, the detour below frees any that snag
-      const slow = scene.nav.speedAt(w.x, w.y)
+      const slow = scene.nav.allySpeedAt(w.x, w.y)
       const p = scene.nav.slide(w.x, w.y, w.vx * dt * slow, w.vy * dt * slow, walkRadius(w.radius))
       w.x = clamp(p.x, 20, WORLD.width - 20)
       w.y = clamp(p.y, 20, WORLD.height - 20)

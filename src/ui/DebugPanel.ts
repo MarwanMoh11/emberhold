@@ -41,6 +41,7 @@ export class DebugPanel extends Overlay {
     b('UNLOCK MAP', () => { this.game.zones.revealAll(); for (const z of ['whisperwood', 'greyfall', 'hollow', 'deepvein', 'ashgate'] as const) this.game.zones.unlock(z, true) })
     b('TOGGLE GODMODE', () => { this.game.player.invincible = !this.game.player.invincible })
     b('TOGGLE NAV OVERLAY', () => this.game.navDebug.toggle())
+    b('TOGGLE ROAD TINT', () => this.game.navDebug.toggleRoads())
     b('TOGGLE PERF READOUT', () => this.scene.events.emit('toggleStats'))
     b('RESET SAVE', () => { SaveManager.clear(); window.location.reload() }, 'danger')
   }
@@ -63,7 +64,7 @@ export class DebugPanel extends Overlay {
       `chunks ${s.chunks.resident} held  ${s.chunks.queued} queued  ${s.chunks.baked} baked\n` +
       `bake ${s.chunks.frameMs.toFixed(1)} ms  worst ${s.chunks.worstFrameMs.toFixed(1)} ms\n` +
       `static ${s.cull.shown} drawn  ${s.cull.total - s.cull.shown} culled\n` +
-      `nav v${s.nav.version}  ${s.nav.building ? 'rebuilding' : 'ready'}  worst slice ${s.nav.worstFrameMs.toFixed(1)} ms\n` +
+      `nav v${s.nav.version} ${s.nav.building ? 'rebuilding' : 'ready'} slice ${s.nav.worstFrameMs.toFixed(1)} · paths ${s.nav.paths.searches} worst ${s.nav.paths.worstMs.toFixed(1)} ms\n` +
       `godmode ${this.game.player.invincible ? 'ON' : 'off'}`,
     ).setPosition(x + w / 2, y + 88)
 

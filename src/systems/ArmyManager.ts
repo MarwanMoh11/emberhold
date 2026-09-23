@@ -199,7 +199,7 @@ export class ArmyManager {
       // terrain collision (S05): fords slow, banks stop. Formation moves path round
       // them (route); a chase stays straight, so it can still end at a bank.
       const nav = scene.nav
-      const slow = nav.speedAt(s.x, s.y)
+      const slow = nav.allySpeedAt(s.x, s.y)
       const p = nav.slide(s.x, s.y, sx * 56 * dt + s.vx * dt * slow, sy * 56 * dt + s.vy * dt * slow, walkRadius(s.radius))
       s.x = clamp(p.x, 20, WORLD.width - 20)
       s.y = clamp(p.y, 20, WORLD.height - 20)

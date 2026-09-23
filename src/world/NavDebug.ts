@@ -9,10 +9,12 @@ const MAX_CELLS = 9000
 /**
  * F2 overlay for the NavGrid: tints impassable cells red and walled cells
  * amber, and draws the hall field's step as an arrow on every passable cell
- * around the camera. Redraws when the camera moves a cell or the grid changes.
+ * around the camera. With `roads`, road cells (ROAD_SPEED for allies) are
+ * tinted blue. Redraws when the camera moves a cell or the grid changes.
  */
 export class NavDebug {
   on = false
+  roads = false
   private g: Phaser.GameObjects.Graphics
   private lastKey = ''
 
@@ -28,12 +30,20 @@ export class NavDebug {
     return this.on
   }
 
+  /** Road tint on or off; shows the overlay if it was hidden. */
+  toggleRoads(): boolean {
+    this.roads = !this.roads
+    if (!this.on) this.toggle()
+    this.lastKey = ''
+    return this.roads
+  }
+
   update(cam: Phaser.Cameras.Scene2D.Camera): void {
     if (!this.on) return
     const { r } = this.nav
     const f = this.nav.field('hall')
     const v = cam.worldView
-    const key = `${Math.floor(v.x / r.C)},${Math.floor(v.y / r.C)},${Math.round(v.width)},${f.version},${this.nav.version}`
+    const key = `${Math.floor(v.x / r.C)},${Math.floor(v.y / r.C)},${Math.round(v.width)},${f.version},${this.nav.version},${this.roads}`
     if (key === this.lastKey) return
     this.lastKey = key
 
@@ -51,6 +61,7 @@ export class NavDebug {
           continue
         }
         if (this.nav.blocked(i)) g.fillStyle(0xf0a020, 0.4).fillRect(gx * C, gy * C, C, C)
+        else if (this.roads && r.road[i]) g.fillStyle(0x3a8ee0, 0.35).fillRect(gx * C, gy * C, C, C)
         const k = f.step[i]
         if (k < 0) continue
         const [dx, dy] = NB8[k]
