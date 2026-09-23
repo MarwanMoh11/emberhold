@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S01** ([card](sessions/S01-blueprint-home.md)) · branch `world-v2` (S01 creates it from `main`)
+**Next: S02** ([card](sessions/S02-chunked-terrain.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -22,4 +22,13 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
-_(no sessions yet)_
+### S01 · Blueprint home: done (2026-09-23)
+- Branch `world-v2` created from `main` (df51e0f). `docs/world/` committed as "Chart the new frontier".
+- Blueprint moved to `src/config/world/blueprint.ts`; typecheck green with no data changes. `check.ts` pins pad keys to `BuildingKey`.
+- `src/world/raster.ts` (rasterise, geometry, `blockedWithin`, `T`) and `src/world/flow.ts` (flowField, descend, nearestPassable, `step`, `NB8`): no Phaser, type-only blueprint import. Nothing in game code imports them yet.
+- New `road` layer: 2,088 cells. The game doesn't read it until S06.
+- Signature change from the tool's JS: `sealed` is now an options bag, `flowField(r, src, { sealed, cost })`, `descend(r, f, from, { sealed })`, `nearestPassable(r, x, y, { sealed })`. `passable(i, sealed?)` is unchanged. CONTRACTS §S01 updated.
+- Port proof: every tool mode and `map.svg` are byte-identical apart from the blueprint path. terrain, under, crossing, region, passable, slowCost and both flow fields match the old code cell for cell.
+- `render.mjs` loads the modules with top-level `await loadTs(...)`, so anything that imports it (the test does) pays about 0.1 s of esbuild.
+- `npm run world:lint`, `npm run world:map` and `tests/world-blueprint.test.mjs` added (6 tests: lint clean, raster size, roads, routes reach the hall, `via` order, spawn keys).
+- `.claude/` stays untracked on purpose. No deviations from the blueprint, and no new open decisions.

@@ -8,23 +8,26 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S01: blueprint and raster
 
-*Status: planned.*
+*Status: landed (S01). `rasterise` at [src/world/raster.ts:128](../../src/world/raster.ts#L128), `flowField` at [src/world/flow.ts:70](../../src/world/flow.ts#L70).*
 
-- `src/config/world/blueprint.ts` holds the layout data, which is authoritative.
+- [`src/config/world/blueprint.ts`](../../src/config/world/blueprint.ts) holds the layout data, which is authoritative.
   - It exports `WORLD2, REGIONS, FEATURES, ROADS, WALLS, PADS, CAMPS, THRONE, MAWS, APPROACHES, NODES, POIS` and the types `RegionId, PadKey, CampBP, ApproachBP, …`.
-  - It has no imports, so the tool can load it on its own. `src/config/world/check.ts` pins `PadKey` and the camp spawn keys against the game's `BuildingKey`/`EnemyKey` at compile time.
-- `src/world/raster.ts`: pure TypeScript, no Phaser.
-  - `rasterise(bp): WorldRaster` returns `{ W, H, C, GW, GH, N, terrain, under, crossing, region, road }`.
-    - `terrain` and `under` use `T = { LAND: 0, SEA: 1, WATER: 2, CLIFF: 3, LAVA: 4 }`.
-    - `crossing` holds a crossing index, or -1.
-    - `region` holds an index into `REGIONS`, or -1.
-    - `road` is 1 on road cells.
+  - It has no imports, so the tool can load it on its own. `src/config/world/check.ts` pins `Exclude<PadKey, 'outpost' | 'fishery' | 'tradingPost'>` to `BuildingKey` at compile time. Camp spawn keys are plain strings, so `tests/world-blueprint.test.mjs` pins them to `EnemyKey` or `name[EnemyKey]`.
+- `src/world/raster.ts`: pure TypeScript, no Phaser, type-only imports.
+  - `rasterise(bp: WorldBlueprint): WorldRaster` returns `{ W, H, C, GW, GH, N, terrain, under, crossing, region, road, bp }`. `WorldBlueprint` is `Pick<blueprint module, 'WORLD2' | 'REGIONS' | 'FEATURES' | 'ROADS'>`.
+    - `terrain` and `under` (`Uint8Array`) use `T = { LAND: 0, SEA: 1, WATER: 2, CLIFF: 3, LAVA: 4 }`; `TNAME` names them.
+    - `crossing` (`Int16Array`) holds an index into `FEATURES.crossings`, or -1.
+    - `region` (`Int8Array`) holds an index into `REGIONS`, or -1.
+    - `road` (`Uint8Array`) is 1 on cells whose centre is within `width / 2` of a road polyline. It never changes terrain.
   - Methods: `cell(x, y) → i | -1`, `xy(i) → [x, y]` (the cell centre), `passable(i, sealed?)`, `slowCost(i)`, `regionAt(x, y) → RegionId | null`.
+  - `blockedWithin(r, x, y, max) → px`: distance to the nearest non-land cell centre within `max`.
+  - Geometry: `hyp, segProj, inPoly, distToPolyline, polyArea, polyCentroid, samplePolyline`.
 - `src/world/flow.ts`: pure.
-  - `flowField(r, sources: number[], { sealed?, cost? }) → Float64Array` is an 8-way Dijkstra with no corner cutting.
-  - `descend(r, field, from) → number[]` walks downhill to the source.
-  - `nearestPassable(r, x, y)`.
-- `docs/world/tools/render.mjs` imports these two modules. The lint and the game share one raster.
+  - `flowField(r, sources: number[], { sealed?, cost? }) → Float64Array` is an 8-way Dijkstra with no corner cutting, in px. `cost(i)` defaults to `r.slowCost`.
+  - `descend(r, field, from, { sealed? }) → number[]` walks downhill to the source, `from` first.
+  - `nearestPassable(r, x, y, { sealed? }) → i | -1` searches rings out to 8 cells.
+  - `step(r, i, dx, dy, sealed?) → j | -1` and `NB8` (orthogonal four first) for custom walks.
+- `docs/world/tools/render.mjs` imports these two modules through `loadTs` and re-exports `rasterise, flowField, inPoly`. The lint and the game share one raster.
 - New scripts:
   - `npm run world:lint` runs the lint quietly and exits 1 on errors.
   - `npm run world:map` rewrites `docs/world/map.svg`.
