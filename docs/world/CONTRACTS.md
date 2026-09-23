@@ -92,7 +92,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S05: NavGrid
 
-*Status: landed (S05). `NavGrid` at [src/world/NavGrid.ts:141](../../src/world/NavGrid.ts#L141), `FlowField` at [:32](../../src/world/NavGrid.ts#L32); `GameScene.nav`, ticked every frame.*
+*Status: landed (S05). `NavGrid` at [src/world/NavGrid.ts:109](../../src/world/NavGrid.ts#L109), `FlowField` at [:37](../../src/world/NavGrid.ts#L37); `GameScene.nav`, ticked every frame.*
 
 - `src/world/NavGrid.ts` (pure, `loadTs`-testable): `new NavGrid(raster(), { hall, sliceMs = 6, now? })`. `WALL_COST = 40`; `walkRadius(body) = min(body / 2, 12)` is the collision circle every walker passes to `slide`.
   - Cells: `passable(i)` (land and not a sealed crossing's water), `passableAt(x, y)`, `blocked(i)` / `blockedAt(x, y)` (a wall covers it), `speedAt(x, y)` (a ford's `slow` in its water, else 1), `nearestPassable(x, y) → i | -1` (8 rings).
@@ -106,12 +106,17 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S06: ally pathing and roads
 
-*Status: planned.*
+*Status: landed (S06). `findPath` at [src/world/NavGrid.ts:297](../../src/world/NavGrid.ts#L297), `PathFinder` at [src/world/PathFind.ts:105](../../src/world/PathFind.ts#L105), `PathFollower` at [src/world/PathFollower.ts:11](../../src/world/PathFollower.ts#L11), `dropoffFor` at [src/systems/BuildingManager.ts:181](../../src/systems/BuildingManager.ts#L181).*
 
-- `nav.findPath(ax, ay, bx, by) → Pt[] | null` is an A* search with an LRU cache keyed by coarse start and end cells.
-- `src/world/PathFollower.ts`: `follower.set(path)` and `.step(dt, speed) → { x, y, done }`.
-- `nav.onRoad(x, y) → boolean` and `ROAD_SPEED = 1.2`, applied to the hero, soldiers and workers.
-- Workers pick nodes by **path** distance of 760 px or less, not straight-line distance.
+- `nav.findPath(ax, ay, bx, by, maxLen?) → Pt[] | null`: 8-way A*, octile heuristic, the fields' cost rules (fords `slow`, walls `WALL_COST`), string-pulled with 12 px clearance. Start to goal inclusive; ends snapped onto passable ground. Null past 20,000 expansions or unreachable (remembered). With `maxLen`, gives up once every path left is longer (not remembered).
+- `nav.requestPath(ax, ay, bx, by) → PathTicket { done, path }`: queued, worked at 2 ms a tick inside `nav.tick()`; the same coarse ends share a ticket; a full queue (64) answers null at once. A cache hit comes back done.
+- Cache: LRU 256 keyed by the 4×4-cell blocks of start and goal; a hit is re-ended at the caller's points after both end legs pass `segClear`; emptied on a `version` bump.
+- `nav.paths: PathFinder`: `segClear(ax, ay, bx, by, rad)` (a walker of radius `rad` fits the segment, centre off walls), `stats() → { searches, cacheHits, failed, queued, frameMs, worstFrameMs, lastMs, worstMs, lastExpanded }` (also `nav.stats().paths`), `flush()`. `pathLength(path)` is exported beside it.
+- `PathFollower`: `set(path | null)`, `clear()`, `active`, `goal`, `step(x, y, dt, reach = 22) → { x, y, done }` (the waypoint to steer at; it moves nothing), `stuck` (seconds without closing on the waypoint).
+- `ROAD_SPEED = 1.2`, `nav.onRoad(x, y)`, `nav.allySpeedAt(x, y)` (`speedAt` × road bonus) for the hero, soldiers and workers; enemies keep `speedAt`.
+- `buildings.dropoffFor(x, y) → { x, y }`: where a hauler unloads (the depot, else the hall's door). The only drop-off chooser.
+- Workers: `NodeManager.candidates(resource, x, y, radius, claimer | null)` (nearest first); node choice by walking distance ≤ 760 from the camp door, cached per camp and node. `workers.delivered` counts drop-offs. `findAny` is gone.
+- Harness: `H.watch(s)` → deliveries, off-ground frames, workers on crossings, worst soldier stall, path stats; `H.run(dx, dy, s)` → hero px/s and road share.
 
 ## S08: regions and claims
 
@@ -150,7 +155,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 *Status: planned.*
 
 - `BuildingKey` gains `'outpost'`.
-- `buildings.nearestDropoff(x, y)` returns the depot or an outpost.
+- `buildings.dropoffFor(x, y)` (landed in S06) extends to return the depot or the nearest outpost by path.
 - `scene.respawnPoint()` returns the hall or the nearest safe outpost.
 - `waystones.list() → { id, x, y, active }[]`, `waystones.travel(id)` (daytime only) and `waystones.activate(id)`.
 

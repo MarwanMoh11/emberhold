@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S06** ([card](sessions/S06-ally-pathing.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S07** ([card](sessions/S07-paint-the-frontier.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -18,9 +18,18 @@ These bind every session. Add a line when one is made, with the date and who dec
 These need the human. Don't guess them. Use the default and flag it in your handoff.
 
 - **v1 saves** ([07-save.md §Migration](design/07-save.md#migration)): the options are the Veteran's charter (default), a clean slate, or keeping v1 playable. Blocks S19 only. Until then, S04's guard keeps v1 saves untouched and starts v2 fresh.
+- **Worker drop-off** (raised by S06): v1 crews stocked their own camp ("the short loop makes the settlement look busy"); design 04 §S06, the blueprint's depot and S06's card send every haul to the depot. Default (landed): the depot, via `buildings.dropoffFor`. Hold crews now walk ~500 px each way; Ferrow farmers ~1,550 px over the bridge until S11 outposts. Returning to v1 is a one-line change in `dropoffFor` (take the worker's camp). Tune in S20 either way.
 - **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s. Tuned in S20.
 
 ## Log
+
+### S06 · Ally pathing and roads: done (2026-09-23)
+- `src/world/PathFind.ts` (A*, pull, LRU, queue), `PathFollower.ts`, `heap.ts` (shared with the fields); `nav.findPath/requestPath/onRoad/allySpeedAt`, `ROAD_SPEED` per CONTRACTS §S06. F2: TOGGLE ROAD TINT; the nav line shows path searches. Harness `H.watch(s)`, `H.run(dx, dy, s)`.
+- **`dropoffFor(x, y)` lives on BuildingManager** (depot, else hall door). Workers haul there (see Open decisions), pick nodes by walking distance ≤ 760 from the camp door (cached per camp and node), steer straight when a 5.5 px lane is clear and path otherwise (re-asked after 1.5 s stuck); fleeing workers path to their door. Soldiers: sight of the anchor every ~0.3 s; without it a path to the anchor, re-asked every 1 s or 200 px; a slot in the water becomes the nearest ground.
+- Cost: node, 136 claim-to-claim searches avg 0.5 ms, worst 8.8 ms, none past 20k nodes. Browser: worst search 0.6 ms, worst queue tick 0.6 ms (2 ms budget), cache hits outnumber searches ~2:1.
+- Verify: farm5 + 2 farmers, 120 s (Ferrow camp burned, enemies cleared every 5 s): 8 deliveries, 144 food, 0 off-ground frames, 1,102 worker-frames on crossings. Uncleared nights 1–3, lumber1 + farm5, 150 s: 21 deliveries, 0 off-ground. 12 soldiers Downs → Greyfall 6.7 s, worst stall 0.5 s; hero across the river, army over the bridge in 7.8 s, stall 0.5 s. Hero 243–251 px/s on the King's Road vs 208–209 off it. Saves restored byte-identical; no console errors after a fresh load.
+- Trips: `H.claim` does not burn camps; the Ferrow Muster razes farm5 in ~45 s (`g.camps.load(['campFerrow'])` to test in peace). A* ignores roads (speed only) and buildings (collision + the old detour handle them). A chasing soldier still goes straight and can end at a bank. `workers.incomePerSecond` (AFK catch-up) ignores walking and now overestimates. The two `glTexture` errors from S04 showed once before a reload, not after.
+- No blueprint moves. New open decision: worker drop-off (above).
 
 ### S05 · NavGrid: done (2026-09-23)
 - `src/world/NavGrid.ts` + `NavDebug.ts` per CONTRACTS §S05; `GameScene.nav` ticks after the pause check. Tests: Ferrow Muster → hall over `oldBridge`, a shut toy ring pays through a wall, sliced rebuilds, `slide` never ends off the ground, ford speed, sight lines.
@@ -44,12 +53,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - Watch: two `glTexture` null errors appeared once in the session's first page load and never again (fresh load, four nights, teleports corner to corner with chunk eviction, zoom-out). Not traced. No new open decisions; no blueprint moves.
 
 ### S03 · Fog and culling: done (2026-09-23)
-- Fog encoding: the shorter of `r:` runs (base64url varints) and `b:` unpadded base64 bitset; bare base64 (v1) still loads. Measured on 10240×9216: 30% explored in blobs 799 chars, a walked trail clearing 30% of the view 1,040. Fully explored: every cell marked is 6 chars, but a walk that clears the whole map marks ~28% of cells in trails and falls back to the bitset, the 3,842 ceiling (`maxEncodedLength`). Old map ceiling is 398, and a v1 save's 396-char fog still validates and loads.
-- `validSave` uses `FogMemory.maxEncodedLength(WORLD…)` in place of 10000. Tests cover both world sizes, the legacy string and damaged strings. Browser: new game, walk, save, reload, `H.start(true)` restored the fog string exactly (189 chars, `r:`).
-- `FOG_SCALE` 4 → 8 (RT 426×350 now, 1280×1152 after S04); brush `2 / FOG_SCALE`. Edge ramp measured at ~240 world px, as before. The vellum keeps its noise at world scale and deals its ink marks a quarter as often; its names and symbols read blurrier at 8 px/texel (S07 may want to repaint it).
-- `Culler` per CONTRACTS §S03: nodes, building sprites and ghosts, camp labels; F2 "static N drawn N culled". Old map: 391 static, ~270 drawn at the hall, ~60 in a corner. A 1,560-step walk corner to corner never had a culled object inside the view.
-- Deviation: the culler hides through `cameraFilter`, not `visible`/`active`, because game logic sets `visible` (felled rocks, ghosts) and would get it clobbered. No game logic reads a culled sprite's `visible`; `Building.visible` is the manager's own flag.
-- Trips for S04: register anything new and static (POIs, border stones, region labels) with `scene.culler.add`; ZoneManager's zone banners and post graphics are not registered. Rebuild the vellum from regions. No new open decisions.
+- Fog saves as `r:` runs or a `b:` bitset (ceiling `maxEncodedLength`); `FOG_SCALE` 8; `Culler` hides static sprites through `cameraFilter` (register new static objects with `scene.culler.add`).
 
 ### S02 · Chunked terrain: done (2026-09-23)
 - `paintTerrainRect` + `TerrainChunks` stream 1024 px chunks in 256 px slices (≤4 ms/frame); call `prime` after any camera jump.
