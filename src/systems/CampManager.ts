@@ -1,4 +1,4 @@
-import { CAMPS, type CampSpec } from '../config/map'
+import { CAMPS, type CampSpec } from '../config/world'
 import { PAL } from '../config/palette'
 import { textStyle } from '../ui/theme'
 import { rr } from '../core/math'
@@ -68,7 +68,7 @@ export class CampManager {
       }
 
       // keep feeding its region while it stands
-      if (!this.scene.zones.isUnlocked(rec.spec.zone)) continue
+      if (!this.scene.zones.isUnlocked(rec.spec.region)) continue
       rec.timer -= dt
       if (rec.timer <= 0) {
         rec.timer = rec.spec.spawns.every

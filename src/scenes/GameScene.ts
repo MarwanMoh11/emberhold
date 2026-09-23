@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
-import { WORLD, CAMERA, PLAYER, PICKUP } from '../config/balance'
+import { CAMERA, PLAYER, PICKUP } from '../config/balance'
 import { PAL } from '../config/palette'
-import { ZONES } from '../config/map'
+import { HALL, REGIONS, WORLD } from '../config/world'
 import { ABILITY_KEYS } from '../config/abilities'
 import { clamp, dist, rr, short, srand } from '../core/math'
 import { Bus } from '../core/Events'
@@ -209,7 +209,7 @@ export class GameScene extends Phaser.Scene {
   /** The opening 15 seconds should never be empty: coins and a fight nearby. */
   private seedNewGame() {
     this.res.stored.coins = 0
-    const cx = WORLD.centerX, cy = WORLD.centerY
+    const cx = HALL.x, cy = HALL.y
     for (let i = 0; i < 26; i++) {
       const a = rr(0, Math.PI * 2)
       const r = rr(90, 300)
@@ -412,10 +412,10 @@ export class GameScene extends Phaser.Scene {
   zonesNextTarget(): { x: number; y: number; hint?: string } | null {
     let unaffordable: { x: number; y: number; hint?: string } | null = null
     let gatedHall = 0
-    for (const z of ZONES) {
-      if (z.startsUnlocked || this.zones.isUnlocked(z.id)) continue
-      if (this.buildings.townHallLevel < z.requiresTownHall) {
-        if (!gatedHall || z.requiresTownHall < gatedHall) gatedHall = z.requiresTownHall
+    for (const z of REGIONS) {
+      if (z.id === 'hold' || this.zones.isUnlocked(z.id)) continue
+      if (this.buildings.townHallLevel < z.hall) {
+        if (!gatedHall || z.hall < gatedHall) gatedHall = z.hall
         continue
       }
       const c = this.zones.claimPoint(z.id)

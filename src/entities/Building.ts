@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { BUILDINGS, type BuildingDef, type BuildingKey } from '../config/buildings'
-import type { PadSpec, ZoneId } from '../config/map'
+import type { PadSpec, RegionId } from '../config/world'
 import { RESOURCE_ORDER, type ResourceBag, type ResourceType, type Targetable } from '../core/types'
 import { nextId } from '../core/ids'
 import { buildingTextureKey } from '../art/buildings'
@@ -14,7 +14,7 @@ export class Building implements Targetable {
   def: BuildingDef
   key: BuildingKey
   padId: string
-  zone: ZoneId
+  region: RegionId
   requiresTownHall: number
 
   x: number
@@ -66,7 +66,7 @@ export class Building implements Targetable {
     this.def = BUILDINGS[spec.key]
     this.key = spec.key
     this.padId = spec.id
-    this.zone = spec.zone
+    this.region = spec.region
     this.requiresTownHall = spec.requiresTownHall ?? 0
     this.x = spec.x
     this.y = spec.y

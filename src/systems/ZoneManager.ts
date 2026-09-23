@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { ZONES, type ZoneId, type ZoneSpec } from '../config/map'
-import { WORLD } from '../config/balance'
+import { HALL, REGIONS, WORLD, raster, type RegionDef, type RegionId } from '../config/world'
+import { segProj } from '../world/raster'
 import { PAL } from '../config/palette'
 import { RESOURCE_ORDER } from '../core/types'
 import { clamp, short } from '../core/math'
@@ -17,16 +17,11 @@ export const FOG_SCALE = 8
 const BANNER_W = 248
 /** How close the hero has to be for a claim to fire. */
 const CLAIM_RADIUS = 70
-/**
- * How far outside its own border a zone's claim point is pushed.
- *
- * Authored banner anchors sit on the fence line, and two of them were inside
- * the rect outright — which put the claim disc inside the soft barrier that
- * shoves the hero back out. "Stand here to claim" then named a spot the game
- * actively refused to let you stand on. Every anchor is projected clear of its
- * own border now, so the disc always lands on ground you can hold.
- */
-const CLAIM_MARGIN = 96
+/** Tint of unclaimed ground under the fog: the region's own colour, dimmed. */
+const LOCKED_SHADE = 0x140f0b
+const LOCKED_ALPHA = 0.42
+/** How far past a border the soft barrier looks to see what is on the other side. */
+const BARRIER_PROBE = 48
 /** Dwell before a claim fires, mirroring the build pads. */
 const CLAIM_DWELL = 0.45
 /** The banner only draws within this range of the claim point. */
@@ -42,11 +37,11 @@ const POLE_H = 44
 const LABEL_DEPTH = 780_000
 
 interface ZoneView {
-  spec: ZoneSpec
-  /** Where the hero actually stands to claim. Never inside the zone itself. */
+  spec: RegionDef
+  /** Where the hero actually stands to claim: the blueprint's claim point, always outside the region. */
   cx: number
   cy: number
-  overlay: Phaser.GameObjects.Rectangle
+  overlay: Phaser.GameObjects.Graphics
   banner: Phaser.GameObjects.Container
   bg: Phaser.GameObjects.Graphics
   frame: SkinPanel
@@ -59,29 +54,24 @@ interface ZoneView {
   unlocked: boolean
 }
 
-/**
- * Project a banner anchor clear of its own zone rect, out through whichever
- * edge it sits nearest. Anchors already well outside are left where they are.
- */
-function claimPointFor(s: ZoneSpec): { x: number; y: number } {
-  const l = s.x - CLAIM_MARGIN, r = s.x + s.w + CLAIM_MARGIN
-  const t = s.y - CLAIM_MARGIN, b = s.y + s.h + CLAIM_MARGIN
-  const x = s.bannerX, y = s.bannerY
-  if (x < l || x > r || y < t || y > b) return { x, y }
-  const dl = x - l, dr = r - x, dt = y - t, db = b - y
-  const m = Math.min(dl, dr, dt, db)
-  if (m === dl) return { x: l, y }
-  if (m === dr) return { x: r, y }
-  if (m === dt) return { x, y: t }
-  return { x, y: b }
+/** A polygon's bounding circle, for the culler. */
+function bounds(poly: readonly [number, number][]): { x: number; y: number; r: number } {
+  const xs = poly.map(p => p[0]), ys = poly.map(p => p[1])
+  const x = (Math.min(...xs) + Math.max(...xs)) / 2, y = (Math.min(...ys) + Math.max(...ys)) / 2
+  return { x, y, r: Math.max(...poly.map(p => Math.hypot(p[0] - x, p[1] - y))) + 24 }
 }
+
+/** True when a polygon edge lies along the world's outer boundary. */
+const onWorldEdge = (a: readonly number[], b: readonly number[]) =>
+  (a[0] <= 0 && b[0] <= 0) || (a[1] <= 0 && b[1] <= 0)
+  || (a[0] >= WORLD.width && b[0] >= WORLD.width) || (a[1] >= WORLD.height && b[1] >= WORLD.height)
 
 /**
  * Territory + fog. Locked ground is visibly walled off and named, so the map
  * always advertises where the next chunk of progress is.
  */
 export class ZoneManager {
-  private views = new Map<ZoneId, ZoneView>()
+  private views = new Map<RegionId, ZoneView>()
   private fog!: Phaser.GameObjects.RenderTexture
   private brush!: Phaser.GameObjects.Image
   private explored = new FogMemory(WORLD.width, WORLD.height)
@@ -91,7 +81,7 @@ export class ZoneManager {
 
   constructor(private scene: GameScene, depth: number) {
     this.buildFog(depth)
-    for (const z of ZONES) this.buildZone(z, depth - 2)
+    for (const z of REGIONS) this.buildZone(z, depth - 2)
   }
 
   private buildFog(depth: number) {
@@ -110,7 +100,7 @@ export class ZoneManager {
     // 480px source art drawn at 2/FOG_SCALE in fog space -> ~960 world px reveal
     this.brush.setScale(2 / FOG_SCALE)
     // the hold itself is already known ground
-    this.revealArea(WORLD.centerX, WORLD.centerY, 950)
+    this.revealArea(HALL.x, HALL.y, 950)
   }
 
   /** Clear a disc of fog without waiting for the player to walk it. */
@@ -141,16 +131,21 @@ export class ZoneManager {
     this.explored.forEachMarked((x, y) => this.fog.erase(this.brush, x / FOG_SCALE, y / FOG_SCALE))
   }
 
-  private buildZone(spec: ZoneSpec, depth: number) {
-    const unlocked = !!spec.startsUnlocked
-    const overlay = this.scene.add
-      .rectangle(spec.x + spec.w / 2, spec.y + spec.h / 2, spec.w, spec.h, spec.tint, unlocked ? 0 : 0.45)
-      .setDepth(depth).setVisible(!unlocked)
+  private buildZone(spec: RegionDef, depth: number) {
+    const unlocked = spec.id === 'hold'
+    const pts = spec.poly.map(([x, y]) => new Phaser.Math.Vector2(x, y))
+    const overlay = this.scene.add.graphics().setDepth(depth).setVisible(!unlocked)
+    overlay.fillStyle(LOCKED_SHADE, LOCKED_ALPHA)
+    overlay.fillPoints(pts, true)
 
     const post = this.scene.add.graphics().setDepth(depth + 1)
     if (!unlocked) this.drawBoundary(post, spec)
+    // Graphics replay every command each frame: let the culler skip the far ones.
+    const b = bounds(spec.poly)
+    this.scene.culler.add(overlay, b.x, b.y, b.r)
+    this.scene.culler.add(post, b.x, b.y, b.r)
 
-    const { x: cx, y: cy } = claimPointFor(spec)
+    const { x: cx, y: cy } = spec.claim
     // The ring is the actual affordance: a marked patch of ground you can walk
     // onto. The frame above it is only a label.
     const marker = this.scene.add.graphics().setDepth(depth + 1).setVisible(false)
@@ -254,56 +249,58 @@ export class ZoneManager {
     v.frame.place(-BANNER_W / 2, top, BANNER_W, h)
   }
 
-  private drawBoundary(g: Phaser.GameObjects.Graphics, spec: ZoneSpec) {
+  /** Rope-and-post fence along every border the region shares with another. S08 swaps it for border stones. */
+  private drawBoundary(g: Phaser.GameObjects.Graphics, spec: RegionDef) {
     g.clear()
-    g.lineStyle(3, PAL.gold, 0.35)
-    g.strokeRect(spec.x, spec.y, spec.w, spec.h)
-    // rope-and-post fence along the edges
     const step = 96
-    g.fillStyle(0x6b4a2a, 0.85)
-    for (let x = spec.x; x <= spec.x + spec.w; x += step) {
-      g.fillRect(x - 2, spec.y - 10, 4, 20)
-      g.fillRect(x - 2, spec.y + spec.h - 10, 4, 20)
-    }
-    for (let y = spec.y; y <= spec.y + spec.h; y += step) {
-      g.fillRect(spec.x - 2, y - 10, 4, 20)
-      g.fillRect(spec.x + spec.w - 2, y - 10, 4, 20)
+    const poly = spec.poly
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length]
+      if (onWorldEdge(a, b)) continue
+      g.lineStyle(3, PAL.gold, 0.35)
+      g.lineBetween(a[0], a[1], b[0], b[1])
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1])
+      g.fillStyle(0x6b4a2a, 0.85)
+      for (let d = 0; d <= len; d += step) {
+        const t = d / len
+        g.fillRect(a[0] + (b[0] - a[0]) * t - 2, a[1] + (b[1] - a[1]) * t - 10, 4, 20)
+      }
     }
   }
 
-  isUnlocked(id: ZoneId) { return this.views.get(id)?.unlocked ?? true }
+  isUnlocked(id: RegionId) { return this.views.get(id)?.unlocked ?? true }
 
   /** Where the hero has to stand to claim a zone — also what the arrow aims at. */
-  claimPoint(id: ZoneId): { x: number; y: number } | null {
+  claimPoint(id: RegionId): { x: number; y: number } | null {
     const v = this.views.get(id)
     return v ? { x: v.cx, y: v.cy } : null
   }
 
+  /** The region under a point, from the 32 px region raster. */
   zoneAt(x: number, y: number): ZoneView | null {
-    for (const v of this.views.values()) {
-      const s = v.spec
-      if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) return v
-    }
-    return null
+    const r = raster()
+    const i = r.cell(x, y)
+    const k = i < 0 ? -1 : r.region[i]
+    return k < 0 ? null : this.views.get(REGIONS[k].id) ?? null
   }
 
-  /** The locked zone a point sits in, if any. Used to redirect guidance. */
-  lockedZoneAt(x: number, y: number): ZoneSpec | null {
+  /** The locked region a point sits in, if any. Used to redirect guidance. */
+  lockedZoneAt(x: number, y: number): RegionDef | null {
     const v = this.zoneAt(x, y)
     return v && !v.unlocked ? v.spec : null
   }
 
   canUnlock(v: ZoneView) {
-    return this.scene.buildings.townHallLevel >= v.spec.requiresTownHall &&
+    return this.scene.buildings.townHallLevel >= v.spec.hall &&
       this.scene.res.canAfford(v.spec.cost)
   }
 
-  canUnlockId(id: ZoneId) {
+  canUnlockId(id: RegionId) {
     const v = this.views.get(id)
     return !!v && !v.unlocked && this.canUnlock(v)
   }
 
-  unlock(id: ZoneId, silent = false) {
+  unlock(id: RegionId, silent = false) {
     const v = this.views.get(id)
     if (!v || v.unlocked) return
     v.unlocked = true
@@ -346,7 +343,7 @@ export class ZoneManager {
       // claim territory in the same moment, and two world panels fighting for
       // the middle of a phone screen just looks broken.
       const d = Math.hypot(p.x - v.cx, p.y - v.cy)
-      const hallGap = v.spec.requiresTownHall - this.scene.buildings.townHallLevel
+      const hallGap = v.spec.hall - this.scene.buildings.townHallLevel
       const range = hallGap >= 2 ? GATED_BANNER_RANGE : BANNER_RANGE
       const near = d < range && !this.scene.buildings.panelShown
       v.banner.setVisible(near)
@@ -354,11 +351,11 @@ export class ZoneManager {
       if (!near) { v.dwell = 0; continue }
 
       const affordable = this.canUnlock(v)
-      const needHall = this.scene.buildings.townHallLevel < v.spec.requiresTownHall
+      const needHall = this.scene.buildings.townHallLevel < v.spec.hall
       const costStr = RESOURCE_ORDER.filter(k => v.spec.cost[k])
         .map(k => `${short(v.spec.cost[k] ?? 0)} ${k}`).join('   ')
       setColour(v.cost.setText(
-        needHall ? `Command Hall level ${v.spec.requiresTownHall} required`
+        needHall ? `Command Hall level ${v.spec.hall} required`
           : `${costStr}\n${affordable ? 'Stand on the ring to claim' : 'Not enough yet'}`,
       ), affordable ? PAL.good : needHall ? PAL.danger : PAL.uiDim)
       this.frameBanner(v)
@@ -377,18 +374,35 @@ export class ZoneManager {
 
     // soft barrier: nudge the hero back out of land they have not claimed
     if (here && !here.unlocked) {
-      const s = here.spec
-      const dl = p.x - s.x, dr = s.x + s.w - p.x
-      const dtp = p.y - s.y, db = s.y + s.h - p.y
-      const m = Math.min(dl, dr, dtp, db)
+      const [tx, ty] = this.exitToward(here.spec, p.x, p.y)
+      const d = Math.hypot(tx - p.x, ty - p.y) || 1
       const push = 240 * dt
-      if (m === dl) p.x -= push
-      else if (m === dr) p.x += push
-      else if (m === dtp) p.y -= push
-      else p.y += push
-      p.x = clamp(p.x, 24, WORLD.width - 24)
-      p.y = clamp(p.y, 24, WORLD.height - 24)
+      p.x = clamp(p.x + (tx - p.x) / d * push, 24, WORLD.width - 24)
+      p.y = clamp(p.y + (ty - p.y) / d * push, 24, WORLD.height - 24)
     }
+  }
+
+  /**
+   * Where the soft barrier pushes the hero: the nearest point on a border
+   * whose far side is claimed. A border into another locked region would
+   * just bounce them between the two, so those are skipped; with none left
+   * (teleported deep into the wild), the way home is toward the hall.
+   */
+  private exitToward(spec: RegionDef, x: number, y: number): [number, number] {
+    const poly = spec.poly
+    let best = Infinity, bx = HALL.x, by = HALL.y
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length]
+      if (onWorldEdge(a, b)) continue
+      const { tc, d } = segProj(x, y, a[0], a[1], b[0], b[1])
+      if (d >= best) continue
+      const qx = a[0] + (b[0] - a[0]) * tc, qy = a[1] + (b[1] - a[1]) * tc
+      const k = Math.hypot(qx - x, qy - y) || 1
+      const beyond = this.zoneAt(qx + (qx - x) / k * BARRIER_PROBE, qy + (qy - y) / k * BARRIER_PROBE)
+      if (!beyond?.unlocked) continue
+      best = d; bx = qx + (qx - x) / k * BARRIER_PROBE; by = qy + (qy - y) / k * BARRIER_PROBE
+    }
+    return [bx, by]
   }
 
   revealAll() {
@@ -399,7 +413,7 @@ export class ZoneManager {
     return [...this.views.values()].filter(v => v.unlocked).map(v => v.spec.id)
   }
 
-  load(ids: ZoneId[]) {
+  load(ids: RegionId[]) {
     for (const id of ids) this.unlock(id, true)
   }
 }

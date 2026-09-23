@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { NODE_CLUSTERS, NODE_DEFS, type ZoneId } from '../config/map'
+import { NODE_CLUSTERS, NODE_DEFS, type RegionId } from '../config/world'
 import type { ResourceType } from '../core/types'
 import { Grid } from '../core/Grid'
 import { rnd, rr, srand, ri } from '../core/math'
@@ -17,7 +17,7 @@ export interface ResourceNode {
   yield: number
   respawnIn: number
   alive: boolean
-  zone: ZoneId
+  region: RegionId
   radius: number
   sprite: Phaser.GameObjects.Image
   /** claimed by a worker so several don't pile onto one tree */
@@ -45,12 +45,12 @@ export class NodeManager {
       for (let i = 0; i < c.count; i++) {
         const a = rnd() * Math.PI * 2
         const r = Math.sqrt(rnd()) * c.radius
-        this.add(c.type, c.x + Math.cos(a) * r, c.y + Math.sin(a) * r * 0.78, c.zone)
+        this.add(c.type, c.x + Math.cos(a) * r, c.y + Math.sin(a) * r * 0.78, c.region)
       }
     }
   }
 
-  add(type: ResourceNode['type'], x: number, y: number, zone: ZoneId): ResourceNode {
+  add(type: ResourceNode['type'], x: number, y: number, region: RegionId): ResourceNode {
     const d = type === 'crop' ? CROP_DEF : NODE_DEFS[type]
     const tex = type === 'tree' ? `tree${ri(0, 2)}`
       : type === 'rock' ? `rock${ri(0, 1)}`
@@ -65,18 +65,18 @@ export class NodeManager {
     const node: ResourceNode = {
       id: this.nextNodeId++, type, resource: d.resource, x, y,
       hp: d.hp, maxHp: d.hp, yield: d.yield, respawnIn: 0, alive: true,
-      zone, radius: d.radius, sprite, claimedBy: 0, shakeT: 0,
+      region, radius: d.radius, sprite, claimedBy: 0, shakeT: 0,
     }
     this.nodes.push(node)
     return node
   }
 
   /** Farm fields: crops laid out around the farm so farmers have work on site. */
-  addField(x: number, y: number, zone: ZoneId, count = 6) {
+  addField(x: number, y: number, region: RegionId, count = 6) {
     const made: ResourceNode[] = []
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2
-      made.push(this.add('crop', x + Math.cos(a) * 62, y + Math.sin(a) * 44 + 12, zone))
+      made.push(this.add('crop', x + Math.cos(a) * 62, y + Math.sin(a) * 44 + 12, region))
     }
     return made
   }
@@ -139,19 +139,19 @@ export class NodeManager {
     return this.grid.nearest(x, y, radius, n =>
       n.alive && n.resource === resource &&
       (n.claimedBy === 0 || n.claimedBy === claimer) &&
-      this.scene.zones.isUnlocked(n.zone))
+      this.scene.zones.isUnlocked(n.region))
   }
 
   /** Fallback when every nearby node is already claimed — crews share rather
    *  than stand idle, so the income counter never stalls. */
   findAny(resource: ResourceType, x: number, y: number, radius: number): ResourceNode | null {
     return this.grid.nearest(x, y, radius, n =>
-      n.alive && n.resource === resource && this.scene.zones.isUnlocked(n.zone))
+      n.alive && n.resource === resource && this.scene.zones.isUnlocked(n.region))
   }
 
   /** Hero auto-harvest: anything the player brushes against. */
   nearestInRange(x: number, y: number, radius: number): ResourceNode | null {
-    return this.grid.nearest(x, y, radius, n => n.alive && this.scene.zones.isUnlocked(n.zone))
+    return this.grid.nearest(x, y, radius, n => n.alive && this.scene.zones.isUnlocked(n.region))
   }
 
   countAlive(type: ResourceNode['type']) {

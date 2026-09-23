@@ -10,8 +10,8 @@
  * src/config/world/check.ts pins PadKey and the camp spawn keys against the
  * game's BuildingKey / EnemyKey unions at compile time.
  *
- * Units are world pixels, origin top-left, y down — the same space as
- * src/config/map.ts today. The old world was 3400 x 2800; this one is
+ * Units are world pixels, origin top-left, y down — the space the game
+ * reads through src/config/world. The old world was 3400 x 2800; this one is
  * 10240 x 9216, just under ten times the area (9.9x).
  *
  * Coordinates are authoritative but tunable: an implementing session may move

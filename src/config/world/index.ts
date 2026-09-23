@@ -4,7 +4,7 @@
  * only reshapes it into the forms the systems already speak (pads, camps,
  * node clusters, the rampart ring) and memoises the raster.
  *
- * Replaces src/config/map.ts (S04). Nothing here should hold a coordinate of
+ * Replaces the old hand-placed map module (S04). Nothing here should hold a coordinate of
  * its own except the temporary night gates, which S09's approaches replace.
  */
 import type { BuildingKey } from '../buildings'

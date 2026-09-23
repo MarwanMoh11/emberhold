@@ -1,7 +1,8 @@
 import Phaser from 'phaser'
 import { PAL } from '../config/palette'
-import { WORLD } from '../config/balance'
-import { ZONES, WALL_RING, type ZoneSpec } from '../config/map'
+import { HALL, REGIONS, WALL_RING, WORLD, type RegionDef } from '../config/world'
+import { inPoly } from '../world/raster'
+import { biomeColour } from '../world/Terrain'
 import { clamp } from '../core/math'
 import { IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
 import { mix } from '../art/ink'
@@ -28,11 +29,11 @@ const OPEN_KEY = 'emberhold.minimap.v1'
  * the panel works out to be, so a window resize or an orientation flip never
  * re-bakes the world — it sets a display size and moves on.
  *
- * 3400/272 and 2800/224 are both 12.5, so the aspect is exact and nothing has
- * to be letterboxed.
+ * 10240/320 and 9216/288 are both 32, so the aspect is exact and nothing has
+ * to be letterboxed. (S12 replaces this with a local window and the atlas.)
  */
-const TEX_W = 272
-const TEX_H = 224
+const TEX_W = 320
+const TEX_H = 288
 /** World pixels per baked texel. */
 const T = WORLD.width / TEX_W
 
@@ -157,12 +158,12 @@ export class Minimap {
     // The world restores its explored fog before UI launches. Rebuild this
     // cheaper map from those marks so travel beyond the hold stays visible on
     // the minimap after a reload as well.
-    this.reveal(WORLD.centerX, WORLD.centerY, SEED)
+    this.reveal(HALL.x, HALL.y, SEED)
     this.restoreWorldExploration()
-    for (const z of ZONES) if (game.zones.isUnlocked(z.id)) this.revealZone(z)
+    for (const z of REGIONS) if (game.zones.isUnlocked(z.id)) this.revealZone(z)
 
     game.bus.on('zone:unlocked', () => {
-      for (const z of ZONES) if (game.zones.isUnlocked(z.id)) this.revealZone(z)
+      for (const z of REGIONS) if (game.zones.isUnlocked(z.id)) this.revealZone(z)
       this.coldDirty = true
     })
     game.bus.on('building:built', () => { this.coldDirty = true })
@@ -214,13 +215,15 @@ export class Minimap {
     this.game.zones.forEachExplored((x, y) => this.reveal(x, y, REVEAL))
   }
 
-  private revealZone(z: ZoneSpec) {
-    const c0 = clamp(Math.floor(z.x / CELL), 0, COLS - 1)
-    const c1 = clamp(Math.ceil((z.x + z.w) / CELL) - 1, 0, COLS - 1)
-    const r0 = clamp(Math.floor(z.y / CELL), 0, ROWS - 1)
-    const r1 = clamp(Math.ceil((z.y + z.h) / CELL) - 1, 0, ROWS - 1)
+  private revealZone(z: RegionDef) {
+    const xs = z.poly.map(p => p[0]), ys = z.poly.map(p => p[1])
+    const c0 = clamp(Math.floor(Math.min(...xs) / CELL), 0, COLS - 1)
+    const c1 = clamp(Math.ceil(Math.max(...xs) / CELL) - 1, 0, COLS - 1)
+    const r0 = clamp(Math.floor(Math.min(...ys) / CELL), 0, ROWS - 1)
+    const r1 = clamp(Math.ceil(Math.max(...ys) / CELL) - 1, 0, ROWS - 1)
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
+        if (!inPoly((c + 0.5) * CELL, (r + 0.5) * CELL, z.poly)) continue
         const i = r * COLS + c
         if (this.explored[i]) continue
         this.explored[i] = 1
@@ -306,19 +309,19 @@ export class Minimap {
     g.fillStyle(CHART.wild, 1)
     g.fillRect(0, 0, TEX_W, TEX_H)
 
-    for (const z of ZONES) {
-      const x = z.x / T, y = z.y / T, w = z.w / T, h = z.h / T
+    for (const z of REGIONS) {
+      const pts = z.poly.map(([x, y]) => new Phaser.Math.Vector2(x / T, y / T))
       if (gs.zones.isUnlocked(z.id)) {
         g.fillStyle(CHART.held, 1)
-        g.fillRect(x, y, w, h)
+        g.fillPoints(pts, true)
         g.lineStyle(1, CHART.lapis, 0.55)
       } else {
         // each region keeps its own cast, softened into the paper
-        g.fillStyle(mix(z.tint, PAL.parchmentDark, 0.55), 0.9)
-        g.fillRect(x, y, w, h)
+        g.fillStyle(mix(biomeColour(z.biome), PAL.parchmentDark, 0.55), 0.9)
+        g.fillPoints(pts, true)
         g.lineStyle(1, CHART.gilt, 0.5)
       }
-      g.strokeRect(x, y, w, h)
+      g.strokePoints(pts, true)
     }
 
     // the rampart ring, and the four gaps the horde funnels through
@@ -331,7 +334,7 @@ export class Minimap {
     // structures — claimed territory only, and only where you have actually been
     for (const b of gs.buildings.buildings) {
       if (b.key === 'wall' || b.key === 'gate') continue
-      if (!gs.zones.isUnlocked(b.zone)) continue
+      if (!gs.zones.isUnlocked(b.region)) continue
       if (!this.exploredAt(b.x, b.y)) continue
       const x = b.x / T, y = b.y / T
       if (b.level > 0) {
@@ -411,9 +414,9 @@ export class Minimap {
     // and it is the one thing the whole tycoon loop is asking you to walk to.
     // It is `claimPoint`, never the raw banner anchor: those two differ now, and
     // the anchor is not somewhere a hero can stand.
-    for (const z of ZONES) {
+    for (const z of REGIONS) {
       if (gs.zones.isUnlocked(z.id)) continue
-      if (gs.buildings.townHallLevel < z.requiresTownHall) continue
+      if (gs.buildings.townHallLevel < z.hall) continue
       const c = gs.zones.claimPoint(z.id)
       if (!c) continue
       const ready = gs.zones.canUnlockId(z.id)
@@ -528,7 +531,7 @@ export class Minimap {
       // silent unlocks a load or the debug panel performs, which never reach
       // the bus. Cells already set are skipped, so after the first pass this is
       // a read-only sweep.
-      for (const z of ZONES) if (this.game.zones.isUnlocked(z.id)) this.revealZone(z)
+      for (const z of REGIONS) if (this.game.zones.isUnlocked(z.id)) this.revealZone(z)
       this.coldDirty = true
     }
     this.coldT -= dt

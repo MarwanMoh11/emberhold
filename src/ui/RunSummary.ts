@@ -1,14 +1,14 @@
 import Phaser from 'phaser'
 import { Overlay } from './Overlay'
 import { PAL } from '../config/palette'
-import { ZONES } from '../config/map'
+import { REGIONS } from '../config/world'
 import { QUESTS } from '../config/quests'
 import { RESOURCE_ORDER } from '../core/types'
 import { short } from '../core/math'
 import type { GameScene } from '../scenes/GameScene'
 
 /** Everything but the hold itself has to be paid for. */
-const CLAIMABLE = ZONES.filter(z => !z.startsUnlocked).length
+const CLAIMABLE = REGIONS.filter(z => z.id !== 'hold').length
 
 interface Cell {
   label: Phaser.GameObjects.Text

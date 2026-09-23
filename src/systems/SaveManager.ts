@@ -1,16 +1,17 @@
 import type { GameScene } from '../scenes/GameScene'
 import { DEFAULT_QUALITY } from '../core/device'
 import { RESOURCE_ORDER } from '../core/types'
-import { DAYNIGHT, WORLD, XP } from '../config/balance'
+import { DAYNIGHT, XP } from '../config/balance'
 import { BUILDINGS } from '../config/buildings'
-import { CAMPS, PADS, WALL_RING } from '../config/map'
+import { CAMPS, PADS, REGION_BY_ID, WALL_RING, WORLD } from '../config/world'
 import { SOLDIERS, WORKERS } from '../config/units'
 import { UPGRADE_BY_ID } from '../config/upgrades'
 import { QUESTS } from '../config/quests'
 import { FogMemory } from '../core/FogMemory'
 
-const KEY = 'emberhold.save.v1'
-const BACKUP_KEY = 'emberhold.save.backup.v1'
+// v2 (the frontier) never reads, writes or deletes the v1 keys: see docs/world/design/07-save.md
+const KEY = 'emberhold.save.v2'
+const BACKUP_KEY = 'emberhold.save.backup.v2'
 const SETTINGS_KEY = 'emberhold.settings.v1'
 export const MAX_SAVE_FILE_BYTES = 1_000_000
 
@@ -26,7 +27,7 @@ const maxLevelForPad = (id: string) => padMax.get(id)
 
 /** Reject a torn or incompatible save before any manager mutates live state. */
 function validSave(v: unknown): v is SaveBlob {
-  if (!record(v) || v.v !== 1 || !finite(v.savedAt) || !finite(v.playtime)) return false
+  if (!record(v) || v.v !== 2 || !finite(v.savedAt) || !finite(v.playtime)) return false
   if (!record(v.player) || !finite(v.player.level) || v.player.level < 1
     || !finite(v.player.xp) || v.player.xp < 0 || !finite(v.player.hp)
     || !finite(v.player.x) || v.player.x < 0 || v.player.x > WORLD.width
@@ -86,7 +87,7 @@ function validSave(v: unknown): v is SaveBlob {
       if (n !== undefined && (!finite(n) || !Number.isInteger(n) || n < 0)) return false
     }
   }
-  if (!Array.isArray(v.zones) || !v.zones.every(z => typeof z === 'string')
+  if (!Array.isArray(v.regions) || !v.regions.every(z => typeof z === 'string' && REGION_BY_ID.has(z as never))
     || !Array.isArray(v.camps) || !v.camps.every(c => typeof c === 'string')
     || !Array.isArray(v.upgrades) || !v.upgrades.every(u => Array.isArray(u)
       && typeof u[0] === 'string' && UPGRADE_BY_ID.has(u[0] as never)
@@ -133,7 +134,7 @@ export const DEFAULT_SETTINGS: Settings = {
 }
 
 export interface SaveBlob {
-  v: 1
+  v: 2
   savedAt: number
   playtime: number
   res: ReturnType<GameScene['res']['toJSON']>
@@ -144,7 +145,7 @@ export interface SaveBlob {
   army: ReturnType<GameScene['army']['toJSON']>
   waves: ReturnType<GameScene['waves']['toJSON']>
   quests: ReturnType<GameScene['quests']['toJSON']>
-  zones: string[]
+  regions: string[]
   exploredFog?: string
   camps: string[]
   campHealth?: Record<string, number>
@@ -225,7 +226,7 @@ export class SaveManager {
   save(): boolean {
     const s = this.scene
     const blob: SaveBlob = {
-      v: 1,
+      v: 2,
       savedAt: Date.now(),
       playtime: this.playtime,
       res: s.res.toJSON(),
@@ -236,7 +237,7 @@ export class SaveManager {
       army: s.army.toJSON(),
       waves: s.waves.toJSON(),
       quests: s.quests.toJSON(),
-      zones: s.zones.toJSON(),
+      regions: s.zones.toJSON(),
       exploredFog: s.zones.fogJSON(),
       camps: s.camps.toJSON(),
       campHealth: s.camps.healthJSON(),
@@ -286,7 +287,7 @@ export class SaveManager {
     this.playtime = blob.playtime ?? 0
     this.lastSavedAt = blob.savedAt
     this.awaySeconds = blob.savedAt ? Math.max(0, (Date.now() - blob.savedAt) / 1000) : 0
-    s.zones.load(blob.zones as never)
+    s.zones.load(blob.regions as never)
     if (blob.exploredFog) s.zones.loadFog(blob.exploredFog)
     s.buildings.load(blob.buildings)
     s.res.load(blob.res)

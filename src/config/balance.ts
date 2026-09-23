@@ -1,12 +1,7 @@
 /** Global tuning. Nothing gameplay-critical should be hardcoded outside config/. */
 
-export const WORLD = {
-  width: 3400,
-  height: 2800,
-  centerX: 1700,
-  centerY: 1400,
-  tile: 64,
-}
+/** Moved to config/world in S04. Re-exported for one card only: S05 removes this line. */
+export { WORLD } from './world'
 
 export const PLAYER = {
   maxHp: 200,

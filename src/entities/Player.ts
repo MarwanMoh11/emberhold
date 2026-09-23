@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
-import { PLAYER, HERO_TIERS, XP, WORLD } from '../config/balance'
+import { PLAYER, HERO_TIERS, XP } from '../config/balance'
+import { HALL, WORLD } from '../config/world'
 import { PAL } from '../config/palette'
 import type { PlayerStats } from '../config/upgrades'
 import { clamp, dist } from '../core/math'
@@ -23,8 +24,8 @@ export class Player implements Targetable {
   readonly id = nextId()
   readonly kind = 'player' as const
 
-  x = WORLD.centerX
-  y = WORLD.centerY + 340
+  x = HALL.x
+  y = HALL.y + 340
   vx = 0
   vy = 0
   radius = 15

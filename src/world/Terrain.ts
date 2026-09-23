@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { WORLD } from '../config/balance'
-import { ZONES, WALL_RING, PADS, SPAWN_GATES, CAMPS, type ZoneId } from '../config/map'
+import { WORLD, HALL, REGIONS, PADS, SPAWN_GATES, CAMPS, CROSSINGS, ROADS, raster, type Biome } from '../config/world'
+import { T, TNAME, inPoly, polyArea, polyCentroid, samplePolyline } from './raster'
 import { PAL } from '../config/palette'
 import { applyGrain, css, fill, form, glow, line, makeCanvas, mix, P, Rng, register, shade, INK, type Ctx } from '../art/ink'
 
@@ -31,7 +31,8 @@ const DABS_EXTRA = 0.47  // a cell gets 4 mottling dabs, or 5 this often (2,600 
 const MARKS = 24         // detail marks per cell (14,000 over the old world)
 const MARK_REACH = 48    // world px a detail mark can stray from where it is dealt
 
-type Biome = ZoneId | 'wild' | 'plaza'
+/** What a patch of ground is painted as: a region's biome, blocked terrain, a crossing, or the plaza. */
+type Ground = Biome | 'plaza' | 'sea' | 'water' | 'cliff' | 'lava' | 'bridge' | 'ford' | 'pass' | 'causeway'
 
 // ---- noise -----------------------------------------------------------------
 
@@ -76,38 +77,81 @@ function strokeRng(cx: number, cy: number, k: number, seed: number) {
 // holds each biome's palette, and `toneAt` mixes the wash colour from it. The
 // brushwork in `paintMarks` switches on the biome for its marks.
 
-const CX = WORLD.centerX, CY = WORLD.centerY
+const CX = HALL.x, CY = HALL.y
 
-/** Which biome a world point belongs to, with the borders warped by noise. */
-function biomeAt(wx: number, wy: number): Biome {
-  const wxp = wx + (fbm(wx * 0.004, wy * 0.004, 11, 3) - 0.5) * 220
-  const wyp = wy + (fbm(wx * 0.004, wy * 0.004, 29, 3) - 0.5) * 220
+/**
+ * Flat v2 colours (S04): the atlas palette from docs/world/tools/render.mjs,
+ * one per biome, plus the blocked terrain and the crossings over it. Real art
+ * for the frontier arrives in S07.
+ */
+const FLAT: Record<Exclude<Ground, 'plaza'>, number> = {
+  rise: 0xdccb98, meadow: 0xcfdd9c, forest: 0xa3c488, oldgrowth: 0x86ad7a, village: 0xd8cca2, marsh: 0xb3c7a6,
+  scarp: 0xcdbf9c, highland: 0xd4dfdb, rust: 0xd3a986, sulphur: 0xe3d58a, farmland: 0xe6d98e, moor: 0xaeb08e,
+  badlands: 0xbba48a, deeprock: 0xa39a91, ash: 0x958a84, obsidian: 0x7a6b6e, slag: 0x907569,
+  sea: 0x8fb3c9, water: 0x78a6c3, cliff: 0x4a3b2c, lava: 0xe0662e,
+  bridge: 0xa58a64, ford: 0xa9c8d6, pass: 0xd9c6a1, causeway: 0xb59c7a,
+}
+const CROSSING_GROUND = { bridge: 'bridge', ford: 'ford', pass: 'pass', stair: 'pass', causeway: 'causeway' } as const
+/** Blocked terrain by raster code. */
+const BLOCKED_GROUND = TNAME as readonly Ground[]
+
+/**
+ * What the ground at a world point is painted as. Blocked terrain and
+ * crossings come straight from the 32 px raster the NavGrid will read, with
+ * the sample jittered a little so the cell stairs read as a ragged shore.
+ * Region borders are warped by noise the way the old biome borders were.
+ */
+function biomeAt(wx: number, wy: number): Ground {
+  const r = raster()
+  const jx = (vnoise(wx * 0.03, wy * 0.03, 41) - 0.5) * 28
+  const jy = (vnoise(wx * 0.03, wy * 0.03, 43) - 0.5) * 28
+  const i = r.cell(Math.min(WORLD.width - 1, Math.max(0, wx + jx)), Math.min(WORLD.height - 1, Math.max(0, wy + jy)))
+  if (i >= 0) {
+    if (r.terrain[i] !== T.LAND) return BLOCKED_GROUND[r.terrain[i]]
+    const k = r.crossing[i]
+    if (k >= 0 && r.under[i] !== T.LAND) return CROSSING_GROUND[CROSSINGS[k].kind]
+  }
   // the hold's trodden clearing around the hall
   const d = Math.hypot(wx - CX, (wy - CY) * 1.15)
   if (d < 205 + (fbm(wx * 0.012, wy * 0.012, 5, 3) - 0.5) * 110) return 'plaza'
-  for (const z of ZONES) {
-    if (z.id === 'hold') continue
-    if (wxp > z.x && wxp < z.x + z.w && wyp > z.y && wyp < z.y + z.h) return z.id
-  }
-  const hold = ZONES[0]
-  if (wxp > hold.x && wxp < hold.x + hold.w && wyp > hold.y && wyp < hold.y + hold.h) return 'hold'
-  return 'wild'
+  const wxp = wx + (fbm(wx * 0.004, wy * 0.004, 11, 3) - 0.5) * 220
+  const wyp = wy + (fbm(wx * 0.004, wy * 0.004, 29, 3) - 0.5) * 220
+  const j = r.cell(Math.min(WORLD.width - 1, Math.max(0, wxp)), Math.min(WORLD.height - 1, Math.max(0, wyp)))
+  const g = j >= 0 ? r.region[j] : -1
+  if (g >= 0) return REGIONS[g].biome
+  const h = i >= 0 ? r.region[i] : -1
+  return h >= 0 ? REGIONS[h].biome : 'rise'
 }
 
 interface Tones { lo: number; mid: number; hi: number; accent?: number }
 
-const TONES: Record<Biome, Tones> = {
-  hold: { lo: 0x66743e, mid: 0x7f8c4c, hi: 0x9ba85e, accent: 0xa89a5a },
-  wild: { lo: 0x62703c, mid: 0x7a8749, hi: 0x949f58, accent: 0xa0925a },
-  whisperwood: { lo: 0x44583a, mid: 0x566b3e, hi: 0x6d7c44, accent: 0x6e5a36 },
-  greyfall: { lo: 0x7a7568, mid: 0x928c7c, hi: 0xa9a28f, accent: 0x7f8a54 },
-  hollow: { lo: 0x6a6a50, mid: 0x7e7c5e, hi: 0x949070, accent: 0x7a6a4a },
-  deepvein: { lo: 0x564636, mid: 0x6c5a44, hi: 0x806c52, accent: 0x8a4a2e },
-  ashgate: { lo: 0x3a3230, mid: 0x4c4240, hi: 0x5e524c, accent: 0x6a3024 },
-  plaza: { lo: 0x9a7a52, mid: 0xae8e62, hi: 0xc2a476, accent: 0x8a6a48 },
+/** Game-weight tones from a pale atlas colour: the atlas is drawn for paper, the ground for a lit scene. */
+function tonesFrom(c: number, dim: number): Tones {
+  const dark = 0x1e1a12
+  return { lo: mix(c, dark, dim + 0.12), mid: mix(c, dark, dim), hi: mix(c, dark, Math.max(0, dim - 0.12)), accent: mix(c, 0x6e5a36, 0.35) }
 }
 
-function toneAt(b: Biome, wx: number, wy: number) {
+const TONES = Object.fromEntries([
+  ...Object.entries(FLAT).map(([k, c]) => [k, tonesFrom(c, k === 'lava' ? 0.08 : k === 'cliff' ? 0.1 : 0.38)]),
+  ['plaza', { lo: 0x9a7a52, mid: 0xae8e62, hi: 0xc2a476, accent: 0x8a6a48 }],
+]) as Record<Ground, Tones>
+
+/** A biome's middle tone, for the minimap and anything else that wants the ground's colour. */
+export const biomeColour = (b: Biome): number => TONES[b].mid
+
+/** Which of the old brushwork sets a ground borrows until S07 gives each biome its own. */
+type MarkSet = 'hold' | 'whisperwood' | 'greyfall' | 'hollow' | 'deepvein' | 'ashgate' | 'plaza' | 'none'
+const MARK: Record<Ground, MarkSet> = {
+  rise: 'hold', meadow: 'hold', farmland: 'hold', highland: 'greyfall',
+  forest: 'whisperwood', oldgrowth: 'whisperwood', marsh: 'whisperwood',
+  scarp: 'greyfall', village: 'hollow', moor: 'hollow', badlands: 'hollow',
+  rust: 'deepvein', sulphur: 'deepvein', deeprock: 'deepvein',
+  ash: 'ashgate', obsidian: 'ashgate', slag: 'ashgate',
+  plaza: 'plaza',
+  sea: 'none', water: 'none', cliff: 'none', lava: 'none', bridge: 'none', ford: 'none', pass: 'none', causeway: 'none',
+}
+
+function toneAt(b: Ground, wx: number, wy: number) {
   const t = TONES[b]
   const n = fbm(wx * 0.006, wy * 0.006, 101, 4)
   const m = fbm(wx * 0.02, wy * 0.02, 202, 2)
@@ -195,6 +239,15 @@ function paintDabs(x: Ctx, b: Box, wx: number, wy: number, size: number) {
 interface Road { pts: [number, number][]; width: number; box: Box }
 let roads: Road[] | null = null
 
+function boxOf(pts: [number, number][], pad: number): Box {
+  const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+  for (const [px, py] of pts) {
+    box.x0 = Math.min(box.x0, px - pad); box.y0 = Math.min(box.y0, py - pad)
+    box.x1 = Math.max(box.x1, px + pad); box.y1 = Math.max(box.y1, py + pad)
+  }
+  return box
+}
+
 function layRoads(): Road[] {
   if (roads) return roads
   const out: Road[] = []
@@ -208,24 +261,17 @@ function layRoads(): Road[] {
       const wob = i === 0 || i === n ? 0 : (fbm(t * 3, ax * 0.01, 77, 2) - 0.5) * 70
       pts.push([(ax + (bx - ax) * t + (nx / nl) * wob) * S, (ay + (by - ay) * t + (ny / nl) * wob) * S])
     }
-    const pad = width * S + 6
-    const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
-    for (const [px, py] of pts) {
-      box.x0 = Math.min(box.x0, px - pad); box.y0 = Math.min(box.y0, py - pad)
-      box.x1 = Math.max(box.x1, px + pad); box.y1 = Math.max(box.y1, py + pad)
-    }
-    out.push({ pts, width, box })
+    out.push({ pts, width, box: boxOf(pts, width * S + 6) })
   }
-  for (const gate of WALL_RING.gates) road(CX, CY, gate.x, gate.y, 58)
-  for (const gate of SPAWN_GATES) {
-    const nearest = WALL_RING.gates.reduce((a, b) =>
-      Math.hypot(b.x - gate.x, b.y - gate.y) < Math.hypot(a.x - gate.x, a.y - gate.y) ? b : a)
-    road(nearest.x, nearest.y, gate.x, gate.y, 44)
+  // the blueprint's roads, exactly where the raster's road layer has them
+  for (const rd of ROADS) {
+    const pts = samplePolyline(rd.pts, 40).map(([px, py]): [number, number] => [px * S, py * S])
+    out.push({ pts, width: rd.width, box: boxOf(pts, rd.width * S + 6) })
   }
   // footpaths out to the nearer sites; the towers on the rampart are reached
   // across the grass, which keeps the hold from reading as a starburst
   for (const pad of PADS) {
-    if (pad.zone !== 'hold' || pad.key === 'wall' || pad.key === 'gate') continue
+    if (pad.region !== 'hold' || pad.key === 'wall' || pad.key === 'gate') continue
     if (pad.key === 'watchtower' || pad.key === 'cannonTower') continue
     const dx = pad.x - CX, dy = pad.y - CY
     const d = Math.hypot(dx, dy) || 1
@@ -247,6 +293,8 @@ function paintRoads(x: Ctx, b: Box) {
       xx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1])
     }
     x.save()
+    // earth laid over the ground at 60%, so the biome still shows through
+    x.globalAlpha = 0.6
     x.lineCap = 'round'; x.lineJoin = 'round'
     x.beginPath(); trace(x)
     x.strokeStyle = css(0x5a4a30, 0.22); x.lineWidth = width * S + 5; x.stroke()
@@ -328,12 +376,11 @@ function paintMarks(x: Ctx, b: Box, wx: number, wy: number, size: number) {
   })
 }
 
-function markAt(x: Ctx, r: Rng, b: Biome, wx: number, wy: number, px: number, py: number) {
+function markAt(x: Ctx, r: Rng, b: Ground, wx: number, wy: number, px: number, py: number) {
   const cluster = fbm(wx * 0.01, wy * 0.01, 404, 2)
   const t = TONES[b]
-  switch (b) {
-    case 'hold':
-    case 'wild': {
+  switch (MARK[b]) {
+    case 'hold': {
       if (cluster > 0.52) tuft(x, px, py, t.mid, r.range(0.8, 1.3))
       else if (r.next() < 0.08) fill(x, P.circle(px, py, r.range(0.7, 1.2)), r.pick([0xf1e4c3, 0xf2c24e, 0xe8a0b8, 0xc8d8f0]), 0.9)
       else if (r.next() < 0.03) {
@@ -492,21 +539,30 @@ export function buildVellumTexture(scene: Phaser.Scene, fogScale: number) {
   const [c, x] = makeCanvas(W, H)
   const r = new Rng(4242)
 
-  // the page
-  const img = x.createImageData(W, H)
-  for (let j = 0; j < H; j++) {
-    for (let i = 0; i < W; i++) {
-      const n = fbm(i * 0.02 * s, j * 0.02 * s, 900, 4)
-      const m = fbm(i * 0.08 * s, j * 0.08 * s, 901, 2)
-      const col = mix(mix(0xd8c49a, 0xefe0bc, n), 0xc8b088, Math.max(0, m - 0.6) * 1.2)
-      const q = (j * W + i) * 4
-      img.data[q] = (col >> 16) & 255
-      img.data[q + 1] = (col >> 8) & 255
-      img.data[q + 2] = col & 255
-      img.data[q + 3] = 255
+  // the page, sampled at no finer than 4 texels to the old sheet's 1 and
+  // smoothed up: it is low-frequency paper, and the frontier's sheet is 10x
+  // the old one's texels
+  {
+    const d = Math.max(1, Math.round(s))
+    const pw = Math.ceil(W / d), ph = Math.ceil(H / d)
+    const [pc, px] = makeCanvas(pw, ph)
+    const img = px.createImageData(pw, ph)
+    for (let j = 0; j < ph; j++) {
+      for (let i = 0; i < pw; i++) {
+        const n = fbm(i * d * 0.02 * s, j * d * 0.02 * s, 900, 4)
+        const m = fbm(i * d * 0.08 * s, j * d * 0.08 * s, 901, 2)
+        const col = mix(mix(0xd8c49a, 0xefe0bc, n), 0xc8b088, Math.max(0, m - 0.6) * 1.2)
+        const q = (j * pw + i) * 4
+        img.data[q] = (col >> 16) & 255
+        img.data[q + 1] = (col >> 8) & 255
+        img.data[q + 2] = col & 255
+        img.data[q + 3] = 255
+      }
     }
+    px.putImageData(img, 0, 0)
+    x.imageSmoothingEnabled = true
+    x.drawImage(pc, 0, 0, pw * d, ph * d)
   }
-  x.putImageData(img, 0, 0)
 
   // foxing: age spots
   for (let i = 0; i < Math.round(90 * sparse); i++) {
@@ -564,35 +620,38 @@ export function buildVellumTexture(scene: Phaser.Scene, fogScale: number) {
     },
   }
 
-  const zoneSym: Record<string, ((px: number, py: number) => void)[]> = {
+  // the surveyor's guess at each region, by its biome
+  const markSym: Record<MarkSet, ((px: number, py: number) => void)[]> = {
+    hold: [sym.grass, sym.grass, sym.tree],
     whisperwood: [sym.tree, sym.pine, sym.pine],
     greyfall: [sym.peak, sym.peak, sym.grass],
     hollow: [sym.ruin, sym.tree, sym.grass],
     deepvein: [sym.pick, sym.peak, sym.grass],
     ashgate: [sym.flame, sym.flame, sym.ruin],
+    plaza: [], none: [],
   }
-  for (const z of ZONES) {
-    const list = zoneSym[z.id]
-    if (!list) continue
-    const n = Math.round((z.w * z.h) / 26000 * sparse)
-    for (let i = 0; i < n; i++) {
-      const px = (z.x + r.range(0.05, 0.95) * z.w) * k
-      const py = (z.y + r.range(0.05, 0.95) * z.h) * k
-      r.pick(list)(px, py)
+  const rs = raster()
+  for (const z of REGIONS) {
+    if (z.id === 'hold') continue
+    const list = markSym[MARK[z.biome]]
+    const xs = z.poly.map(p => p[0]), ys = z.poly.map(p => p[1])
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys)
+    const n = Math.round(polyArea(z.poly) / 26000 * sparse)
+    for (let i = 0, tries = 0; i < n && tries < n * 4; tries++) {
+      const wx = r.range(x0, x1), wy = r.range(y0, y1)
+      // only on dry land inside the region: the sketch does not know the rivers yet
+      if (!inPoly(wx, wy, z.poly) || rs.terrain[rs.cell(wx, wy)] !== T.LAND) continue
+      r.pick(list)(wx * k, wy * k)
+      i++
     }
     // the surveyor's name for it, in a small italic hand
+    const [lx, ly] = polyCentroid(z.poly)
     x.save()
     x.font = `italic 600 ${Math.max(10, Math.round(48 * k))}px "Alegreya Sans", Georgia, serif`
     x.fillStyle = css(sepia, 0.55)
     x.textAlign = 'center'
-    x.fillText(z.name, (z.x + z.w / 2) * k, (z.y + z.h / 2) * k)
+    x.fillText(z.name.replace(/^The /, ''), lx * k, ly * k)
     x.restore()
-  }
-  // loose grass marks across the unclaimed wild
-  for (let i = 0; i < Math.round(700 * sparse); i++) {
-    const wx = r.range(0, WORLD.width), wy = r.range(0, WORLD.height)
-    if (ZONES.some(z => z.id !== 'hold' && wx > z.x && wx < z.x + z.w && wy > z.y && wy < z.y + z.h)) continue
-    sym.grass(wx * k, wy * k)
   }
   // a skull over the fortress, because the map-maker knew
   {

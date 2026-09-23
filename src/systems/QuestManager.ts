@@ -4,7 +4,7 @@ import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { dist } from '../core/math'
 import type { BuildingKey } from '../config/buildings'
 import type { Building } from '../entities/Building'
-import { CAMPS } from '../config/map'
+import { CAMPS } from '../config/world'
 import type { GameScene } from '../scenes/GameScene'
 
 export interface QuestView {
@@ -140,18 +140,18 @@ export class QuestManager {
     }
     if (g.type === 'upgrade') {
       const pads = s.buildings.buildings.filter(b => b.key === g.building && b.level < g.level)
-      const open = pads.find(b => s.zones.isUnlocked(b.zone))
+      const open = pads.find(b => s.zones.isUnlocked(b.region))
       if (open) return { x: open.x, y: open.y }
       if (pads.length) return this.gatedTarget(pads[0])
     }
     if (g.type === 'workers') {
       const pad = s.buildings.buildings.find(b =>
-        b.level > 0 && (b.stats.workers ?? 0) > b.workers.length && s.zones.isUnlocked(b.zone))
+        b.level > 0 && (b.stats.workers ?? 0) > b.workers.length && s.zones.isUnlocked(b.region))
       if (pad) return { x: pad.x, y: pad.y }
     }
     if (g.type === 'recruit') {
       const pad = s.buildings.buildings.find(b =>
-        b.level > 0 && (b.key === 'barracks' || b.key === 'archeryRange') && s.zones.isUnlocked(b.zone))
+        b.level > 0 && (b.key === 'barracks' || b.key === 'archeryRange') && s.zones.isUnlocked(b.region))
       if (pad) return { x: pad.x, y: pad.y }
     }
     if (g.type === 'collect') {
@@ -167,7 +167,7 @@ export class QuestManager {
     if (g.type === 'camp') {
       const live = s.camps.camps.filter(c => !c.destroyed)
       // prefer one you can walk to; fall back to naming the border in the way
-      const c = this.nearestCamp(live.filter(x => s.zones.isUnlocked(x.spec.zone)))
+      const c = this.nearestCamp(live.filter(x => s.zones.isUnlocked(x.spec.region)))
         ?? this.nearestCamp(live)
       if (c) return this.throughZone(c.spec.x, c.spec.y)
     }

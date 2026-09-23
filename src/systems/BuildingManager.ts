@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { Building } from '../entities/Building'
 import type { BuildingKey } from '../config/buildings'
-import { PADS, WALL_RING, type PadSpec } from '../config/map'
+import { PADS, WALL_RING, type PadSpec } from '../config/world'
 import { PAL } from '../config/palette'
 import { POP, PERF } from '../config/balance'
 import { Grid } from '../core/Grid'
@@ -144,17 +144,17 @@ export class BuildingManager {
     for (let x = left; x <= right; x += step) {
       for (const y of [top, bottom]) {
         if (gapNear(x, y)) continue
-        specs.push({ id: `wall${i++}`, key: 'wall', x, y, zone: 'hold' })
+        specs.push({ id: `wall${i++}`, key: 'wall', x, y, region: 'hold' })
       }
     }
     for (let y = top + step; y < bottom; y += step) {
       for (const x of [left, right]) {
         if (gapNear(x, y)) continue
-        specs.push({ id: `wall${i++}`, key: 'wall', x, y, zone: 'hold' })
+        specs.push({ id: `wall${i++}`, key: 'wall', x, y, region: 'hold' })
       }
     }
     for (const g of gates) {
-      specs.push({ id: g.id, key: 'gate', x: g.x, y: g.y, zone: 'hold' })
+      specs.push({ id: g.id, key: 'gate', x: g.x, y: g.y, region: 'hold' })
     }
     for (const s of specs) this.addPad(s)
   }
@@ -235,7 +235,7 @@ export class BuildingManager {
 
   /** A pad only shows once its zone is claimed and the hall is tall enough. */
   isPadAvailable(b: Building) {
-    if (!this.scene.zones.isUnlocked(b.zone)) return false
+    if (!this.scene.zones.isUnlocked(b.region)) return false
     const needHall = Math.max(b.requiresTownHall, b.def.requiresTownHall ?? 0)
     return this.townHallLevel >= needHall
   }
@@ -278,7 +278,7 @@ export class BuildingManager {
 
     if (b.key === 'farm' && b.level === 1 && !this.fielded.has(b.padId)) {
       this.fielded.add(b.padId)
-      this.scene.nodes.addField(b.x, b.y + 40, b.zone, 5)
+      this.scene.nodes.addField(b.x, b.y + 40, b.region, 5)
     }
     this.recomputeBonuses()
   }
@@ -501,7 +501,7 @@ export class BuildingManager {
 
     for (const b of this.buildings) {
       const rampart = b.key === 'wall' || b.key === 'gate'
-      const zoneOpen = this.scene.zones.isUnlocked(b.zone)
+      const zoneOpen = this.scene.zones.isUnlocked(b.region)
       const hallNeed = this.hallGate(b)
       const hallShort = this.townHallLevel < hallNeed
       const available = zoneOpen && !hallShort
@@ -998,7 +998,7 @@ export class BuildingManager {
       b.peakWorkers = Math.max(0, d.peakWorkers ?? 0)
       if (b.key === 'farm' && b.level > 0 && !this.fielded.has(b.padId)) {
         this.fielded.add(b.padId)
-        this.scene.nodes.addField(b.x, b.y + 40, b.zone, 5)
+        this.scene.nodes.addField(b.x, b.y + 40, b.region, 5)
       }
     }
     this.recomputeBonuses()
