@@ -35,14 +35,17 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S02: terrain chunks
 
-*Status: planned.*
+*Status: landed (S02). `TerrainChunks` at [src/world/TerrainChunks.ts:78](../../src/world/TerrainChunks.ts#L78), `paintTerrainRect` at [src/world/Terrain.ts:452](../../src/world/Terrain.ts#L452).*
 
-- `src/world/TerrainChunks.ts`:
-  - `new TerrainChunks(scene, painter, { chunk = 1024, scale = 0.5, maxResident = 24, bakeBudgetMs = 4, depth })`
-  - `.update(camera)` bakes chunks in view, plus a 1-chunk margin, nearest first, within the budget.
-  - `.invalidate(rect?)` re-bakes an area (for example, a claim tint changing).
-  - `.stats() → { resident, baked, queued }`.
-- `type ChunkPainter = (ctx: CanvasRenderingContext2D, wx: number, wy: number, size: number, scale: number) => void` paints world rect `[wx, wx+size) × [wy, wy+size)` into a canvas already scaled by `scale`. It must be deterministic per pixel (seeded by world position), so chunk edges match.
+- `src/world/TerrainChunks.ts` (type-only Phaser import; node-testable with a fake scene):
+  - `new TerrainChunks(scene, painter, { width, height, chunk = 1024, scale = 0.5, maxResident = 24, bakeBudgetMs = 4, depth, slice = 256, overdraw = 16 })`. `width`/`height` are the world's; edge chunks are cut to it.
+  - `.update(camera)` plans the chunks in view (nearest first), then a 1-chunk margin (nearest first, trimmed to `maxResident`), and bakes `slice`-px slices until the budget. A chunk shows only when whole. Call it every frame.
+  - `.prime(camera) → n` bakes every chunk in view synchronously. Call it after any camera jump (spawn now; fast travel in S11).
+  - `.invalidate(rect?: { x, y, width, height })` re-bakes the chunks it meets (all without a rect); the old texture stays up until the new one is whole.
+  - `.stats() → { resident, baked, queued, frameMs, worstFrameMs }`. `GameScene.stats.chunks` carries it to the F2 panel.
+  - `type ChunkCamera = Pick<Camera, 'scrollX' | 'scrollY' | 'width' | 'height' | 'zoom'>`.
+- `type ChunkPainter = (ctx, wx, wy, size, scale) => void` paints world rect `[wx, wx+size)²`. `ctx` arrives already transformed world px → canvas px (`scale`, origin at world 0,0) and clipped; strokes may land past the rect. It must be a pure function of world position and static config, so slices and chunks agree at every join.
+- `paintTerrainRect` in `src/world/Terrain.ts` is the painter. Its brushwork draws in texels at `S = 0.5` after `ctx.scale(1/S)`. Per-biome colour: `biomeAt` (which biome), `TONES` (palette per biome), `toneAt` (wash colour), `markAt` (per-biome marks). Scatter is dealt per 128 px cell with `strokeRng(cell, k, seed)`; set pieces (roads, plaza, camps, gates) are laid out once and drawn where their box meets the rect.
 
 ## S03: fog and culling
 

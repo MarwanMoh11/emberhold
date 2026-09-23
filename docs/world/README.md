@@ -61,7 +61,7 @@ In either case, stop at the **next checkpoint**: get tests and typecheck green, 
   | File | Tokens | File | Tokens |
   |---|---|---|---|
   | `art/buildings.ts` | 15k | `ui/HUD.ts` | 9k |
-  | `art/units.ts` | 13k | `world/Terrain.ts` | 7k (being replaced in S02) |
+  | `art/units.ts` | 13k | `world/Terrain.ts` | 7k (the painter since S02) |
   | `ui/skin.ts` | 11k | `ui/Minimap.ts` | 6k |
   | `systems/BuildingManager.ts` | 11k | `systems/EnemyManager.ts` | 6k |
   | `scenes/GameScene.ts` | 8k | `systems/WorkerManager.ts` | 5k |

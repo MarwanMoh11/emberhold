@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S02** ([card](sessions/S02-chunked-terrain.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S03** ([card](sessions/S03-fog-and-culling.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -21,6 +21,14 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s. Tuned in S20.
 
 ## Log
+
+### S02 · Chunked terrain: done (2026-09-23)
+- `paintTerrainRect(ctx, wx, wy, size, scale)` in `src/world/Terrain.ts` is the deterministic painter (ctx arrives world-transformed; brushwork in texels at S = 0.5). Per-biome colour is `biomeAt`/`TONES`/`toneAt`, per-biome marks `markAt`. Scatter is dealt per 128 px cell from `strokeRng(cell, k)`; roads, plaza, camp scorch and gates are laid out once. `buildTerrain` is gone; `buildVellumTexture` untouched.
+- `src/world/TerrainChunks.ts` streams 1024 px chunks per CONTRACTS §S02. GameScene constructs it where buildTerrain was, calls `prime(cam)` after centring on the hero, and `update(cam)` every frame (before the pause check). F2 shows held/queued/baked and bake ms.
+- Deviations: chunks bake in 256 px slices (a whole chunk is ~10 ms, over the 4 ms budget); added `prime()`, and `frameMs`/`worstFrameMs` in `stats()`. Textures go in with `textures.addImage`, since `addCanvas`'s CanvasTexture reads every pixel back (1-4 ms per chunk).
+- Old map check: 12 chunks, slices 0.7-1.7 ms, worst streaming frame 3.5 ms. Mean colour at hall, zone border and Ashgate is identical to before; per-pixel difference 3-5/255 (the scatter moved). The step across chunk borders is no larger than across any other column.
+- Trips: the painter still reads `WORLD` (balance) and `ZONES/PADS/CAMPS/SPAWN_GATES/WALL_RING` (map); S04 swaps those for the blueprint and gives the chunks the new world size. S03's Culler must not register the chunk Images, which TerrainChunks owns. Call `prime` after any camera jump.
+- No sprite needed absorbing: Terrain.ts drew none. The minimap never read the terrain texture, so nothing is left for S12. No new open decisions.
 
 ### S01 · Blueprint home: done (2026-09-23)
 - Branch `world-v2` created from `main` (df51e0f). `docs/world/` committed as "Chart the new frontier".
