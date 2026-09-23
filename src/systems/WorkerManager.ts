@@ -198,6 +198,7 @@ export class WorkerManager {
 
       let tx = w.x, ty = w.y
       let moving = true
+      let steered = false
 
       if (w.fleeT > 0) {
         w.fleeT -= dt
@@ -211,7 +212,9 @@ export class WorkerManager {
         const hall = scene.buildings.townHall
         const doorX = homeUp ? home!.x : hall.x + (w.id % 5 - 2) * 26
         const doorY = homeUp ? home!.y + 12 : hall.y + 58
-        tx = doorX; ty = doorY
+        // the door may be a river away now that hauls go to the depot: path to it
+        ;({ x: tx, y: ty } = this.steer(w, doorX, doorY, dt))
+        steered = true
         if (threat) {
           const ax = w.x - threat.x, ay = w.y - threat.y
           const ad = Math.hypot(ax, ay) || 1
@@ -323,8 +326,8 @@ export class WorkerManager {
         }
       }
 
-      // walk the long way round water and cliffs (S06); a bolt for the door stays straight
-      if (moving && w.fleeT <= 0) ({ x: tx, y: ty } = this.steer(w, tx, ty, dt))
+      // walk the long way round water and cliffs (S06)
+      if (moving && !steered) ({ x: tx, y: ty } = this.steer(w, tx, ty, dt))
       const dx = tx - w.x, dy = ty - w.y
       const d = Math.hypot(dx, dy)
       const speed = w.def.speed * (w.fleeT > 0 ? 1.6 : 1)
