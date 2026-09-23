@@ -1,0 +1,70 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { loadTs } from './load-ts.mjs'
+
+const W = await loadTs('src/config/world/index.ts')
+const BP = await loadTs('src/config/world/blueprint.ts')
+const { ENEMIES } = await loadTs('src/config/enemies.ts')
+
+const FUTURE = new Set(['outpost', 'fishery', 'tradingPost'])
+const regionIds = new Set(BP.REGIONS.map(r => r.id))
+
+test('the world is the blueprint size', () => {
+  assert.equal(W.WORLD.width, BP.WORLD2.width)
+  assert.equal(W.WORLD.height, BP.WORLD2.height)
+  assert.equal(W.raster().W, BP.WORLD2.width)
+  assert.equal(W.raster(), W.raster(), 'the raster is memoised')
+})
+
+test('counts match the blueprint', () => {
+  assert.equal(W.REGIONS.length, BP.REGIONS.length)
+  assert.equal(W.PADS.length + W.FUTURE_PADS.length, BP.PADS.length)
+  assert.equal(W.FUTURE_PADS.length, BP.PADS.filter(p => FUTURE.has(p.key)).length)
+  assert.ok(W.PADS.every(p => !FUTURE.has(p.key)))
+  assert.equal(W.CAMPS.length, BP.CAMPS.length)
+  assert.equal(W.NODE_CLUSTERS.length, BP.NODES.filter(n => n.type !== 'fish').length)
+  assert.equal(W.WALL_LINES.length, BP.WALLS.length)
+  assert.deepEqual(W.WALL_LINES.filter(l => l.active).map(l => l.id), ['palisade'])
+  W.REGIONS.forEach((r, i) => assert.equal(r.index, i))
+})
+
+test('every pad, camp and cluster names a region', () => {
+  for (const p of W.PADS) assert.ok(regionIds.has(p.region), `pad ${p.id}: ${p.region}`)
+  for (const c of W.CAMPS) assert.ok(regionIds.has(c.region), `camp ${c.id}: ${c.region}`)
+  for (const n of W.NODE_CLUSTERS) assert.ok(regionIds.has(n.region), `field at ${n.x},${n.y}: ${n.region}`)
+})
+
+test('the hall pad sits at HALL, pre-built', () => {
+  const hall = W.PADS.find(p => p.id === 'hall')
+  assert.ok(hall)
+  assert.deepEqual({ x: hall.x, y: hall.y }, W.HALL)
+  assert.equal(hall.key, 'townHall')
+  assert.equal(hall.startLevel, 1)
+  assert.equal(W.raster().regionAt(W.HALL.x, W.HALL.y), 'hold')
+})
+
+test('ids the game hardcodes still resolve', () => {
+  for (const id of ['hall', 'depot', 'lumber1']) assert.ok(W.PADS.some(p => p.id === id), id)
+  assert.ok(W.CAMPS.some(c => c.id === 'campAshgate'))
+})
+
+test('camp spawn keys resolve to enemies the game has', () => {
+  for (const c of W.CAMPS) assert.ok(ENEMIES[c.spawns.key], `${c.id}: ${c.spawns.key}`)
+  assert.equal(W.resolveSpawnKey('bogWretch[shield]'), 'shield')
+  assert.equal(W.resolveSpawnKey('grunt'), 'grunt')
+})
+
+test('the rampart ring is the palisade', () => {
+  const r = W.WALL_RING
+  assert.ok(r.left < W.HALL.x && W.HALL.x < r.right && r.top < W.HALL.y && W.HALL.y < r.bottom)
+  assert.equal(r.gates.length, 4)
+})
+
+test('the temporary night gates stand on land, outside the palisade', () => {
+  const r = W.raster()
+  assert.equal(W.SPAWN_GATES.length, 6)
+  for (const g of W.SPAWN_GATES) {
+    assert.ok(r.passable(r.cell(g.x, g.y)), `${g.id} at ${g.x},${g.y}`)
+    assert.ok(g.x < W.WALL_RING.left || g.x > W.WALL_RING.right || g.y < W.WALL_RING.top || g.y > W.WALL_RING.bottom, g.id)
+  }
+})
