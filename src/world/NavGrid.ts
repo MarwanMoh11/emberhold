@@ -16,10 +16,15 @@
  * Pure TypeScript, no Phaser: tests load it with loadTs.
  */
 import { NB8 } from './flow'
+import { Heap } from './heap'
+import { PathFinder, type PathStats, type PathTicket, type Pt } from './PathFind'
 import { T, type WorldRaster } from './raster'
 
 /** A built wall makes its cells this many times dearer to walk through. */
 export const WALL_COST = 40
+
+/** The hero, soldiers and workers move this much faster on a road cell. Never enemies. */
+export const ROAD_SPEED = 1.2
 
 /** The circle a walker collides with terrain by: half its body, at most 12 px, so it fits any crossing the fields use. */
 export const walkRadius = (bodyRadius: number): number => Math.min(bodyRadius * 0.5, 12)
@@ -66,47 +71,6 @@ export class FlowField {
   }
 }
 
-/** Min-heap of (cell, distance) in typed arrays. */
-class Heap {
-  k = new Int32Array(4096)
-  v = new Float32Array(4096)
-  size = 0
-  push(key: number, val: number): void {
-    if (this.size === this.k.length) {
-      const k = new Int32Array(this.size * 2); k.set(this.k); this.k = k
-      const v = new Float32Array(this.size * 2); v.set(this.v); this.v = v
-    }
-    const { k, v } = this
-    let i = this.size++
-    while (i > 0) {
-      const p = (i - 1) >> 1
-      if (v[p] <= val) break
-      k[i] = k[p]; v[i] = v[p]; i = p
-    }
-    k[i] = key; v[i] = val
-  }
-  /** Pops the top; its key and value are left in `top` / `topV`. */
-  top = 0
-  topV = 0
-  pop(): void {
-    const { k, v } = this
-    this.top = k[0]; this.topV = v[0]
-    const n = --this.size
-    if (!n) return
-    const lk = k[n], lv = v[n]
-    let i = 0
-    for (;;) {
-      const l = 2 * i + 1, rr = l + 1
-      let m = i, mv = lv
-      if (l < n && v[l] < mv) { m = l; mv = v[l] }
-      if (rr < n && v[rr] < mv) { m = rr; mv = v[rr] }
-      if (m === i) break
-      k[i] = k[m]; v[i] = v[m]; i = m
-    }
-    k[i] = lk; v[i] = lv
-  }
-}
-
 /** A field under construction. */
 interface Job {
   target: FieldTarget
@@ -121,6 +85,8 @@ export interface NavOpts {
   hall: { x: number; y: number }
   /** rebuild budget per tick, ms */
   sliceMs?: number
+  /** ally path queue budget per tick, ms */
+  pathMs?: number
   /** clock for slicing; defaults to performance.now */
   now?: () => number
 }
@@ -136,6 +102,8 @@ export interface NavStats {
   /** full rebuilds finished, and the wall time the last one took across its slices */
   rebuilds: number
   lastBuildMs: number
+  /** the ally path queue and cache (S06) */
+  paths: PathStats
 }
 
 export class NavGrid {
@@ -154,6 +122,8 @@ export class NavGrid {
   private readonly now: () => number
   private readonly hallCell: number
   private st = { frameMs: 0, worstFrameMs: 0, rebuilds: 0, lastBuildMs: 0 }
+  /** A* for allies (S06) */
+  readonly paths: PathFinder
 
   constructor(readonly r: WorldRaster, opts: NavOpts) {
     this.sliceMs = opts.sliceMs ?? 6
@@ -166,6 +136,7 @@ export class NavGrid {
       if (c.sealedUntil) this.sealedX[k] = 1
     })
     this.hallCell = this.nearestPassable(opts.hall.x, opts.hall.y)
+    this.paths = new PathFinder(this, { wallCost: WALL_COST, sliceMs: opts.pathMs ?? 2, now: this.now })
   }
 
   // ---- cells -------------------------------------------------------------
@@ -195,6 +166,17 @@ export class NavGrid {
   speedAt(x: number, y: number): number {
     const i = this.r.cell(x, y)
     return i < 0 ? 1 : 1 / this.r.slowCost(i)
+  }
+
+  /** A road runs over this cell. */
+  onRoad(x: number, y: number): boolean {
+    const i = this.r.cell(x, y)
+    return i >= 0 && this.r.road[i] === 1
+  }
+
+  /** `speedAt` with the road bonus: for the hero, soldiers and workers only. Enemies never use roads. */
+  allySpeedAt(x: number, y: number): number {
+    return this.speedAt(x, y) * (this.onRoad(x, y) ? ROAD_SPEED : 1)
   }
 
   /** The cell at (x, y) if passable, else the nearest passable one in rings out to 8 cells; -1 if none. */
@@ -305,6 +287,22 @@ export class NavGrid {
     return true
   }
 
+  // ---- ally paths (S06) ---------------------------------------------------------
+
+  /**
+   * An A* path now, start to goal inclusive, string-pulled; null past the
+   * node cap (walk straight). With `maxLen`, gives up once every path left is
+   * longer: a cheap "within reach?" check.
+   */
+  findPath(ax: number, ay: number, bx: number, by: number, maxLen?: number): Pt[] | null {
+    return this.paths.find(ax, ay, bx, by, maxLen)
+  }
+
+  /** Queue a path; `tick` works the queue within its budget. Poll `ticket.done`. */
+  requestPath(ax: number, ay: number, bx: number, by: number): PathTicket {
+    return this.paths.request(ax, ay, bx, by)
+  }
+
   // ---- flow fields ------------------------------------------------------------
 
   /** Source cells for a target: the hall's cell, or every cell of a crossing. */
@@ -339,6 +337,7 @@ export class NavGrid {
 
   /** Spend up to `sliceMs` (or `budgetMs`) on pending rebuilds. Call once per frame. */
   tick(budgetMs = this.sliceMs): void {
+    this.paths.tick(budgetMs === Infinity ? Infinity : undefined)
     if (!this.jobs.size) { this.st.frameMs = 0; return }
     const t0 = this.now()
     // the clock is read every 64 pops, and a browser clock is coarse: stop a little short
@@ -358,10 +357,11 @@ export class NavGrid {
   /** Run every pending rebuild to the end (tests, loads). */
   flush(): void {
     while (this.jobs.size) this.tick(Infinity)
+    this.paths.flush()
   }
 
   stats(): NavStats {
-    return { version: this.version, fields: this.fields.size, building: this.jobs.size, ...this.st }
+    return { version: this.version, fields: this.fields.size, building: this.jobs.size, ...this.st, paths: this.paths.stats() }
   }
 
   private startJob(target: FieldTarget): Job {
