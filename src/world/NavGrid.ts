@@ -21,6 +21,9 @@ import { T, type WorldRaster } from './raster'
 /** A built wall makes its cells this many times dearer to walk through. */
 export const WALL_COST = 40
 
+/** The circle a walker collides with terrain by: half its body, at most 12 px, so it fits any crossing the fields use. */
+export const walkRadius = (bodyRadius: number): number => Math.min(bodyRadius * 0.5, 12)
+
 export type FieldTarget = 'hall' | `via:${string}`
 
 /** NB8 index of the opposite step. */
@@ -338,7 +341,8 @@ export class NavGrid {
   tick(budgetMs = this.sliceMs): void {
     if (!this.jobs.size) { this.st.frameMs = 0; return }
     const t0 = this.now()
-    const deadline = t0 + budgetMs - 0.05 // the clock is read every 128 pops; stop just short
+    // the clock is read every 64 pops, and a browser clock is coarse: stop a little short
+    const deadline = t0 + budgetMs - 0.4
     for (const [target, job] of this.jobs) {
       if (job.version !== this.version) {
         const fresh = this.startJob(target)
@@ -375,7 +379,7 @@ export class NavGrid {
     const blockN = this.blockN
     let n = 0
     while (heap.size) {
-      if ((++n & 127) === 0 && this.now() > deadline) return false
+      if ((++n & 63) === 0 && this.now() > deadline) return false
       heap.pop()
       const i = heap.top, di = heap.topV
       if (di > d[i]) continue

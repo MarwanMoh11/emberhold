@@ -2,7 +2,8 @@ import Phaser from 'phaser'
 import { Soldier } from '../entities/Soldier'
 import { SOLDIERS, type SoldierKey } from '../config/units'
 import { PAL } from '../config/palette'
-import { WORLD } from '../config/balance'
+import { WORLD } from '../config/world'
+import { walkRadius } from '../world/NavGrid'
 import { clamp, rr } from '../core/math'
 import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
@@ -192,11 +193,13 @@ export class ArmyManager {
           n++
         }
       }
-      s.x += sx * 56 * dt
-      s.y += sy * 56 * dt
-
-      s.x = clamp(s.x + s.vx * dt, 20, WORLD.width - 20)
-      s.y = clamp(s.y + s.vy * dt, 20, WORLD.height - 20)
+      // terrain collision (S05): fords slow, banks stop. No pathing until S06, so a
+      // soldier chasing straight across a river snags on the bank.
+      const nav = scene.nav
+      const slow = nav.speedAt(s.x, s.y)
+      const p = nav.slide(s.x, s.y, sx * 56 * dt + s.vx * dt * slow, sy * 56 * dt + s.vy * dt * slow, walkRadius(s.radius))
+      s.x = clamp(p.x, 20, WORLD.width - 20)
+      s.y = clamp(p.y, 20, WORLD.height - 20)
       scene.buildings.resolveCollision(s)
       scene.allyGrid.insert(s)
 

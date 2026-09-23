@@ -2,7 +2,8 @@ import { Worker } from '../entities/Worker'
 import { WORKERS, WORKER_FOR, type WorkerKey } from '../config/units'
 import { PAL } from '../config/palette'
 import type { ResourceType } from '../core/types'
-import { WORLD } from '../config/balance'
+import { WORLD } from '../config/world'
+import { walkRadius } from '../world/NavGrid'
 import { clamp, rr } from '../core/math'
 import type { Building } from '../entities/Building'
 import type { GameScene } from '../scenes/GameScene'
@@ -346,8 +347,11 @@ export class WorkerManager {
       }
 
       const prevX = w.x, prevY = w.y
-      w.x = clamp(w.x + w.vx * dt, 20, WORLD.width - 20)
-      w.y = clamp(w.y + w.vy * dt, 20, WORLD.height - 20)
+      // terrain collision (S05); the detour below frees workers that snag on a bank
+      const slow = scene.nav.speedAt(w.x, w.y)
+      const p = scene.nav.slide(w.x, w.y, w.vx * dt * slow, w.vy * dt * slow, walkRadius(w.radius))
+      w.x = clamp(p.x, 20, WORLD.width - 20)
+      w.y = clamp(p.y, 20, WORLD.height - 20)
       scene.buildings.resolveCollision(w)
 
       if (wantsToMove) {

@@ -1,6 +1,7 @@
 import type Phaser from 'phaser'
 import { Pool } from '../core/Pool'
-import { PERF, WORLD } from '../config/balance'
+import { PERF } from '../config/balance'
+import { WORLD } from '../config/world'
 import type { Enemy } from '../entities/Enemy'
 import type { Targetable } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'

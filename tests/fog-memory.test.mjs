@@ -5,7 +5,7 @@ import { loadTs } from './load-ts.mjs'
 const { FogMemory } = await loadTs('src/core/FogMemory.ts')
 const { ZoneManager, FOG_SCALE } = await loadTs('src/systems/ZoneManager.ts')
 const { Minimap } = await loadTs('src/ui/Minimap.ts')
-const { WORLD } = await loadTs('src/config/balance.ts')
+const { WORLD } = await loadTs('src/config/world/index.ts')
 
 test('explored cells round trip in a compact save field', () => {
   const map = new FogMemory(256, 256)

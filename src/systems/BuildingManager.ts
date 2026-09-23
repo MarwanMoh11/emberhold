@@ -2,6 +2,10 @@ import Phaser from 'phaser'
 import { Building } from '../entities/Building'
 import type { BuildingKey } from '../config/buildings'
 import { PADS, WALL_RING, type PadSpec } from '../config/world'
+import { walkRadius } from '../world/NavGrid'
+
+/** Cells whose centre is this close to a built wall pad are walled: pads 62 px apart make one unbroken band. */
+const WALL_BLOCK_RADIUS = 40
 import { PAL } from '../config/palette'
 import { POP, PERF } from '../config/balance'
 import { Grid } from '../core/Grid'
@@ -280,6 +284,7 @@ export class BuildingManager {
       this.fielded.add(b.padId)
       this.scene.nodes.addField(b.x, b.y + 40, b.region, 5)
     }
+    this.syncNav(b)
     this.recomputeBonuses()
   }
 
@@ -433,8 +438,11 @@ export class BuildingManager {
       const ox = b.halfW + e.radius - Math.abs(dx)
       const oy = b.halfH * 0.7 + e.radius - Math.abs(dy)
       if (ox > 0 && oy > 0) {
-        if (ox < oy) e.x += dx > 0 ? ox : -ox
-        else e.y += dy > 0 ? oy : -oy
+        // pushed through the NavGrid, so a building by the shore never shoves anyone into the water
+        const p = ox < oy
+          ? this.scene.nav.slide(e.x, e.y, dx > 0 ? ox : -ox, 0, walkRadius(e.radius))
+          : this.scene.nav.slide(e.x, e.y, 0, dy > 0 ? oy : -oy, walkRadius(e.radius))
+        e.x = p.x; e.y = p.y
       }
     }
   }
@@ -488,7 +496,18 @@ export class BuildingManager {
     // A fortified Hall can lose an upgrade tier and keep fighting. Only the
     // final collapse ends the defense and offers a wave restart.
     if (b.key === 'townHall' && b.level === 0) this.scene.onCoreLost()
+    this.syncNav(b)
     this.recomputeBonuses()
+  }
+
+  /**
+   * A standing wall costs the horde WALL_COST to path through (S05), so the
+   * flow field goes by the gates, or through the cheapest wall when the ring
+   * is shut. Gates and other buildings never enter the NavGrid.
+   */
+  private syncNav(b: Building) {
+    if (b.key !== 'wall') return
+    this.scene.nav.setBlocker(b.padId, b.x, b.y, WALL_BLOCK_RADIUS, b.level > 0 && b.alive)
   }
 
   // ---- main loop -------------------------------------------------------
@@ -767,6 +786,7 @@ export class BuildingManager {
     b.hp = 0
     b.maxHp = 0
     b.alive = false
+    this.syncNav(b)
     b.state = 'empty'
     b.progress = {}
     b.committed = false
@@ -1001,6 +1021,7 @@ export class BuildingManager {
         this.scene.nodes.addField(b.x, b.y + 40, b.region, 5)
       }
     }
+    for (const b of this.buildings) this.syncNav(b)
     this.recomputeBonuses()
   }
 

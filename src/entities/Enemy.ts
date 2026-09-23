@@ -38,6 +38,8 @@ export class Enemy implements Targetable {
   retargetIn = 0
   /** true = smashes walls, false = tries to flow toward a gate */
   sapper = false
+  /** the straight line to the target is clear of water, cliffs and walls; else follow the hall's flow field (S05) */
+  los = false
 
   flashT = 0
   burnT = 0
@@ -88,6 +90,7 @@ export class Enemy implements Targetable {
     this.state = 'move'
     this.stunT = 0
     this.target = null
+    this.los = false
     this.retargetIn = Math.random() * 0.3
     this.sapper = def.prefers === 'structures' || Math.random() < 0.42
     this.flashT = 0

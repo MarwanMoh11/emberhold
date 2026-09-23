@@ -6,6 +6,7 @@ import type { PlayerStats } from '../config/upgrades'
 import { clamp, dist } from '../core/math'
 import { nextId } from '../core/ids'
 import { CarryStack } from './CarryStack'
+import { walkRadius } from '../world/NavGrid'
 import type { Targetable } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'
 
@@ -207,8 +208,12 @@ export class Player implements Targetable {
       this.moving = Math.hypot(this.vx, this.vy) > 24
     }
 
-    this.x = clamp(this.x + this.vx * dt, 24, WORLD.width - 24)
-    this.y = clamp(this.y + this.vy * dt, 24, WORLD.height - 24)
+    // terrain: fords slow, water and cliffs stop (slide along the edge)
+    const nav = this.scene.nav
+    const slow = nav.speedAt(this.x, this.y)
+    const p = nav.slide(this.x, this.y, this.vx * dt * slow, this.vy * dt * slow, walkRadius(this.radius))
+    this.x = clamp(p.x, 24, WORLD.width - 24)
+    this.y = clamp(p.y, 24, WORLD.height - 24)
 
     // push out of solid buildings
     this.scene.buildings.resolveCollision(this)

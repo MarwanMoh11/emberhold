@@ -18,6 +18,7 @@ import { REGIONS, WORLD } from '../config/world'
  *   H.reveal()           clear the fog everywhere
  *   H.where()            { x, y, region } of the hero
  *   H.world()            counts: size, regions claimed, pads, camps, nodes, enemies, chunks
+ *   H.nav()              NavGrid version and rebuild timings; walkers standing off the ground
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -163,5 +164,20 @@ export function installHarness(game: Phaser.Game) {
     }
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, reveal, where, world }
+  /** NavGrid state, and the walkers (enemies, troops, workers, hero) standing on impassable ground right now. */
+  const nav = () => {
+    const g = gs(); const n = g.nav
+    const off = (list: any[]) => list.filter(u => u.active !== false && u.alive && !n.passableAt(u.x, u.y)).length
+    return {
+      ...n.stats(),
+      offGround: {
+        enemies: off(g.enemies.list),
+        soldiers: off(g.army.soldiers ?? []),
+        workers: off(g.workers.workers ?? []),
+        hero: n.passableAt(g.player.x, g.player.y) ? 0 : 1,
+      },
+    }
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, reveal, where, world, nav }
 }

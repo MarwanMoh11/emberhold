@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { CAMERA, PLAYER, PICKUP } from '../config/balance'
 import { PAL } from '../config/palette'
-import { HALL, REGIONS, WORLD } from '../config/world'
+import { HALL, REGIONS, WORLD, raster } from '../config/world'
 import { ABILITY_KEYS } from '../config/abilities'
 import { clamp, dist, rr, short, srand } from '../core/math'
 import { Bus } from '../core/Events'
@@ -10,6 +10,8 @@ import { RESOURCE_ORDER, type Targetable } from '../core/types'
 import { paintTerrainRect } from '../world/Terrain'
 import { TerrainChunks } from '../world/TerrainChunks'
 import { Culler } from '../systems/Culler'
+import { NavGrid } from '../world/NavGrid'
+import { NavDebug } from '../world/NavDebug'
 
 import { Player } from '../entities/Player'
 import { ResourceManager } from '../systems/ResourceManager'
@@ -54,6 +56,9 @@ export class GameScene extends Phaser.Scene {
   terrain!: TerrainChunks
   /** Hides static world objects far outside the view; see Culler. */
   culler!: Culler
+  /** what walkers may stand on, and the horde's flow fields (S05) */
+  nav!: NavGrid
+  navDebug!: NavDebug
   fx!: EffectsManager
   res!: ResourceManager
   combat!: CombatSystem
@@ -128,6 +133,9 @@ export class GameScene extends Phaser.Scene {
 
     this.terrain = new TerrainChunks(this, paintTerrainRect, { width: WORLD.width, height: WORLD.height, depth: DEPTH.terrain })
     this.culler = new Culler()
+    this.nav = new NavGrid(raster(), { hall: HALL })
+    this.nav.field('hall')
+    this.navDebug = new NavDebug(this, this.nav)
 
     this.fx = new EffectsManager(this, DEPTH.fx)
     this.fx.quality = this.settings.quality
@@ -571,8 +579,10 @@ export class GameScene extends Phaser.Scene {
     this.now = time
     this.terrain.update(this.cameras.main)
     this.culler.update(this.cameras.main)
+    this.navDebug.update(this.cameras.main)
     if (this.paused) return
     const simStart = performance.now()
+    this.nav.tick()
     const dt = Math.min(0.05, delta / 1000)
 
     const kb = this.readKeyboard()
@@ -693,6 +703,7 @@ export class GameScene extends Phaser.Scene {
       projectiles: this.projectiles.activeCount,
       chunks: this.terrain.stats(),
       cull: this.culler.stats(),
+      nav: this.nav.stats(),
       maxPickups: PICKUP.maxActive,
       respawn: PLAYER.respawnSeconds,
     }

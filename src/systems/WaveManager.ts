@@ -1,6 +1,6 @@
 import { waveDef, directorAdjust, type WaveDef, type GateId } from '../config/waves'
-import { SPAWN_GATES, GATE_BY_ID } from '../config/world'
-import { DAYNIGHT, WORLD } from '../config/balance'
+import { SPAWN_GATES, GATE_BY_ID, WORLD } from '../config/world'
+import { DAYNIGHT } from '../config/balance'
 import { PAL } from '../config/palette'
 import { rr, ri, shuffled, clamp } from '../core/math'
 import type { EnemyKey } from '../config/enemies'

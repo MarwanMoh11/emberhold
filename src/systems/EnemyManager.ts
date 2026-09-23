@@ -1,10 +1,11 @@
 import Phaser from 'phaser'
 import { Enemy } from '../entities/Enemy'
 import { ENEMIES, type EnemyKey } from '../config/enemies'
-import { PERF, WORLD } from '../config/balance'
+import { PERF } from '../config/balance'
 import { MAX_ENEMIES } from '../core/device'
 import { PAL } from '../config/palette'
-import { WALL_RING } from '../config/world'
+import { WORLD } from '../config/world'
+import { walkRadius } from '../world/NavGrid'
 import { Grid } from '../core/Grid'
 import { clamp, rr } from '../core/math'
 import type { Targetable } from '../core/types'
@@ -45,7 +46,15 @@ export class EnemyManager {
       e = new Enemy(this.scene)
       this.list.push(e)
     }
-    e.spawn(def, clamp(x, 40, WORLD.width - 40), clamp(y, 40, WORLD.height - 40), hpMult, dmgMult)
+    x = clamp(x, 40, WORLD.width - 40)
+    y = clamp(y, 40, WORLD.height - 40)
+    const nav = this.scene.nav
+    if (!def.structure && !nav.passableAt(x, y)) {
+      // ring spawns and camp musters can land in water: stand on the nearest bank
+      const i = nav.nearestPassable(x, y)
+      if (i >= 0) [x, y] = nav.r.xy(i)
+    }
+    e.spawn(def, x, y, hpMult, dmgMult)
     this.aliveCount++
     if (def.boss) {
       this.bossRef = e
@@ -104,14 +113,23 @@ export class EnemyManager {
     return t
   }
 
-  private nearestGate(x: number, y: number) {
-    let best = WALL_RING.gates[0]
-    let bd = Infinity
-    for (const g of WALL_RING.gates) {
-      const d = (g.x - x) ** 2 + (g.y - y) ** 2
-      if (d < bd) { bd = d; best = g }
-    }
-    return best
+  /**
+   * Can e walk straight at t? The line stops short of t's body, so a wall
+   * you are aiming at does not hide itself.
+   */
+  private sight(e: Enemy, t: Targetable): boolean {
+    const dx = t.x - e.x, dy = t.y - e.y
+    const d = Math.hypot(dx, dy)
+    const stop = Math.min(d, t.radius + 24)
+    if (d - stop < 1) return true
+    return this.scene.nav.lineClear(e.x, e.y, t.x - (dx / d) * stop, t.y - (dy / d) * stop)
+  }
+
+  /** Aim at a wall and hold it for a while: the flow field said the way on is through it. */
+  private latch(e: Enemy, wall: Targetable) {
+    e.target = wall
+    e.los = true
+    e.retargetIn = Math.max(e.retargetIn, 1.5)
   }
 
   // ---- main loop -------------------------------------------------------
@@ -154,6 +172,8 @@ export class EnemyManager {
     }
 
     const combat = this.scene.combat
+    const nav = this.scene.nav
+    const hallField = nav.field('hall')
 
     for (let i = 0; i < list.length; i++) {
       const e = list[i]
@@ -179,8 +199,9 @@ export class EnemyManager {
       // knockback decay
       if (e.kx !== 0 || e.ky !== 0) {
         const d = Math.min(1, dt * 7.5)
-        e.x += e.kx * dt
-        e.y += e.ky * dt
+        const p = nav.slide(e.x, e.y, e.kx * dt, e.ky * dt, walkRadius(e.radius))
+        e.x = p.x
+        e.y = p.y
         e.kx -= e.kx * d
         e.ky -= e.ky * d
         if (Math.abs(e.kx) < 4) e.kx = 0
@@ -215,6 +236,7 @@ export class EnemyManager {
       if (e.retargetIn <= 0 || !e.target || !e.target.alive) {
         e.target = this.acquire(e)
         e.retargetIn = 0.35 + (e.id % 7) * 0.05
+        e.los = !!e.target && this.sight(e, e.target)
       }
 
       const t = e.target
@@ -248,25 +270,39 @@ export class EnemyManager {
         e.vy = -dy / d * 12
       } else {
         e.state = 'move'
-        const speedMul = e.auraSpeed * (e.slowT > 0 ? 0.55 : 1) * (e.chargeT > 0 ? 2.6 : 1)
+        const speedMul = e.auraSpeed * (e.slowT > 0 ? 0.55 : 1) * (e.chargeT > 0 ? 2.6 : 1) * nav.speedAt(e.x, e.y)
         let mx = dx / d
         let my = dy / d
 
-        // walls: sappers smash, the rest flow toward a gap
+        if (!e.los) {
+          // no straight line: take the hall's flow field, over the crossings and
+          // through the gates. If its next cell is a wall, that wall is the way on.
+          const j = hallField.nextCell(nav.r.cell(e.x, e.y))
+          if (j >= 0) {
+            const [cx, cy] = nav.r.xy(j)
+            if (nav.blocked(j)) {
+              const wall = this.scene.buildings.blockerAt(cx, cy, nav.r.C / 2)
+              if (wall && wall.id !== t.id) this.latch(e, wall)
+            }
+            if (!e.los) {
+              const fx = cx - e.x, fy = cy - e.y
+              const fl = Math.hypot(fx, fy) || 1
+              mx = fx / fl; my = fy / fl
+            }
+          }
+        }
+
+        // buildings in the way: sappers smash walls, everyone smashes the rest;
+        // a wall across a straight line sends the walker back to the field
         const nx = e.x + mx * e.radius * 2.2
         const ny = e.y + my * e.radius * 2.2
         const blocker = this.scene.buildings.blockerAt(nx, ny, e.radius)
-        if (blocker && blocker.id !== t.id) {
+        if (blocker && blocker.id !== e.target?.id) {
           if (e.sapper || blocker.key !== 'wall') {
             e.target = blocker
-          } else {
-            const g = this.nearestGate(e.x, e.y)
-            const gx = g.x - e.x, gy = g.y - e.y
-            const gd = Math.hypot(gx, gy) || 1
-            mx = mx * 0.25 + (gx / gd) * 0.9
-            my = my * 0.25 + (gy / gd) * 0.9
-            const ml = Math.hypot(mx, my) || 1
-            mx /= ml; my /= ml
+            e.los = true
+          } else if (e.los) {
+            e.los = false
           }
         }
 
@@ -293,13 +329,9 @@ export class EnemyManager {
           sy += (oy / dd) * push
         }
       }
-      if (sx !== 0 || sy !== 0) {
-        e.x += sx * 62 * dt
-        e.y += sy * 62 * dt
-      }
-
-      e.x = clamp(e.x + e.vx * dt, 20, WORLD.width - 20)
-      e.y = clamp(e.y + e.vy * dt, 20, WORLD.height - 20)
+      const p = nav.slide(e.x, e.y, sx * 62 * dt + e.vx * dt, sy * 62 * dt + e.vy * dt, walkRadius(e.radius))
+      e.x = clamp(p.x, 20, WORLD.width - 20)
+      e.y = clamp(p.y, 20, WORLD.height - 20)
 
       if (Math.abs(e.vx) > 6) e.facing = e.vx > 0 ? 1 : -1
       if (e.key === 'cinderRegent' && this.frame % 10 === 0
@@ -338,8 +370,9 @@ export class EnemyManager {
   // ---- boss behaviour ---------------------------------------------------
   private moveBossCharge(e: Enemy, dt: number) {
     e.chargeT = Math.max(0, e.chargeT - dt)
-    e.x = clamp(e.x + e.chargeVX * dt, 20, WORLD.width - 20)
-    e.y = clamp(e.y + e.chargeVY * dt, 20, WORLD.height - 20)
+    const p = this.scene.nav.slide(e.x, e.y, e.chargeVX * dt, e.chargeVY * dt, walkRadius(e.radius))
+    e.x = clamp(p.x, 20, WORLD.width - 20)
+    e.y = clamp(p.y, 20, WORLD.height - 20)
     const near = this.scene.allyGrid.query(e.x, e.y, e.radius + 48, [])
     for (const ally of near) {
       if (e.chargeHits.has(ally.id) || Math.hypot(ally.x - e.x, ally.y - e.y) > e.radius + ally.radius + 8) continue

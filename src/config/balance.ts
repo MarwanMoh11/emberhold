@@ -1,8 +1,5 @@
 /** Global tuning. Nothing gameplay-critical should be hardcoded outside config/. */
 
-/** Moved to config/world in S04. Re-exported for one card only: S05 removes this line. */
-export { WORLD } from './world'
-
 export const PLAYER = {
   maxHp: 200,
   damage: 20,
