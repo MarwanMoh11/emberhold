@@ -7,7 +7,8 @@ import { clamp, dist, rr, short, srand } from '../core/math'
 import { Bus } from '../core/Events'
 import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type Targetable } from '../core/types'
-import { buildTerrain } from '../world/Terrain'
+import { paintTerrainRect } from '../world/Terrain'
+import { TerrainChunks } from '../world/TerrainChunks'
 
 import { Player } from '../entities/Player'
 import { ResourceManager } from '../systems/ResourceManager'
@@ -49,6 +50,7 @@ export interface InputVector { x: number; y: number }
 export class GameScene extends Phaser.Scene {
   bus!: Bus
   audio!: AudioManager
+  terrain!: TerrainChunks
   fx!: EffectsManager
   res!: ResourceManager
   combat!: CombatSystem
@@ -121,7 +123,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height)
     this.physics?.world?.setBounds(0, 0, WORLD.width, WORLD.height)
 
-    buildTerrain(this, DEPTH.terrain)
+    this.terrain = new TerrainChunks(this, paintTerrainRect, { width: WORLD.width, height: WORLD.height, depth: DEPTH.terrain })
 
     this.fx = new EffectsManager(this, DEPTH.fx)
     this.fx.quality = this.settings.quality
@@ -181,6 +183,8 @@ export class GameScene extends Phaser.Scene {
 
     this.player.container.setPosition(this.player.x, this.player.y)
     cam.centerOn(this.player.x, this.player.y)
+    // everything on screen at spawn is baked before the first frame; the rest streams in
+    this.terrain.prime(cam)
     this.zones.update(0)
     if (this.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)) {
       this.scheduleFinalBoss()
@@ -561,6 +565,7 @@ export class GameScene extends Phaser.Scene {
   // ---- main loop --------------------------------------------------------
   update(time: number, delta: number) {
     this.now = time
+    this.terrain.update(this.cameras.main)
     if (this.paused) return
     const simStart = performance.now()
     const dt = Math.min(0.05, delta / 1000)
@@ -681,6 +686,7 @@ export class GameScene extends Phaser.Scene {
       workers: this.workers.count,
       pickups: this.pickups.activeCount,
       projectiles: this.projectiles.activeCount,
+      chunks: this.terrain.stats(),
       maxPickups: PICKUP.maxActive,
       respawn: PLAYER.respawnSeconds,
     }

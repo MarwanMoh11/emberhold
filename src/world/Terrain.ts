@@ -471,15 +471,6 @@ export function paintTerrainRect(x: Ctx, wx: number, wy: number, size: number, s
   x.restore()
 }
 
-/** The whole world in one texture, painted by the same painter. */
-export function buildTerrain(scene: Phaser.Scene, depth: number) {
-  const [canvas, x] = makeCanvas(WORLD.width * S, WORLD.height * S)
-  x.scale(S, S)
-  paintTerrainRect(x, 0, 0, Math.max(WORLD.width, WORLD.height), S)
-  register(scene, 'terrain', canvas)
-  return scene.add.image(0, 0, 'terrain').setOrigin(0, 0).setScale(1 / S).setDepth(depth)
-}
-
 // ---- the unexplored: blank vellum with a cartographer's sketch -------------------------
 
 /**
