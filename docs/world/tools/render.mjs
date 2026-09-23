@@ -10,8 +10,8 @@
  *   --no-svg · --svg <path> · --labels (label every pad) · --blueprint <path>
  *
  * Output is deliberately terse. Implementing sessions run this instead of
- * reading the ~60KB blueprint into their context. The raster here is the
- * reference for what src/world/NavGrid must produce (docs/world/sessions).
+ * reading the ~60KB blueprint into their context. The raster and pathing are
+ * src/world/raster.ts and src/world/flow.ts, the same modules the game uses.
  */
 import { existsSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -19,6 +19,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadTs } from '../../../tests/load-ts.mjs'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
+
+// The raster, geometry and pathing are the game's own modules (src/world),
+// so the lint and the game can't disagree about what is passable.
+const {
+  T, TNAME, hyp, inPoly, distToPolyline, polyArea, polyCentroid, samplePolyline, rasterise, blockedWithin,
+} = await loadTs(resolve(ROOT, 'src/world/raster.ts'))
+const { NB8, step, flowField, descend, nearestPassable } = await loadTs(resolve(ROOT, 'src/world/flow.ts'))
+export { inPoly, rasterise, flowField }
 
 // ---------------------------------------------------------------------------
 // Rules. Numbers the lint enforces; DESIGN docs quote them.
@@ -41,284 +49,17 @@ const PRODUCTION = new Set(['lumberCamp', 'farm', 'quarry', 'mine', 'fishery', '
 const DEFENCE = new Set(['watchtower', 'cannonTower'])
 const NEEDS = { lumberCamp: 'tree', quarry: 'rock', mine: 'ore', crystalDelve: 'crystal', fishery: 'fish' }
 
-const T = { LAND: 0, SEA: 1, WATER: 2, CLIFF: 3, LAVA: 4 }
-const TNAME = ['land', 'sea', 'water', 'cliff', 'lava']
-
-// ---------------------------------------------------------------------------
-// Geometry
-// ---------------------------------------------------------------------------
-
-const hyp = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by)
-
-function segProj(px, py, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay
-  const L2 = dx * dx + dy * dy
-  const t = L2 ? ((px - ax) * dx + (py - ay) * dy) / L2 : 0
-  const tc = Math.max(0, Math.min(1, t))
-  return { t, tc, d: Math.hypot(px - (ax + tc * dx), py - (ay + tc * dy)) }
-}
-
-export function inPoly(x, y, poly) {
-  let inside = false
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j]
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
-  }
-  return inside
-}
-
-function distToPolyline(x, y, pts, closed = false) {
-  let best = Infinity
-  const n = closed ? pts.length : pts.length - 1
-  for (let i = 0; i < n; i++) {
-    const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length]
-    best = Math.min(best, segProj(x, y, ax, ay, bx, by).d)
-  }
-  return best
-}
-
-function polyArea(poly) {
-  let a = 0
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) a += (poly[j][0] + poly[i][0]) * (poly[j][1] - poly[i][1])
-  return Math.abs(a / 2)
-}
-
-function polyCentroid(poly) {
-  let x = 0, y = 0, a = 0
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const f = poly[j][0] * poly[i][1] - poly[i][0] * poly[j][1]
-    x += (poly[j][0] + poly[i][0]) * f
-    y += (poly[j][1] + poly[i][1]) * f
-    a += f
-  }
-  return [x / (3 * a), y / (3 * a)]
-}
-
-/** Points every `step` px along a polyline. */
-function samplePolyline(pts, step, closed = false) {
-  const out = []
-  const n = closed ? pts.length : pts.length - 1
-  for (let i = 0; i < n; i++) {
-    const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length]
-    const L = hyp(ax, ay, bx, by)
-    const k = Math.max(1, Math.round(L / step))
-    for (let s = 0; s < k; s++) out.push([ax + ((bx - ax) * s) / k, ay + ((by - ay) * s) / k])
-  }
-  if (!closed) out.push(pts[pts.length - 1])
-  return out
-}
-
 // ---------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------
 
 export async function loadBlueprint(path) {
-  const candidates = path ? [path] : ['src/config/world/blueprint.ts', 'docs/world/blueprint.ts']
+  const candidates = path ? [path] : ['src/config/world/blueprint.ts']
   for (const c of candidates) {
     const abs = resolve(ROOT, c)
     if (existsSync(abs)) return { bp: await loadTs(abs), path: c }
   }
   throw new Error(`blueprint not found (tried ${candidates.join(', ')})`)
-}
-
-// ---------------------------------------------------------------------------
-// Raster: terrain, crossings and regions at navCell resolution
-// ---------------------------------------------------------------------------
-
-export function rasterise(bp) {
-  const { width: W, height: H, navCell: C } = bp.WORLD2
-  const GW = Math.ceil(W / C), GH = Math.ceil(H / C), N = GW * GH
-  const terrain = new Uint8Array(N)
-  const crossing = new Int16Array(N).fill(-1)
-  const region = new Int8Array(N).fill(-1)
-  const F = bp.FEATURES
-  const crossings = F.crossings
-
-  const paint = (x0, y0, x1, y1, fn) => {
-    const gx0 = Math.max(0, Math.floor(x0 / C)), gy0 = Math.max(0, Math.floor(y0 / C))
-    const gx1 = Math.min(GW - 1, Math.floor(x1 / C)), gy1 = Math.min(GH - 1, Math.floor(y1 / C))
-    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) fn(gy * GW + gx, gx * C + C / 2, gy * C + C / 2)
-  }
-  const bbox = pts => {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-    for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y) }
-    return [x0, y0, x1, y1]
-  }
-  const polygon = (poly, fn) => { const [x0, y0, x1, y1] = bbox(poly); paint(x0, y0, x1, y1, (i, x, y) => { if (inPoly(x, y, poly)) fn(i) }) }
-  const band = (pts, code) => {
-    for (let s = 0; s < pts.length - 1; s++) {
-      const [ax, ay, aw] = pts[s], [bx, by, bw] = pts[s + 1]
-      const m = Math.max(aw, bw) / 2 + C
-      paint(Math.min(ax, bx) - m, Math.min(ay, by) - m, Math.max(ax, bx) + m, Math.max(ay, by) + m, (i, x, y) => {
-        const p = segProj(x, y, ax, ay, bx, by)
-        if (p.d < (aw + (bw - aw) * p.tc) / 2) terrain[i] = code
-      })
-    }
-  }
-  const ellipse = (cx, cy, rx, ry, fn) => paint(cx - rx, cy - ry, cx + rx, cy + ry, (i, x, y) => {
-    const q = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2
-    fn(i, q)
-  })
-
-  bp.REGIONS.forEach((r, k) => polygon(r.poly, i => { region[i] = k }))
-  polygon(F.sea, i => { terrain[i] = T.SEA })
-  for (const r of F.rivers) band(r.pts, T.WATER)
-  for (const l of F.lakes) {
-    ellipse(l.cx, l.cy, l.rx, l.ry, (i, q) => { if (q < 1) terrain[i] = T.WATER })
-    if (l.isle) ellipse(l.isle.cx, l.isle.cy, l.isle.r, l.isle.r, (i, q) => { if (q < 1) terrain[i] = T.LAND })
-  }
-  for (const c of F.cliffs) band(c.pts.map(([x, y]) => [x, y, c.thickness]), T.CLIFF)
-  for (const r of F.lava.rivers) band(r.pts, T.LAVA)
-  const cal = F.lava.caldera
-  paint(cal.cx - cal.outer, cal.cy - cal.outer, cal.cx + cal.outer, cal.cy + cal.outer, (i, x, y) => {
-    const d = hyp(x, y, cal.cx, cal.cy)
-    if (d < cal.outer && d >= cal.inner) terrain[i] = T.LAVA
-  })
-  for (const p of F.lava.pools) ellipse(p.cx, p.cy, p.rx, p.ry, (i, q) => { if (q < 1) terrain[i] = T.LAVA })
-
-  const under = terrain.slice()
-  crossings.forEach((c, k) => {
-    const [ax, ay] = c.a, [bx, by] = c.b
-    const m = c.width / 2 + C
-    paint(Math.min(ax, bx) - m, Math.min(ay, by) - m, Math.max(ax, bx) + m, Math.max(ay, by) + m, (i, x, y) => {
-      const p = segProj(x, y, ax, ay, bx, by)
-      if (p.d < c.width / 2 && p.t >= -0.02 && p.t <= 1.02) { crossing[i] = k; terrain[i] = T.LAND }
-    })
-  })
-
-  const r = {
-    W, H, C, GW, GH, N, terrain, under, crossing, region, bp,
-    cell: (x, y) => {
-      const gx = Math.floor(x / C), gy = Math.floor(y / C)
-      return gx < 0 || gy < 0 || gx >= GW || gy >= GH ? -1 : gy * GW + gx
-    },
-    xy: i => [(i % GW) * C + C / 2, Math.floor(i / GW) * C + C / 2],
-    /** sealed: treat sealedUntil crossings as still closed */
-    passable(i, sealed = false) {
-      if (i < 0 || terrain[i] !== T.LAND) return false
-      if (sealed && crossing[i] >= 0 && crossings[crossing[i]].sealedUntil && under[i] !== T.LAND) return false
-      return true
-    },
-    /** cost multiplier: fords slow you while you are in the water */
-    slowCost(i) {
-      const k = crossing[i]
-      if (k < 0 || under[i] === T.LAND) return 1
-      const s = crossings[k].slow
-      return s ? 1 / s : 1
-    },
-  }
-  r.regionAt = (x, y) => { for (const g of bp.REGIONS) if (inPoly(x, y, g.poly)) return g.id; return null }
-  return r
-}
-
-// ---------------------------------------------------------------------------
-// Pathing: an 8-way Dijkstra flow field toward the hall, like the game's
-// planned NavGrid. No corner cutting.
-// ---------------------------------------------------------------------------
-
-const NB8 = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]]
-
-class Heap {
-  constructor() { this.k = []; this.v = [] }
-  get size() { return this.k.length }
-  push(key, val) {
-    const { k, v } = this
-    let i = k.length
-    k.push(key); v.push(val)
-    while (i > 0) {
-      const p = (i - 1) >> 1
-      if (v[p] <= val) break
-      k[i] = k[p]; v[i] = v[p]; i = p
-    }
-    k[i] = key; v[i] = val
-  }
-  pop() {
-    const { k, v } = this
-    const topK = k[0], topV = v[0]
-    const lk = k.pop(), lv = v.pop()
-    if (k.length) {
-      let i = 0
-      for (;;) {
-        const l = 2 * i + 1, rr = l + 1
-        let m = i, mv = lv
-        if (l < k.length && v[l] < mv) { m = l; mv = v[l] }
-        if (rr < k.length && v[rr] < mv) { m = rr; mv = v[rr] }
-        if (m === i) break
-        k[i] = k[m]; v[i] = v[m]; i = m
-      }
-      k[i] = lk; v[i] = lv
-    }
-    return [topK, topV]
-  }
-}
-
-function step(r, i, dx, dy, sealed) {
-  const gx = i % r.GW, gy = Math.floor(i / r.GW)
-  const nx = gx + dx, ny = gy + dy
-  if (nx < 0 || ny < 0 || nx >= r.GW || ny >= r.GH) return -1
-  const j = ny * r.GW + nx
-  if (!r.passable(j, sealed)) return -1
-  if (dx && dy && (!r.passable(gy * r.GW + nx, sealed) || !r.passable(ny * r.GW + gx, sealed))) return -1
-  return j
-}
-
-export function flowField(r, sources, sealed = false) {
-  const d = new Float64Array(r.N).fill(Infinity)
-  const h = new Heap()
-  for (const s of sources) if (s >= 0) { d[s] = 0; h.push(s, 0) }
-  while (h.size) {
-    const [i, di] = h.pop()
-    if (di > d[i]) continue
-    for (const [dx, dy, c] of NB8) {
-      const j = step(r, i, dx, dy, sealed)
-      if (j < 0) continue
-      const nd = di + c * r.C * r.slowCost(j)
-      if (nd < d[j]) { d[j] = nd; h.push(j, nd) }
-    }
-  }
-  return d
-}
-
-function nearestPassable(r, x, y, sealed = false) {
-  const c = r.cell(x, y)
-  if (r.passable(c, sealed)) return c
-  for (let rad = 1; rad <= 8; rad++) {
-    for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
-      if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue
-      const j = r.cell(x + dx * r.C, y + dy * r.C)
-      if (r.passable(j, sealed)) return j
-    }
-  }
-  return -1
-}
-
-/** distance from (x,y) to the nearest impassable cell centre, searching `max` px */
-function blockedWithin(r, x, y, max) {
-  let best = Infinity
-  const k = Math.ceil(max / r.C)
-  for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) {
-    const i = r.cell(x + dx * r.C, y + dy * r.C)
-    if (i < 0 || r.terrain[i] === T.LAND) continue
-    const [cx, cy] = r.xy(i)
-    best = Math.min(best, Math.max(0, hyp(x, y, cx, cy) - r.C / 2))
-  }
-  return best
-}
-
-function descend(r, field, from, sealed) {
-  const path = [from]
-  let i = from
-  for (let guard = 0; guard < 20000 && field[i] > 0; guard++) {
-    let best = -1, bv = field[i]
-    for (const [dx, dy] of NB8) {
-      const j = step(r, i, dx, dy, sealed)
-      if (j >= 0 && field[j] < bv) { bv = field[j]; best = j }
-    }
-    if (best < 0) break
-    path.push(best)
-    i = best
-  }
-  return path
 }
 
 // ---------------------------------------------------------------------------
@@ -540,13 +281,13 @@ export function lint(bp, r) {
 
 export function approachRoutes(bp, r) {
   const hall = bp.PADS.find(p => p.id === 'hall')
-  const field = flowField(r, [r.cell(hall.x, hall.y)], true)
+  const field = flowField(r, [r.cell(hall.x, hall.y)], { sealed: true })
   const viaFields = new Map()
   const viaField = id => {
     if (!viaFields.has(id)) {
       const c = bp.FEATURES.crossings.find(q => q.id === id)
-      const mid = nearestPassable(r, (c.a[0] + c.b[0]) / 2, (c.a[1] + c.b[1]) / 2, true)
-      viaFields.set(id, { f: flowField(r, [mid], true), mid })
+      const mid = nearestPassable(r, (c.a[0] + c.b[0]) / 2, (c.a[1] + c.b[1]) / 2, { sealed: true })
+      viaFields.set(id, { f: flowField(r, [mid], { sealed: true }), mid })
     }
     return viaFields.get(id)
   }
@@ -556,15 +297,15 @@ export function approachRoutes(bp, r) {
   for (const a of bp.APPROACHES) {
     a.chain.forEach((id, k) => {
       const src = campById[id] ?? mawById[id]
-      const start = nearestPassable(r, src.x, src.y, true)
+      const start = nearestPassable(r, src.x, src.y, { sealed: true })
       if (start < 0 || field[start] === Infinity) { routes.push({ approach: a.id, k, id, error: 'no path to the hall' }); return }
       let cells = [start]
       for (const v of a.via ?? []) {
         const { f } = viaField(v)
         if (f[cells.at(-1)] === Infinity) break
-        cells = cells.concat(descend(r, f, cells.at(-1), true).slice(1))
+        cells = cells.concat(descend(r, f, cells.at(-1), { sealed: true }).slice(1))
       }
-      cells = cells.concat(descend(r, field, cells.at(-1), true).slice(1))
+      cells = cells.concat(descend(r, field, cells.at(-1), { sealed: true }).slice(1))
       let len = 0, toHold = null
       const crossings = [], regions = []
       for (let s = 0; s < cells.length; s++) {
