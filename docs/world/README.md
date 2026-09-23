@@ -51,7 +51,7 @@ Assume about 35k is gone before you start (system prompt and tools). Plan the re
 In either case, stop at the **next checkpoint**: get tests and typecheck green, commit, write a *partial* handoff, and end. A clean partial is worth more than a heroic finish that runs out mid-edit.
 
 **Reading rules** (these carry most of the budget):
-- **Never read [blueprint.ts](blueprint.ts) whole** (~17k tokens). Ask the tool instead:
+- **Never read [blueprint.ts](../../src/config/world/blueprint.ts) whole** (~17k tokens). Ask the tool instead:
   - `node docs/world/tools/render.mjs --region <id>` for one region's pads, camps, fields, POIs and borders, in about 400 tokens.
   - `--at x,y` for what is at a point.
   - `--borders` for how regions connect.
@@ -99,7 +99,7 @@ In either case, stop at the **next checkpoint**: get tests and typecheck green, 
 |---|---|---|
 | [STATUS.md](STATUS.md) | The ledger: next session, handoffs, decisions | every session |
 | [CONTRACTS.md](CONTRACTS.md) | APIs, events and save fields that pass between sessions | sessions that use earlier work |
-| [blueprint.ts](blueprint.ts) | **The layout**: every region, crossing, pad, camp, field and POI, with the reason it is there. Moves to `src/config/world/blueprint.ts` in S01 | through the tool, never whole |
+| [src/config/world/blueprint.ts](../../src/config/world/blueprint.ts) | **The layout**: every region, crossing, pad, camp, field and POI, with the reason it is there. Moved from `docs/world/` in S01 | through the tool, never whole |
 | [tools/render.mjs](tools/render.mjs) | Rasterises, lints, routes the night approaches, and draws `map.svg` | run it; don't read it |
 | [map.svg](map.svg) | The atlas: regions, terrain, roads, pads, camps, POIs, night routes and the old world to scale | humans |
 | [design/](design/) | The design, one topic per file (below) | the sections your card names |

@@ -5,10 +5,10 @@
  * river, cliff, road, crossing, build pad, warcamp, resource field and point
  * of interest, with the reason it sits where it does.
  *
- * This file is deliberately self-contained (no imports from src/) so the
- * render/lint tool in docs/world/tools can load it on its own. Phase 0 moves
- * it to src/config/world/blueprint.ts and types it against the game's real
- * BuildingKey / EnemyKey unions; from then on that copy is the only copy.
+ * This file is deliberately self-contained (no imports) so the render/lint
+ * tool in docs/world/tools can load it on its own. It is the only copy.
+ * src/config/world/check.ts pins PadKey and the camp spawn keys against the
+ * game's BuildingKey / EnemyKey unions at compile time.
  *
  * Units are world pixels, origin top-left, y down — the same space as
  * src/config/map.ts today. The old world was 3400 x 2800; this one is
