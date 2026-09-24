@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S09b, resume at C3** ([card](sessions/S09b-walls-and-panels.md); S09b partial: done through C2), then S10 · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S10** ([card](sessions/S10-camps-and-lines.md)), then S11 · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -25,13 +25,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
-### S09b · Walls and panels: partial, done through C2 (2026-09-24)
-- C1: `src/world/wallLine.ts` (pure): `layWallLine`, `capDiscs`, `legacyRingPads`. The palisade is 92 pads: `palisade.0`–`palisade.87` (76 runs, 12 posts on the corners and jambs) plus gateN/E/S/W. `generateWalls` lays every active `WALL_LINES` entry; `PadSpec.piece`; `NavGrid.setBlockerDiscs` (capsules, discs every 16 px, r 28); `Building.boxDy/boxHW/boxHH` centred on the line for `blockerAt`/`resolveCollision`. API in CONTRACTS §S09b.
-- C2: horizontal runs 72 px wide; `bld_wall_v_*`, `bld_wallpost_*`, `bld_gate_v_*`, chalk `blueprint_wall_v/_wallpost/_gate_v`; `textureFoot` seats every building image; posts draw over run ends (depth y + 33).
-- Verify: `tests/wall-line.test.mjs` (every `WALLS` line) green. `H.wallGaps('palisade')`: 0 nav and 0 body leaks at L1 and L3, and after loading a save with 66 old `wall\d+` ids at L1 and at L3 (92/92 built). `H.assault` grunts from N, E, W and NE, 45 s each through wave 1: each struck a gate or piece, none got in, none broke one. Saves restored byte-identical; viewport untouched.
-- Deviations: capsules keep 48 px straight-line from a gate's centre (discs on the jambs walled every gate shut, and gatePass sits on a V bend). The remap is piece-centric: each new piece takes the nearest old pad within 72 px, 128 px beside a gate (the old layout left none within 96 px). Enemies still have no hard wall collision (steering and the field only), as before.
-- Trips: screenshot 1 (1×, NW corner at L1) read as one turned wall; two more after `H.tp` came back with the canvas at quarter size, so the L2/L3 turned art and the gateW join are **unchecked by eye**: look first on resume. The minimap still draws the ring from `WALL_RING`.
-- Stopped at the README's context rule. C3 (DOCK, DockSheet, CostChips, StatLine, compact PlateButton) and C4 (panels on the dock, camera offset, stone card, `H.panel`) remain. No blueprint moves, no new open decisions.
+### S09b · Walls and panels: done (2026-09-24)
+- C1–C2 (walls): `src/world/wallLine.ts` (`layWallLine`, `capDiscs`, `legacyRingPads`). The palisade is 92 pads: `palisade.0`–`palisade.87` (76 runs, 12 posts on corners and jambs) plus gateN/E/S/W. NavGrid capsules via `setBlockerDiscs` (discs every 16 px, r 28); `Building.boxDy/boxHW/boxHH`; end-on `bld_wall_v_*`, `bld_wallpost_*`, side-on `bld_gate_v_*`. Old `wall\d+` saves remap to the nearest piece. `H.wallGaps`: 0 nav and 0 body leaks at L1 and L3, and after an old-id load; `H.assault` from N, E, W and NE never got in unbroken.
+- C3 (`f0cb901`): `src/ui/dock.ts`, re-exported by skin: `DOCK`, `DockSheet` (a bottom sheet in portrait, a right column otherwise; collapsed or expanded, remembered per page session; publishes `uiBands.dock`), `CostChips`, `StatLine`, compact `PlateButton`. The camera eases toward the dock's `focus` and back.
+- C4: `BuildingPanel` draws the unchanged `PanelView` into a DockSheet (header: title and UPGRADE, or the funding bar on a site; body: stat, cost chips, unit chips, hint, hold-to-demolish). The border stone's card is its own sheet within 220 px of the stone, and the world label is just the name. `H.panel()`, `H.tap()`. API in CONTRACTS §S09b.
+- Verify (375×812, one run): barracks collapsed frac 0.072, expanded 0.282; hall 0.169; wall piece 0.16; Downs stone 0.169 and 0.072 collapsed. No overlap with the building, stone or hero in any; every target ≥ 44×44; minFont 12. Synthesised taps fired upgrade (committed), pickUnit, raze (hold, then release), expand and collapse. Leaving a pad clears `uiBands.dock` and the camera shift eases to 0. Screenshot at L3: the west run reads as one stone wall through the gateW gatehouse and around the SW corner.
+- Not measured (S20/S21): desktop fracs at 1280×800 and 1920×1080 (the token cap says ≤ 0.20), the right-side dock, L2 wall art by eye, and paying at a stone through the new card (the claim path itself is unchanged).
+- Trips: the browser pane's localStorage was empty before the smoke run and now holds a dev `emberhold.save.v2` (5000 of each resource); clearing it was refused by the permission classifier, so delete it by hand if it matters. Locked unit chips fire `pickUnit`, but `setTrains` refuses them (by design). `BuildingManager.destroyPanel` has no caller (pre-existing; the UI scene's shutdown tears the sheets down). The minimap still draws the ring from `WALL_RING`.
+- For S10: lay the other `WALLS` lines with `layWallLine` (ids `${line}.${k}`); `WALL_RING` can go once every line is laid. Later panels (S11, S13, S13b, S15) use only `DockSheet`, `CostChips`, `StatLine` and compact `PlateButton`.
+- Deviations (from C1): capsules stay 48 px straight-line from a gate's centre; the remap is piece-centric (72 px, or 128 px beside a gate). No blueprint moves, no new open decisions.
 
 ### Plan amended after the playtest (2026-09-24)
 - Inserted S09b (wall gaps; compact docked panel), and S13b and S13c (village buildings; a settled country). Pacing was slowed in 01, and S10, S14, S18, S20 and S21 were updated to match. No code changed.
@@ -44,13 +46,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - Trips: via fields build at scene create (~36 ms each, 3 of them), so every NavGrid version bump now rebuilds 4 fields in slices. Claiming a region with an awake raid camp inside it (downs → campDiggers) spawns that raid on claimed ground, so the fight starts at dusk. Ferrow is tier 2: wave 1 grunts have ×1.5 hp, ×1.3 damage (S20). Camp patrols still don't march or cap (S10). `H.claim` used S04 names and silently failed; fixed. Marching bosses skip their abilities until they arrive. No routes looked wrong in play. No blueprint moves, no new open decisions.
 
 ### S08 · Regions and claims: done (2026-09-24)
-- `RegionManager` (was ZoneManager; scene field `regions`, `zones` getter alias only for S09 to delete, no caller left): `claimed/claimedAt/claimMask/canClaim/claim`, reasons hall → adjacent → camps → cost with tooltip lines; `region:claimed`, `camp:burned` (renamed events), new `camp:woke`. API in CONTRACTS §S08.
-- Border stones (`claim_stone`, lit gold once claimed; the hold has none) replace the flag, dark overlay and rope fence. Claim = fanfare + HUD region banner (name + blurb) + repaint. `src/world/claimTint.ts`: one Path2D fill of unclaimed polygons (saturation blend 0.35, black 0.15) and dotted polygon borders, after the crossings. Measured on Downs ground: saturation ×0.61, lightness ×0.90 (after grain and vignette).
-- **Claim cost:** the claim's own work (flags, mask of 92k cells, `invalidate(claimRect)`) 0.1–0.3 ms, 1.8 ms on the first. Ferrow's box re-baked 12 wanted chunks in 39 frames (~1.3 s), frame ≤ 4.2 ms, chunk median 5.5 ms (tint cost is noise). Old chunk images stay until the new bake publishes, so colour arrives chunk by chunk.
-- Camps: all 15 start `asleep` (no Enemy, so untargetable; a dimmed `enm_camp` sprite, banked fire light). Wake on claim or hero ≤ 900 px, for good. Save `campAwake`; any camp with `campHealth` loads awake.
-- Verify (harness): ferrow `hall` at hall 1; claimed after the hall upgrade, 5 pads available; rim `camps` until campFerrow burns; Kettle asleep at 956 px, awake at 856 px; claims and awake camps survived save + `H.start(true)`. 4 screenshots (stone tooltip; hold–downs contrast + sleeping Rotwood as a composite). Saves restored byte-identical.
-- Deviations: node "fields" stay visible in unclaimed ground (unharvestable, as before); only the ground is tinted, not props or nodes. Unexplored borders draw too but sit under the fog.
-- Trips: a woken camp spawns uncapped patrols (every `spawns.every`) even in unclaimed ground: S10 owns the 2× cap and leash. `H.tp` near a camp wakes it for good. Upgrading the hall in the harness: `H.tp` to the hall and `buildings.commitUpgrade(hall)` each pump (`H.build` doesn't commit upgrades). `zonesNextTarget` skips regions failing `adjacent`/`camps`. No blueprint moves, no new open decisions.
+- `RegionManager` (`claimed/claimAt/claimMask/canClaim/claim`, events `region:claimed`, `camp:burned`, `camp:woke`), border stones, `world/claimTint.ts`; camps start asleep and wake on claim or hero ≤ 900 px (save `campAwake`); CONTRACTS §S08.
 
 ### S07 · Paint the frontier: done (2026-09-23)
 - Painters `Terrain.ts` (wash, decals) and `TerrainFeatures.ts` (feature lines, `paintRoads`, `paintCrossings`); props via `world/scatter.ts` + `art/scatter.ts`; bake ~5.3 ms per chunk (CONTRACTS §S07).

@@ -162,7 +162,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S09b: walls and panels
 
-*Status: C1–C2 landed (S09b, partial); C3–C4 (the dock) planned. `layWallLine` at [src/world/wallLine.ts](../../src/world/wallLine.ts).*
+*Status: landed (S09b). `layWallLine` at [src/world/wallLine.ts](../../src/world/wallLine.ts); the dock at [src/ui/dock.ts](../../src/ui/dock.ts), re-exported by `skin.ts`.*
 
 - `src/world/wallLine.ts` (pure): `layWallLine(line: WallLineBP) → WallPiece[] { id, key: 'wall' | 'gate', part: 'run' | 'post', dir: 'h' | 'v', x, y, len, ux, uy, cap? }` in order along the line. Posts on every vertex (not one a gate swallows) and on both jambs of every gate; `ceil(run / step)` runs spaced evenly between stops. Ids `${line}.${k}`; gates keep their blueprint ids. `ux, uy`: unit vector along the line. `cap`: the NavGrid capsule `[ax, ay, bx, by]`, kept `GATE_W / 2 + GATE_CLEAR` (48) px straight-line from every gate centre; absent when that swallows it.
   - Constants: `GATE_W` 64, `POST_LEN` 20, `WALL_CAP_R` 28, `WALL_CAP_STEP` 16, `GATE_CLEAR` 16. `capDiscs(cap) → number[]` (flat x, y pairs, ≤ 16 px apart). `legacyRingPads(line)`: the pre-S09b `wall${i}` layout.
@@ -172,11 +172,14 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - Art: `pieceTextureKey(key, lvl, piece) → string | null` (`bld_wall_v_${lvl}`, `bld_wallpost_${lvl}`, `bld_gate_v_${lvl}`; lvl 0 → `blueprint_wall_v` / `blueprint_wallpost` / `blueprint_gate_v`); `textureFoot(texKey)` (px from a texture's bottom to its pad point; 16 unless registered). Horizontal `bld_wall_${lvl}` is 72 px wide.
 - Saves: `maxLevelForPad` accepts `${line}.${k}` for any `WALL_LINES` id, every `WALL_LINES` gate id, and still `wall\d+`; `BuildingManager.load` remaps old `wall\d+` entries (Save fields).
 - Harness: `H.buildLine(id = 'palisade', lvl)` (through the loader; also lowers), `H.wallGaps(lineId = 'palisade') → { pieces, built, navLeaks, bodyLeaks }` (samples every 4 px; a nav leak is ground neither walled nor under a standing gate's box, a body leak is `blockerAt(x, y, 8)` null), `H.assault(key, x, y, seconds, lineId) → { struck, firstBroken, inside, insideUnbroken, target }`.
-- Planned (C3–C4), for every panel from here on:
-  - `DOCK` tokens (`gutter`, `pad`, `touch` 44, `rowH`, `collapsedH`, `sideW`, `phoneMaxFrac` 0.30, `deskMaxFrac` 0.20, `titleSize`, `bodySize`);
-  - `DockSheet` (a bottom sheet in portrait, a right dock otherwise; `collapsed`; publishes `uiBands.dock`);
-  - `CostChips`, `StatLine`, and `PlateButton({ size: 'compact' })`;
-  - `H.panel() → { rect, frac, collapsed, overlapsBuilding, overlapsHero, targets, minFont }`.
+- The dock, for every panel from here on (fishery, trading post, relics, S13b's buildings use only these):
+  - `DOCK` tokens: `gutter` 16, `pad` 10, `touch` 44, `rowH` 28, `collapsedH` 64, `sideW` 300, `phoneMaxFrac` 0.30, `deskMaxFrac` 0.20, `titleSize` 15, `bodySize` 13, `depth`. `compactH(viewW) → 44 | 36`.
+  - `new DockSheet(uiScene, bands: DockBands)`: `layout(head: DockHead { title, level?, levelColour?, primaryW? }, rows: DockRow[]) → DockRect` every frame it is shown; the owner places its primary action in `primary`. `hide()`, `toggle()`, `contains(x, y)` (CSS px), `targets()`, `fonts()`, `destroy()`; fields `collapsed`, `side: 'bottom' | 'right'`, `rect`, `focus?: {x, y}` (world point the camera frames), `isShown`, `dead` (its UI scene shut down: make a new one). Collapsed state is shared per page session; phones start collapsed.
+  - `DockRow { measure(w), place(x, y, w), setVisible(v), objects() }`. `CostChips.set(CostChip { tex, have, need, short? }[])`, `StatLine.set(text, colour?, icon?)`; both are rows.
+  - `GameScene.uiBands: DockBands { top, bottom, dock?: DockBand { x, y, w, h, side, focus? } | null }`. A sheet clears `dock` only if it is still its own rect. The camera eases its follow offset toward `dock.focus`; the HUD's combo and hint lines sit above a bottom sheet.
+  - `PlateButton({ size: 'compact' })`: 44 px tall on touch, 36 with a mouse.
+  - `PanelRow.short?` (red cost chip). `BuildingPanel.inspect()`, `RegionManager.inspectDock()` for the harness.
+- Harness: `H.panel() → { about, side, rect, viewport, frac, collapsed, building, hero, overlapsBuilding, overlapsHero, targets: { name, cx, cy, w, h }[], minFont }` (CSS px; the build card, else the nearest stone's card), `H.tap(x, y, holdS = 0)` (real DOM mouse events on the canvas).
 
 ## S10: camps and lines
 
