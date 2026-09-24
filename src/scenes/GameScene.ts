@@ -542,14 +542,14 @@ export class GameScene extends Phaser.Scene {
     // clear, and ease back when it closes.
     let sx = 0, sy = 0
     const d = this.uiBands.dock
-    if (d) {
+    const card = this.uiBands.card ?? 0
+    if (d || card) {
       const k = DPR / cam.zoom
       const W = cam.width / DPR, H = cam.height / DPR
-      const clearX = d.side === 'right' ? d.x / 2 : W / 2
-      const clearY = d.side === 'right'
-        ? (this.uiBands.top + H - this.uiBands.bottom) / 2
-        : (this.uiBands.top + d.y) / 2
-      const f = d.focus ?? { x: p.x, y: p.y }
+      const top = Math.max(this.uiBands.top, card)
+      const clearX = d?.side === 'right' ? d.x / 2 : W / 2
+      const clearY = d && d.side !== 'right' ? (top + d.y) / 2 : (top + H - this.uiBands.bottom) / 2
+      const f = d?.focus ?? { x: p.x, y: p.y }
       // the camera's centre that puts f at (clearX, clearY); the offset is hero − centre
       sx = p.x - (f.x + (W / 2 - clearX) * k)
       sy = p.y - (f.y + (H / 2 - clearY) * k)

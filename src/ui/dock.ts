@@ -48,7 +48,13 @@ export interface DockBand extends DockRect {
 }
 
 /** The HUD bands a sheet must clear, and where it writes its own rect. */
-export interface DockBands { top: number; bottom: number; dock?: DockBand | null }
+export interface DockBands {
+  top: number
+  bottom: number
+  dock?: DockBand | null
+  /** S11: the bottom edge (CSS px) of a card hung under the top band over the middle of the view (the travel list); the camera frames the hero below it */
+  card?: number | null
+}
 
 /** One row of a sheet's body. Heights depend on the width (text wraps), so the sheet asks. */
 export interface DockRow {

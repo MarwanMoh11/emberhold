@@ -62,7 +62,11 @@ export class TravelList {
     const rowH = this.rows[0]?.compactH ?? 44
     const head = 30
     const footH = 22
-    const fit = Math.max(1, Math.floor((floor - y - head - footH - DOCK.pad) / (rowH + 6)))
+    // over the middle of a narrow view the card leaves the hero room below it,
+    // and the camera frames the hero there (`uiBands.card`)
+    const overMiddle = x + w > sw / 2 - 60
+    const room = overMiddle ? 150 : 0
+    const fit = Math.max(1, Math.floor((floor - y - head - footH - DOCK.pad - room) / (rowH + 6)))
     const n = Math.min(stones.length, fit)
 
     while (this.rows.length < n) {
@@ -105,6 +109,7 @@ export class TravelList {
       : ws.lastWhy || blocked || (more > 0 ? `+${more} more` : 'Stand still: a blow breaks the channel')
     this.foot.setText(note).setPosition(x + DOCK.pad, y + h - footH - 2).setVisible(true)
     this.rect = { x, y, w, h }
+    this.gs.uiBands.card = overMiddle ? y + h + 8 : null
     this.shown = true
   }
 
@@ -121,6 +126,7 @@ export class TravelList {
     this.foot.setVisible(false)
     this.bar.setVisible(false)
     for (const b of this.rows) b.setVisible(false)
+    this.gs.uiBands.card = null
     if (this.gs.waystones) this.gs.waystones.lastWhy = ''
   }
 }
