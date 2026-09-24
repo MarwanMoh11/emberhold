@@ -123,7 +123,8 @@ export class EnemyManager {
   private acquirePatrol(e: Enemy, h: CampHome): Targetable | null {
     const s = this.scene
     const inside = (t: { x: number; y: number }) => (t.x - h.x) ** 2 + (t.y - h.y) ** 2 <= h.leash * h.leash
-    const siege = () => s.buildings.nearestStructure(h.x, h.y, h.siege, e.sapper)
+    // arrows sail over structures, so only a walker that strikes in person besieges
+    const siege = () => (e.def.ranged ? null : s.buildings.nearestStructure(h.x, h.y, h.siege, e.sapper))
     if (e.def.prefers === 'structures') { const b = siege(); if (b) return b }
     const p = s.player
     if (p.alive && inside(p) && (p.x - e.x) ** 2 + (p.y - e.y) ** 2 < 520 * 520) return p
@@ -138,6 +139,7 @@ export class EnemyManager {
     } else if (far(e.x, e.y, h.leash + 60) || (e.target && far(e.target.x, e.target.y, h.leash + 40))) {
       e.returning = true
       e.target = null
+      e.los = this.scene.nav.lineClear(e.x, e.y, h.x, h.y)
     }
     return e.returning
   }
@@ -153,8 +155,30 @@ export class EnemyManager {
       const ok = this.scene.nav.passableAt(x, y)
       e.wanderX = ok ? x : h.x
       e.wanderY = ok ? y : h.y + 90
+      e.los = this.scene.nav.lineClear(e.x, e.y, e.wanderX, e.wanderY)
     }
     return { x: e.wanderX, y: e.wanderY }
+  }
+
+  /**
+   * The next waypoint on a patrol's path to (gx, gy), asked of the path queue
+   * when the goal moves. Null while the path is pending (it walks straight
+   * meanwhile); an unreachable goal is given up.
+   */
+  private patrolWay(e: Enemy, gx: number, gy: number): [number, number] | null {
+    if (!e.path || Math.hypot(gx - e.pathX, gy - e.pathY) > 64) {
+      e.path = this.scene.nav.requestPath(e.x, e.y, gx, gy)
+      e.pathX = gx; e.pathY = gy; e.pathI = 1
+    }
+    if (!e.path.done) return null
+    const p = e.path.path
+    if (!p || p.length < 2) {
+      e.path = null
+      if (e.target) { e.target = null; e.retargetIn = 1.5 } else { e.wanderT = 0; e.returning = false }
+      return null
+    }
+    while (e.pathI < p.length - 1 && Math.hypot(p[e.pathI][0] - e.x, p[e.pathI][1] - e.y) < 24) e.pathI++
+    return p[Math.min(e.pathI, p.length - 1)]
   }
 
   /**
@@ -295,17 +319,17 @@ export class EnemyManager {
         // staggered re-target
         e.retargetIn -= dt
         const home = e.home, back = !!home && this.strayed(e, home)
-        if (!back && (e.retargetIn <= 0 || !e.target || !e.target.alive)) {
+        // a patrol with nothing to fight looks again on its timer, not every frame
+        if (!back && (e.retargetIn <= 0 || (e.target ? !e.target.alive : !home))) {
           e.target = this.acquire(e)
           e.retargetIn = 0.35 + (e.id % 7) * 0.05
-          e.los = !!e.target && this.sight(e, e.target)
+          e.los = e.target ? this.sight(e, e.target) : !!home && nav.lineClear(e.x, e.y, e.wanderX, e.wanderY)
         }
 
         const t = e.target
         if (!t && !home) { this.render(e, dt); continue }
         // a patrol with nothing to fight strolls about its camp, or walks back to it
         const goal = t ?? this.wanderGoal(e, home!, dt)
-        if (!t) e.los = true
 
         const dx = goal.x - e.x
         const dy = goal.y - e.y
@@ -343,7 +367,15 @@ export class EnemyManager {
           let mx = dx / d
           let my = dy / d
 
-          if (!e.los) {
+          if (!e.los && home) {
+            // a patrol keeps to its camp: round the obstacle by a path, never down the hall's field
+            const w = this.patrolWay(e, goal.x, goal.y)
+            if (w) {
+              const fx = w[0] - e.x, fy = w[1] - e.y
+              const fl = Math.hypot(fx, fy) || 1
+              mx = fx / fl; my = fy / fl
+            }
+          } else if (!e.los) {
             // no straight line: take the flow field (its approach's leg until it
             // reaches claimed ground, then the hall's), over the crossings and
             // through the gates. If its next cell is a wall, that wall is the way on.

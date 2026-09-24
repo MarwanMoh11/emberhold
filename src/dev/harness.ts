@@ -344,7 +344,15 @@ export function installHarness(game: Phaser.Game) {
     if (!rec) return `no camp "${id}"`
     const padId = `siegeTest.${id}`
     let b = g.buildings.byPad.get(padId)
-    if (!b) b = g.buildings.addPad({ id: padId, key, x: rec.spec.x, y: rec.spec.y + d, region: rec.spec.region })
+    if (!b) {
+      // the first of eight bearings on open ground the camp can see
+      let at = [rec.spec.x, rec.spec.y + d]
+      for (let k = 0; k < 8; k++) {
+        const a = Math.PI / 2 + (k * Math.PI) / 4, x = rec.spec.x + Math.cos(a) * d, y = rec.spec.y + Math.sin(a) * d
+        if (g.nav.passableAt(x, y) && g.nav.lineClear(rec.spec.x, rec.spec.y, x, y)) { at = [x, y]; break }
+      }
+      b = g.buildings.addPad({ id: padId, key, x: at[0], y: at[1], region: rec.spec.region })
+    }
     g.buildings.load([{ padId, level: 1, hp: 1e9, progress: {}, peakWorkers: 0 }])
     g.camps.wake(id)
     tp(rec.spec.x + 2000, rec.spec.y)

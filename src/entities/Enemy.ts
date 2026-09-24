@@ -12,6 +12,7 @@ export type EnemyState = 'move' | 'attack' | 'stun' | 'dead'
  * hundred of these cheap.
  */
 /** The camp a patrol belongs to (S10). */
+import type { PathTicket } from '../world/PathFind'
 export interface CampHome { id: string; x: number; y: number; leash: number; siege: number }
 
 export class Enemy implements Targetable {
@@ -90,6 +91,9 @@ export class Enemy implements Targetable {
   guard = false
   /** takes no damage (a stronghold while its boss lives, the fortress while a brazier burns) */
   shielded = false
+  /** a patrol's path round what blocks its straight line (S06's queue), where it was aimed, and the next waypoint */
+  path: PathTicket | null = null
+  pathX = 0; pathY = 0; pathI = 0
 
   sprite!: Phaser.GameObjects.Image
 
@@ -144,6 +148,7 @@ export class Enemy implements Targetable {
     this.wanderT = 0
     this.guard = false
     this.shielded = false
+    this.path = null
 
     const tex = `enm_${def.key}`
     this.sprite.setTexture(tex)
