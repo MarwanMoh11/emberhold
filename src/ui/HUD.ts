@@ -362,6 +362,13 @@ export class HUD {
     this.hintSig = ''
   }
 
+  /** The lowest the floating lines may sit: above the hotbar band, or above a docked bottom sheet. */
+  private floorY() {
+    const bands = this.game.uiBands
+    const d = bands.dock
+    return Math.min(this.H - bands.bottom, d && d.side === 'bottom' ? d.y - 8 : Infinity)
+  }
+
   private setButton(b: AbilityBtn, x: number, y: number, r: number) {
     b.x = x; b.y = y; b.r = r
     b.zone.setPosition(x, y).setSize(r * 2, r * 2)
@@ -602,7 +609,7 @@ export class HUD {
       // belongs to the fight and to the build card that floats over it.
       const hintUp = this.hintPanel.img.visible ? 40 : 0
       this.comboText.setVisible(true).setText(`${combo} Kill Streak`).setAlpha(0.92)
-        .setPosition(this.W / 2, this.H - g.uiBands.bottom - 22 - hintUp)
+        .setPosition(this.W / 2, this.floorY() - 22 - hintUp)
     } else {
       this.comboText.setVisible(false)
     }
@@ -636,7 +643,7 @@ export class HUD {
       const a = Math.min(1, this.hintT, (4.5 - this.hintT) / 0.2)
       const hw = Math.ceil(this.hintText.width) + 36
       const hh = Math.ceil(this.hintText.height) + 16
-      const hy = this.H - this.game.uiBands.bottom + 8 - hh
+      const hy = this.floorY() + 8 - hh
       const sig = `${hw}x${hh}@${hy}`
       if (sig !== this.hintSig) {
         this.hintSig = sig

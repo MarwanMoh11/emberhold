@@ -13,12 +13,15 @@ import { buildVellumTexture } from '../world/Terrain'
 import type { GameScene } from '../scenes/GameScene'
 import { setColour, textStyle } from '../ui/theme'
 import { SkinPanel } from '../ui/skin'
+import { CostChips, DockSheet, StatLine, type DockRow } from '../ui/dock'
 import { DPR } from '../core/device'
 
 /** World px per fog texel: the fog RenderTexture is the world at 1/8. */
 export const FOG_SCALE = 8
 /** Banner frame width in world units; also its wrap width. */
 const BANNER_W = 248
+/** Standing this close to a stone opens its card on the dock (S09b): the name alone floats over the stone. */
+const STONE_DOCK_RANGE = 220
 /** How close the hero has to be for a claim to fire. */
 const CLAIM_RADIUS = 70
 /** How far past a border the soft barrier looks to see what is on the other side. */
@@ -185,7 +188,7 @@ export class RegionManager {
     const bg = this.scene.add.graphics()
     const frame = new SkinPanel(this.scene, 'hud')
     const label = this.scene.add.text(0, -50, spec.name,
-      textStyle({ voice: 'display', size: 21, colour: PAL.gold, align: 'center', wrap: BANNER_W - 28, shadow: true }))
+      textStyle({ voice: 'display', size: 17, colour: PAL.gold, align: 'center', wrap: BANNER_W - 28, shadow: true }))
       .setOrigin(0.5, 0)
     const blurb = this.scene.add.text(0, -40, spec.blurb,
       textStyle({ size: 13, weight: 'italic 500', colour: PAL.uiDim, align: 'center', wrap: BANNER_W - 28 }))
@@ -193,6 +196,8 @@ export class RegionManager {
     const cost = this.scene.add.text(0, -30, '',
       textStyle({ voice: 'caps', size: 13, weight: '800', colour: PAL.uiText, align: 'center', wrap: BANNER_W - 28 }))
       .setOrigin(0.5, 0).setLineSpacing(2)
+    blurb.setVisible(false)
+    cost.setVisible(false)
     banner.add([bg, frame.img, label, blurb, cost])
     banner.setVisible(unclaimed)
 
@@ -228,16 +233,14 @@ export class RegionManager {
 
   /** Fit the frame inside the viewport, with a tether to the real claim ring. */
   private frameBanner(v: StoneView) {
+    // Only the name floats over the stone now; the blurb and the cost are on
+    // the dock. The frame floats a flag's height above its anchor so it clears
+    // both the pole and the ring drawn on the ground around it.
     const lh = v.label.height
-    const bh = v.blurb.height
-    const ch = v.cost.height
-    // The frame floats a flag's height above its anchor so it clears both the
-    // pole and the ring drawn on the ground around it.
-    const top = -POLE_H - 50 - lh - bh - ch
-    v.label.setPosition(0, top + 10)
-    v.blurb.setPosition(0, top + 10 + lh)
-    v.cost.setPosition(0, top + 18 + lh + bh)
+    const top = -POLE_H - 24 - lh
+    v.label.setPosition(0, top + 8)
     const h = -top - POLE_H + 4
+    const bw = Math.min(BANNER_W, Math.ceil(v.label.width) + 36)
 
     const cam = this.scene.cameras.main
     const view = cam.worldView
@@ -248,7 +251,7 @@ export class RegionManager {
     const px = DPR / cam.zoom
     const minY = view.y + bands.top * px - top
     const maxY = view.bottom - bands.bottom * px
-    const side = BANNER_W / 2 + 12 * px
+    const side = bw / 2 + 12 * px
     v.banner.x = Phaser.Math.Clamp(v.cx, view.left + side, view.right - side)
     v.banner.y = Phaser.Math.Clamp(v.cy, minY, Math.max(minY, maxY))
 
@@ -261,7 +264,59 @@ export class RegionManager {
       v.bg.lineStyle(2, PAL.gilt, 0.55)
       v.bg.lineBetween(0, top + h, sideways, drop - 70)
     }
-    v.frame.place(-BANNER_W / 2, top, BANNER_W, h)
+    v.frame.place(-bw / 2, top, bw, h)
+  }
+
+  private sheet: DockSheet | null = null
+  private sheetUi: { blurb: StatLine; costs: CostChips; why: StatLine } | null = null
+
+  /**
+   * The stone's card on the dock (S09b): the "buy" panel. Collapsed, the
+   * region's name and whether it can be claimed; expanded, its blurb, the cost
+   * as chips against what you hold, and what still stands in the way. Paying
+   * is still standing in the ring.
+   */
+  private dockStone(v: StoneView | null) {
+    if (!v) { this.sheet?.hide(); return }
+    if (!this.sheet || this.sheet.dead) {
+      const ui = this.scene.scene.get('UI')
+      if (!ui || !ui.sys.isActive()) return
+      this.sheet = new DockSheet(ui, this.scene.uiBands)
+      const blurb = new StatLine(ui, { italic: true, colour: PAL.uiDim })
+      const costs = new CostChips(ui)
+      const why = new StatLine(ui)
+      this.sheet.add([...blurb.objects(), ...costs.objects(), ...why.objects()])
+      this.sheetUi = { blurb, costs, why }
+    }
+    const { blurb, costs, why } = this.sheetUi!
+    const check = this.canClaim(v.spec.id)
+    const res = this.scene.res
+    const chips = RESOURCE_ORDER.filter(k => v.spec.cost[k]).map(k => {
+      const need = v.spec.cost[k] ?? 0
+      const have = res.available(k)
+      return { tex: `res_${k}`, have, need, short: have < need }
+    })
+    blurb.set(v.spec.blurb)
+    costs.set(chips)
+    const colour = check.ok ? PAL.good : check.reason === 'cost' ? PAL.uiDim : PAL.danger
+    why.set(check.ok ? 'Step into the ring to claim it.' : check.why, colour)
+    const rows: DockRow[] = [blurb]
+    if (chips.length) rows.push(costs)
+    rows.push(why)
+    const p = this.scene.player
+    this.sheet.focus = { x: (p.x + v.cx) / 2, y: (p.y + v.cy - 40) / 2 }
+    this.sheet.layout({
+      title: v.spec.name,
+      level: check.ok ? 'Step into the ring to claim' : `Tier ${v.spec.tier} · ${check.reason === 'cost' ? 'not enough banked' : 'not yet'}`,
+      levelColour: colour,
+    }, rows)
+  }
+
+  /** For the harness: the stone's sheet, when it is up. */
+  inspectDock() {
+    const s = this.sheet
+    if (!s || s.dead || !s.isShown) return null
+    return { rect: { ...s.rect }, collapsed: s.collapsed, side: s.side, targets: s.targets(), fonts: s.fonts() }
   }
 
   /** Whether a region is claimed. Unknown ids read as claimed, so nothing hides behind a typo. */
@@ -371,6 +426,8 @@ export class RegionManager {
     }
 
     const here = this.regionAt(p.x, p.y)
+    let docked: StoneView | null = null
+    let dockedD = STONE_DOCK_RANGE
     for (const v of this.views.values()) {
       if (this.claimed(v.spec.id)) continue
       // Stand off while a build-site card is up. You cannot fund a building and
@@ -393,6 +450,7 @@ export class RegionManager {
         check.ok || check.reason === 'cost' ? `${costStr}\n${check.why}` : check.why,
       ), check.ok ? PAL.good : check.reason === 'cost' ? PAL.uiDim : PAL.danger)
       this.frameBanner(v)
+      if (d < dockedD) { docked = v; dockedD = d }
 
       const inside = d < CLAIM_RADIUS
       if (inside && affordable) {
@@ -405,6 +463,8 @@ export class RegionManager {
       } else v.dwell = 0
       this.drawMarker(v, affordable, inside)
     }
+
+    this.dockStone(docked)
 
     // soft barrier: nudge the hero back out of land they have not claimed
     if (here && !this.claimed(here.id)) {

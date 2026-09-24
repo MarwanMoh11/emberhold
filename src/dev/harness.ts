@@ -1,5 +1,6 @@
 import type Phaser from 'phaser'
 import { REGIONS, WALL_LINES, WORLD } from '../config/world'
+import { DPR } from '../core/device'
 
 /**
  * Dev-only scripted-play harness, stripped from production builds.
@@ -27,6 +28,8 @@ import { REGIONS, WALL_LINES, WORLD } from '../config/world'
  *   H.buildLine('palisade', 3)  raise (or drop) every piece and gate of a wall line to a level
  *   H.wallGaps('palisade')      walk the line every 4 px: cells the horde could path through, points a body slips past
  *   H.assault('grunt', 5120, 2300, 40)  send one walker at the ring: what it hit, whether it got in unbroken
+ *   H.panel()            the docked sheet: rect, share of the viewport, overlap with the building and hero, targets, smallest font
+ *   H.tap(x, y, holdS)   press the canvas at a CSS-pixel point (a real DOM mouse event), hold for holdS s of game time
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -392,5 +395,66 @@ export function installHarness(game: Phaser.Game) {
     return { pxPerSec: Math.round(Math.hypot(p.x - x0, p.y - y0) / seconds), onRoad: +(road / steps).toFixed(2), at: where() }
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault }
+  type R = { x: number; y: number; w: number; h: number }
+  const hits = (a: R, b: R) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  const round = (r: R) => ({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) })
+
+  /**
+   * The docked sheet (the build card, or a border stone's card), in CSS px:
+   * its rect and share of the viewport's area, whether it covers the building
+   * (or stone) and the hero on screen, every tap target and the smallest font.
+   */
+  const panel = () => {
+    const g = gs()
+    let info = g.buildings.panel.inspect()
+    let about: any = g.buildings.activePanelFor
+    let img: any = about?.sprite
+    if (!info) {
+      info = g.regions.inspectDock()
+      if (!info) return null
+      const p = g.player
+      let best = Infinity
+      for (const v of g.regions.views.values()) {
+        const d = Math.hypot(v.cx - p.x, v.cy - p.y)
+        if (v.stone && d < best && !g.regions.claimed(v.spec.id)) { best = d; about = v.spec.id; img = v.stone }
+      }
+    }
+    const cam = g.cameras.main
+    const k = cam.zoom / DPR
+    const toScreen = (b: any): R => ({ x: (b.x - cam.worldView.x) * k, y: (b.y - cam.worldView.y) * k, w: b.width * k, h: b.height * k })
+    const bRect = img ? toScreen(img.getBounds()) : null
+    const p = g.player
+    // the hero's body: about 28 px wide, from the head to the feet
+    const hRect = toScreen({ x: p.x - 14, y: p.y - 44, width: 28, height: 48 })
+    const vw = g.scale.width / DPR, vh = g.scale.height / DPR
+    const r = info.rect
+    return {
+      about: typeof about === 'string' ? about : about?.padId ?? null,
+      side: info.side,
+      rect: round(r),
+      viewport: { w: vw, h: vh },
+      frac: +((r.w * r.h) / (vw * vh)).toFixed(3),
+      collapsed: info.collapsed,
+      building: bRect ? round(bRect) : null,
+      hero: round(hRect),
+      overlapsBuilding: bRect ? hits(r, bRect) : false,
+      overlapsHero: hits(r, hRect),
+      targets: info.targets.map((t: any) => ({ name: t.name, cx: Math.round(t.x + t.w / 2), cy: Math.round(t.y + t.h / 2), w: Math.round(t.w), h: Math.round(t.h) })),
+      minFont: Math.min(...info.fonts),
+    }
+  }
+
+  /** Press the canvas at a CSS-pixel point with real DOM mouse events; hold for `holdS` seconds of game time. */
+  const tap = (x: number, y: number, holdS = 0) => {
+    const c = game.canvas
+    const b = c.getBoundingClientRect()
+    const o = { clientX: b.left + x, clientY: b.top + y, bubbles: true, cancelable: true, button: 0 }
+    c.dispatchEvent(new MouseEvent('mousemove', { ...o, buttons: 0 }))
+    c.dispatchEvent(new MouseEvent('mousedown', { ...o, buttons: 1 }))
+    pump(Math.max(0.05, holdS))
+    c.dispatchEvent(new MouseEvent('mouseup', { ...o, buttons: 0 }))
+    pump(0.05)
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap }
 }

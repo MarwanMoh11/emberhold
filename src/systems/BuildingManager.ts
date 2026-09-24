@@ -853,7 +853,8 @@ export class BuildingManager {
       for (const k of RESOURCE_ORDER) {
         const need = cost[k] ?? 0
         if (need <= 0) continue
-        rows.push({ tex: TEX[k], have: Math.min(need, b.progress[k] ?? 0), need })
+        const have = Math.min(need, b.progress[k] ?? 0)
+        rows.push({ tex: TEX[k], have, need, short: have < need && res.available(k) < need - have })
       }
     }
 

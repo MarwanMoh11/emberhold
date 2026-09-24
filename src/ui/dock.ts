@@ -105,6 +105,8 @@ export class DockSheet {
   private dragY: number | null = null
   private shown = false
   private headSig = ''
+  /** the band this sheet last wrote, so closing one sheet never clears another's */
+  private published: DockBand | null = null
   dead = false
 
   constructor(private scene: Phaser.Scene, private bands: DockBands) {
@@ -244,7 +246,8 @@ export class DockSheet {
       ry += rh + gap
     }
 
-    this.bands.dock = { x, y, w, h, side: this.side, focus: this.focus }
+    this.published = { x, y, w, h, side: this.side, focus: this.focus }
+    this.bands.dock = this.published
 
     if (appearing) {
       this.root.setAlpha(0)
@@ -264,7 +267,7 @@ export class DockSheet {
       if (this.blocker.input) this.blocker.input.hitArea.setTo(0, 0, 1, 1)
       this.chevron.setVisible(false)
     }
-    if (this.bands.dock && this.bands.dock.x === this.rect.x && this.bands.dock.y === this.rect.y) this.bands.dock = null
+    if (this.bands.dock === this.published) this.bands.dock = null
   }
 
   /** The sheet's own controls, for the harness. */
@@ -288,7 +291,7 @@ export class DockSheet {
   destroy() {
     if (this.dead) return
     this.dead = true
-    if (this.bands.dock && this.shown) this.bands.dock = null
+    if (this.bands.dock === this.published) this.bands.dock = null
     this.shown = false
     this.scene.input?.off('wheel', this.onWheel, this)
     this.scene.events.off('shutdown', this.destroy, this)
