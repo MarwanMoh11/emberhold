@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { PAL } from '../config/palette'
-import { HALL, REGIONS, WALL_RING, WORLD, type RegionDef } from '../config/world'
+import { HALL, REGIONS, WALL_LINES, WORLD, type RegionDef } from '../config/world'
 import { inPoly } from '../world/raster'
 import { biomeColour } from '../world/Terrain'
 import { clamp } from '../core/math'
@@ -324,12 +324,15 @@ export class Minimap {
       g.strokePoints(pts, true)
     }
 
-    // the rampart ring, and the four gaps the horde funnels through
-    const wr = WALL_RING
-    g.lineStyle(1.5, CHART.ink, 0.75)
-    g.strokeRect(wr.left / T, wr.top / T, (wr.right - wr.left) / T, (wr.bottom - wr.top) / T)
-    g.fillStyle(CHART.wax, 0.9)
-    for (const gate of wr.gates) g.fillRect(gate.x / T - 1.5, gate.y / T - 1.5, 3, 3)
+    // the wall lines the hold can raise (S10), and the gates the horde funnels through
+    const hall = gs.buildings.townHallLevel
+    for (const line of WALL_LINES) {
+      if (line.hall > hall || !gs.regions.claimed(line.region)) continue
+      g.lineStyle(1.5, CHART.ink, 0.75)
+      g.strokePoints(line.pts.map(([x, y]) => ({ x: x / T, y: y / T })), !!line.ring)
+      g.fillStyle(CHART.wax, 0.9)
+      for (const gate of line.gates) g.fillRect(gate.x / T - 1.5, gate.y / T - 1.5, 3, 3)
+    }
 
     // structures — claimed territory only, and only where you have actually been
     for (const b of gs.buildings.buildings) {

@@ -85,22 +85,9 @@ export const FUTURE_PADS: BP.PadBP[] = BP.PADS.filter(p => FUTURE_KEYS.has(p.key
 
 export type WallLineSpec = WallLineBP & { active: boolean }
 
-/** Every wall line in the blueprint. Only the palisade is built until S10. */
-export const WALL_LINES: WallLineSpec[] = BP.WALLS.map(w => ({ ...w, active: w.id === 'palisade' }))
-
-const palisade = BP.WALLS.find(w => w.id === 'palisade')
-if (!palisade) throw new Error('blueprint has no palisade')
-const xs = palisade.pts.map(p => p[0]), ys = palisade.pts.map(p => p[1])
-
-/** The rampart ring, as BuildingManager lays it out. Gates are gaps the horde funnels toward. */
-export const WALL_RING = {
-  left: Math.min(...xs),
-  right: Math.max(...xs),
-  top: Math.min(...ys),
-  bottom: Math.max(...ys),
-  step: palisade.step,
-  gates: palisade.gates.map(g => ({ ...g })),
-}
+/** Every wall line in the blueprint, laid as pads since S10: each shows once its region is claimed and the hall reaches `hall`. */
+export const WALL_LINES: WallLineSpec[] = BP.WALLS.map(w => ({ ...w, active: true }))
+if (!WALL_LINES.some(w => w.id === 'palisade')) throw new Error('blueprint has no palisade')
 
 // ---------------------------------------------------------------------------
 // Camps

@@ -99,6 +99,9 @@ export class BuildingManager {
    */
   private justRazed: string | null = null
 
+  /** Each wall line's pad ids, pieces and gates, in order (S10). */
+  private readonly lines = new Map<string, string[]>()
+
   /** Farm pads whose crop ring has already been sown, so a rebuild adds none. */
   private fielded = new Set<string>()
 
@@ -147,18 +150,28 @@ export class BuildingManager {
   }
 
   /**
-   * Lay the active wall lines piece by piece (S09b): posts on the corners and
-   * gate jambs, runs spaced evenly between them. Only the palisade is active
-   * until S10 lays the rest.
+   * Lay every wall line piece by piece (S09b, S10): posts on the corners and
+   * gate jambs, runs spaced evenly between them. A line's pads show once its
+   * region is claimed and the hall has reached the line's level.
    */
   private generateWalls() {
     for (const line of WALL_LINES) {
       if (!line.active) continue
+      const ids: string[] = []
       for (const p of layWallLine(line)) {
         this.addPad({ id: p.id, key: p.key, x: p.x, y: p.y, region: line.region,
+          ...(line.hall > 1 ? { requiresTownHall: line.hall } : {}),
           piece: { part: p.part, dir: p.dir, len: p.len, ux: p.ux, uy: p.uy, ...(p.cap ? { cap: p.cap } : {}) } })
+        ids.push(p.id)
       }
+      this.lines.set(line.id, ids)
     }
+  }
+
+  /** Every piece and gate of a wall line is built and standing (quests, S10). Unknown ids: false. */
+  lineComplete(lineId: string): boolean {
+    const ids = this.lines.get(lineId)
+    return !!ids && ids.every(id => { const b = this.byPad.get(id); return !!b && b.level > 0 && b.alive })
   }
 
   // ---- queries ---------------------------------------------------------

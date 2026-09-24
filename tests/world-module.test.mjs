@@ -24,7 +24,7 @@ test('counts match the blueprint', () => {
   assert.equal(W.CAMPS.length, BP.CAMPS.length)
   assert.equal(W.NODE_CLUSTERS.length, BP.NODES.filter(n => n.type !== 'fish').length)
   assert.equal(W.WALL_LINES.length, BP.WALLS.length)
-  assert.deepEqual(W.WALL_LINES.filter(l => l.active).map(l => l.id), ['palisade'])
+  assert.ok(W.WALL_LINES.every(l => l.active), 'S10 lays every line')
   W.REGIONS.forEach((r, i) => assert.equal(r.index, i))
 })
 
@@ -65,10 +65,11 @@ test('camps carry their tier, leash and radii (S10)', () => {
   assert.equal(W.CAMPS.filter(c => c.tier === 'stronghold' && c.boss).length, 4, 'four stronghold bosses; the Slag Forges have none')
 })
 
-test('the rampart ring is the palisade', () => {
-  const r = W.WALL_RING
-  assert.ok(r.left < W.HALL.x && W.HALL.x < r.right && r.top < W.HALL.y && W.HALL.y < r.bottom)
-  assert.equal(r.gates.length, 4)
+test('the palisade rings the hall with four gates', () => {
+  const pal = W.WALL_LINES.find(l => l.id === 'palisade')
+  const xs = pal.pts.map(p => p[0]), ys = pal.pts.map(p => p[1])
+  assert.ok(pal.ring && Math.min(...xs) < W.HALL.x && W.HALL.x < Math.max(...xs) && Math.min(...ys) < W.HALL.y && W.HALL.y < Math.max(...ys))
+  assert.equal(pal.gates.length, 4)
 })
 
 test('the temporary night gates are gone (S09 approaches replace them)', () => {
