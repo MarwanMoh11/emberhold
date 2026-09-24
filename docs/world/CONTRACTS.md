@@ -73,7 +73,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `PADS: PadSpec[]` (:75; `region`, `requiresTownHall` from `hall`, `startLevel`) and `FUTURE_PADS: PadBP[]` (:78; outpost, fishery, tradingPost).
   - `CAMPS: CampSpec[]` (:146; `region`, `reward: ResourceBag`, bracketed spawn keys resolved by `resolveSpawnKey`), `NODE_CLUSTERS: NodeCluster[]` (:167; `region`, no fish), `NODE_DEFS`.
   - `WALL_LINES: WallLineSpec[]` (:87; `WallLineBP & { active }`, only the palisade active) and `WALL_RING` (:94; the palisade's bounds, `step` and gates `gateN/S/E/W`).
-  - `SPAWN_GATES`, `GATE_BY_ID` (:116): **TEMP until S09**, six `GateId`s at the hold's edge.
+  - `SPAWN_GATES`, `GATE_BY_ID`: removed by S09 (see §S09).
   - `APPROACHES`, `MAWS`, `CROSSINGS`, `ROADS`, `POIS`, `THRONE`, `FEATURES`, passed through from the blueprint.
   - `raster(): WorldRaster` (:44), built once and memoised.
 - `ZoneId` is now `RegionId`. `PadSpec`, `CampSpec`, `NodeCluster`, `Building` and `ResourceNode` carry `region` (was `zone`).
@@ -100,7 +100,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `slide(x, y, dx, dy, radius) → { x, y }`: centre plus four circle points, x/y split on contact, steps under a third of a cell; an off-ground centre is put on the nearest passable cell. `clearAt(x, y, r)`; `lineClear(ax, ay, bx, by)` is false through impassable or walled cells.
   - `field(target: 'hall' | \`via:${crossingId}\`) → FlowField`: the first call builds synchronously (~36 ms); a stale one keeps serving while `tick(budgetMs?)` rebuilds it in slices. `building`, `flush()`, `sources(target)`, `stats() → { version, fields, building, frameMs, worstFrameMs, rebuilds, lastBuildMs }` (F2, `H.nav()`).
   - `FlowField`: `nextCell(i) → j | -1`, `dir(x, y) → { dx, dy }` (unit, toward the next cell's centre), `dist(x, y)`, raw `d: Float32Array` and `step: Int8Array` (NB8 index, -1 at the target or unreachable), `version`.
-- `EnemyManager` checks `lineClear` to its target on each retarget (`Enemy.los`); without it, it steps along `field('hall')`. A walled next cell latches that wall as the target. S09 swaps `'hall'` for the enemy's leg.
+- `EnemyManager` checks `lineClear` to its target on each retarget (`Enemy.los`); without it, it steps along `field('hall')`. A walled next cell latches that wall as the target. S09: an enemy with a `route` steps along its current leg's field instead.
 - `BuildingManager.syncNav` registers built `wall` pads (radius 40) on build, destroy, demolish and load. Gates and other buildings stay out of the grid.
 - The hero, enemies, soldiers and workers move through `slide` (building push-out too). Projectiles ignore terrain.
 
@@ -133,7 +133,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 *Status: landed (S08). `RegionManager` at [src/systems/RegionManager.ts:268](../../src/systems/RegionManager.ts#L268) (`canClaim` :314, `claim` :336), `CampManager.wake` at [src/systems/CampManager.ts:66](../../src/systems/CampManager.ts#L66), the painter's claim state at [src/world/claimTint.ts:41](../../src/world/claimTint.ts#L41).*
 
-- `RegionManager` is `ZoneManager` renamed; the scene field is `regions`. `scene.zones` is a getter alias for S08 only: **S09 removes it** (no caller in `src/` uses it any more).
+- `RegionManager` is `ZoneManager` renamed; the scene field is `regions`. `scene.zones` was removed in S09.
   - `claimed(id)` (unknown ids read as claimed) and `claimedAt(x, y)` (off the raster: false).
   - `claimMask(): Uint8Array`: one byte per raster cell, 1 if claimed; rebuilt lazily after a claim. Read only.
   - `canClaim(id) → { ok, reason, why }`: `reason` is `'hall' | 'adjacent' | 'camps' | 'cost' | null`, checked in that order; `why` is the stone's tooltip line ("Needs a Stone Hall", "Claim Hollow Village first", "Burn the Ferrow Muster first", "Not enough yet"). Already claimed: `{ ok: false, reason: null }`.
@@ -145,16 +145,20 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S09: approaches
 
-*Status: planned.*
+*Status: landed (S09). `Approaches` at [src/systems/Approaches.ts:88](../../src/systems/Approaches.ts#L88) (`splitBudget` :251), the march at [src/systems/EnemyManager.ts:395](../../src/systems/EnemyManager.ts#L395), the night plan in [src/systems/WaveManager.ts:53](../../src/systems/WaveManager.ts#L53), route dots in [src/world/RouteMarks.ts](../../src/world/RouteMarks.ts).*
 
-- `src/systems/Approaches.ts`:
-  - `muster(id) → { id, x, y, kind: 'camp' | 'maw' } | null`
-  - `route(id) → Pt[]`, the path from the muster through `via` to the hall.
-  - `spawnPoint(id) → Pt`, which applies the 2400 px clamp.
-  - `live(wave) → ApproachId[]`
-- `WaveDef.gates` becomes `WaveDef.approaches`.
-- Enemies gain `marching: boolean`: 2.4× speed and no aggro until they stand on claimed ground.
-- Event `night:warning` fires with `{ approaches, routes }`, during the `warningSeconds` before dusk.
+- `src/systems/Approaches.ts` (pure; `new Approaches({ nav, claimMask(), claimed(id), campState(id) })`, scene field `approaches`). `ApproachId = string` (blueprint `APPROACHES` ids).
+  - `muster(id) → { id, x, y, kind: 'camp' | 'maw', region } | null`: the first standing (asleep or awake) camp in the chain, else its maw, else null (closed for good).
+  - `legs(id) → FieldTarget[]` (`via:<crossing>`… then `'hall'`); `routeCells(id)` / `route(id) → Pt[]` descend those NavGrid fields from the muster (walls, seals included); `toClaimed(id) → { d, cells, at }` path px to the first claimed cell.
+  - `spawnPoint(id) → Pt` (the muster, or the route point `SPAWN_CLAMP` 2400 px of path before claimed ground; `[NaN, NaN]` when closed); `marchRoute(id)` the route from there; `tier(id)`; `campKey(id)` the muster camp's resolved walker (null at a maw); `name(id)`, `isRaid(id)`.
+  - `live(wave) → ApproachId[]`: mains open by `OPENS` (south 1; west 5 or hollow; east 8 or greyfall; southeast 11 or kettle/ferrow), raids while their muster camp is awake. `tonight(wave, prefer?) → NightPlan { wave, fronts, raid }`: `frontsFor(wave)` mains (south first, then prefer, the rest rotating by wave), plus at most one raid. `splitBudget(plan, total)`: raid 30%, fronts by weight (south 1, others 0.8).
+  - Constants: `MARCH_SPEED` 2.4, `SPAWN_SCATTER` 120, `VIA_REACH` 96, `RAID_SHARE` 0.3, `CAMP_MIX` 0.3; `viaMid(crossingId)`.
+- `WaveDef.gates` is gone; `WaveDef.approaches?: ApproachId[]` is an optional preferred-fronts list (no scripted wave sets it). `SPAWN_GATES`, `GATE_BY_ID` and `GateId` are deleted.
+- `Enemy`: `marching` (2.4×, no targets, cleared by any hit in `applyDamage` or the first claimed cell), `approach`, `route: FieldTarget[] | null` (legs until claimed ground; used by the field step even after a hit), `leg`. Leg switch: on the crossing, within 96 px of its midpoint, or nearer the hall than it on the hall field. A wall or unreachable cell ends the march.
+- `WaveManager`: `plan`, `tonight: TonightRoute[] { id, name, raid, x, y, route }`, `arrivals` (first arrival per approach, s after dusk), `fighting` / `marching`, `arrived(e)` (EnemyManager calls it), `dayLength`, `nextApproaches()` (replaces `nextGates`). Fight window (`phaseT = nightSeconds`) starts on the first arrival or `DAYNIGHT.marchMax` 25 s after dusk; the end-of-night timeout counts from it.
+- `DAYNIGHT.daySeconds` is gone: `dayBase` 60, `dayPerRegion` 10, `dayMax` 180, `marchMax` 25; `dayLength(claimedBeyondHold)` in `config/balance.ts`.
+- Event `night:warning { approaches: string[], routes: Pt[][] }` at the warning. `CampManager.stateOf(id)`, `burn(id)` (reward and `camp:burned`). Harness: `H.burn`, `H.night(wave?)`, `H.march(s)`.
+- No new save fields: the plan, queue and marches are transient (an interrupted night restarts at its warning).
 
 ## S10: camps and lines
 

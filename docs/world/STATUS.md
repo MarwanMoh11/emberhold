@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S09** ([card](sessions/S09-nights.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S10** ([card](sessions/S10-camps-and-lines.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -19,9 +19,16 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 - **v1 saves** ([07-save.md §Migration](design/07-save.md#migration)): the options are the Veteran's charter (default), a clean slate, or keeping v1 playable. Blocks S19 only. Until then, S04's guard keeps v1 saves untouched and starts v2 fresh.
 - **Worker drop-off** (raised by S06): v1 crews stocked their own camp ("the short loop makes the settlement look busy"); design 04 §S06, the blueprint's depot and S06's card send every haul to the depot. Default (landed): the depot, via `buildings.dropoffFor`. Hold crews now walk ~500 px each way; Ferrow farmers ~1,550 px over the bridge until S11 outposts. Returning to v1 is a one-line change in `dropoffFor` (take the worker's camp). Tune in S20 either way.
-- **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s. Tuned in S20.
+- **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s (landed in S09 as `dayLength` in `config/balance.ts`). Tuned in S20.
 
 ## Log
+
+### S09 · Nights 2.0: done (2026-09-24)
+- `src/systems/Approaches.ts` (pure, tested on the real raster): musters along chains (camp → maw → closed), routes down each via field then the hall's, the 2400 px clamp, `live`/`tonight` (opens rules, fronts per night, one raid), `splitBudget`. Gates, `GateId` and the gate posts are gone; `WaveDef.approaches` is an optional preferred-fronts list. API in CONTRACTS §S09.
+- Spawns scatter 120 px around `spawnPoint` and march at 2.4× down their legs, deaf until hit, until the first claimed cell. Muster-tier scaling; 30% of each approach is its camp's walker; a raid takes 30%. Fight window from the first arrival or 25 s; `day = 60 + 10 × claimed` (≤ 180). Warning: `night:warning`, "Tonight: …" banner, ember dotted routes (ground within 1200 px, above the lightmap; minimap).
+- **Arrivals** (first on claimed ground, s after dusk, harness): wave 1 south 8.6–9.0 (three fresh runs); wave 5 + hollow: south 7.5–8.5, west 10.1–12.8 over Millford (barrowmoor › hollow › hold); wave 12, hold only: south 9.5, east 12.5 (Gorge Bridge), west 14.0 (Millford). 0 enemies off the ground in every run. Grunts walk 76 px/s on and off roads. `H.burn('campFerrow')` → south musters at Stairwarden (5904, 6288). Save → `H.start(true)` keeps wave and day; user saves restored byte-identical. 5 screenshots (one over budget: two were stale frames).
+- Deviations: raids don't count against fronts per night. A hit ends the march (normal speed) but the walker keeps its via legs until claimed ground. Legs also switch on the crossing itself (NavGrid via fields target every crossing cell). Saved `phaseT` clamps at 0 (a long night went below the validator's −1). The terrain-chunk budget test now retries with backoff: it flaked ~1 run in 4 before S09 and 3 in 4 with the new test file.
+- Trips: via fields build at scene create (~36 ms each, 3 of them), so every NavGrid version bump now rebuilds 4 fields in slices. Claiming a region with an awake raid camp inside it (downs → campDiggers) spawns that raid on claimed ground, so the fight starts at dusk. Ferrow is tier 2: wave 1 grunts have ×1.5 hp, ×1.3 damage (S20). Camp patrols still don't march or cap (S10). `H.claim` used S04 names and silently failed; fixed. Marching bosses skip their abilities until they arrive. No routes looked wrong in play. No blueprint moves, no new open decisions.
 
 ### S08 · Regions and claims: done (2026-09-24)
 - `RegionManager` (was ZoneManager; scene field `regions`, `zones` getter alias only for S09 to delete, no caller left): `claimed/claimedAt/claimMask/canClaim/claim`, reasons hall → adjacent → camps → cost with tooltip lines; `region:claimed`, `camp:burned` (renamed events), new `camp:woke`. API in CONTRACTS §S08.
@@ -41,12 +48,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - Trips: the TEMP spawn-gate posts still stand by the bridges (S09). HMR reloads sometimes throw S04's `glTexture` null error; a clean load plus a full pan throws none. The claim tint goes after `paintCrossings` and before the set pieces. Saves restored byte-identical. No blueprint moves, no new open decisions.
 
 ### S06 · Ally pathing and roads: done (2026-09-23)
-- `src/world/PathFind.ts` (A*, pull, LRU, queue), `PathFollower.ts`, `heap.ts` (shared with the fields); `nav.findPath/requestPath/onRoad/allySpeedAt`, `ROAD_SPEED` per CONTRACTS §S06. F2: TOGGLE ROAD TINT; the nav line shows path searches. Harness `H.watch(s)`, `H.run(dx, dy, s)`.
-- **`dropoffFor(x, y)` lives on BuildingManager** (depot, else hall door). Workers haul there (see Open decisions), pick nodes by walking distance ≤ 760 from the camp door (cached per camp and node), steer straight when a 5.5 px lane is clear and path otherwise (re-asked after 1.5 s stuck); fleeing workers path to their door. Soldiers: sight of the anchor every ~0.3 s; without it a path to the anchor, re-asked every 1 s or 200 px; a slot in the water becomes the nearest ground.
-- Cost: node, 136 claim-to-claim searches avg 0.5 ms, worst 8.8 ms, none past 20k nodes. Browser: worst search 0.6 ms, worst queue tick 0.6 ms (2 ms budget), cache hits outnumber searches ~2:1.
-- Verify: farm5 + 2 farmers, 120 s (Ferrow camp burned, enemies cleared every 5 s): 8 deliveries, 144 food, 0 off-ground frames, 1,102 worker-frames on crossings. Uncleared nights 1–3, lumber1 + farm5, 150 s: 21 deliveries, 0 off-ground. 12 soldiers Downs → Greyfall 6.7 s, worst stall 0.5 s; hero across the river, army over the bridge in 7.8 s, stall 0.5 s. Hero 243–251 px/s on the King's Road vs 208–209 off it. Saves restored byte-identical; no console errors after a fresh load.
-- Trips: `H.claim` does not burn camps; the Ferrow Muster razes farm5 in ~45 s (`g.camps.load(['campFerrow'])` to test in peace). A* ignores roads (speed only) and buildings (collision + the old detour handle them). A chasing soldier still goes straight and can end at a bank. `workers.incomePerSecond` (AFK catch-up) ignores walking and now overestimates. The two `glTexture` errors from S04 showed once before a reload, not after.
-- No blueprint moves. New open decision: worker drop-off (above).
+- `PathFind` (A*, LRU, queue) + `PathFollower`; `nav.findPath/requestPath/onRoad/allySpeedAt`, `ROAD_SPEED`; `buildings.dropoffFor` (depot) per CONTRACTS §S06; harness `H.watch`, `H.run`.
 
 ### S05 · NavGrid: done (2026-09-23)
 - `NavGrid` + `NavDebug` (CONTRACTS §S05): walls via `BuildingManager.syncNav`, enemies steer on `los` else `hallField.nextCell` (EnemyManager ~:176, S09 swaps the leg there).
