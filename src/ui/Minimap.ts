@@ -165,16 +165,13 @@ export class Minimap {
     this.base.setScale(bs).setCrop(b.x, b.y, b.w, b.h)
       .setPosition(this.mapX + b.dx * k - b.x * bs, this.mapY + b.dy * k - b.y * bs)
 
-    // The fog page is a render texture, stored bottom row first: Phaser takes
-    // a crop's y from that end, so ask for the mirrored band.
+    // the world's fog page (a render texture: Phaser crops it top-down like any other)
     const fogTex = this.game.textures.get(FOG_KEY)
     if (this.fog.texture !== fogTex) this.fog.setTexture(FOG_KEY)
-    const fw = this.fog.frame.width, fh = this.fog.frame.height
-    const f = windowCrop(x0, y0, SPAN, FOG_SCALE, fw, fh)
+    const f = windowCrop(x0, y0, SPAN, FOG_SCALE, this.fog.frame.width, this.fog.frame.height)
     const fs = FOG_SCALE * k
-    const my = fh - f.y - f.h
-    this.fog.setScale(fs).setCrop(f.x, my, f.w, f.h)
-      .setPosition(this.mapX + f.dx * k - f.x * fs, this.mapY + f.dy * k - my * fs)
+    this.fog.setScale(fs).setCrop(f.x, f.y, f.w, f.h)
+      .setPosition(this.mapX + f.dx * k - f.x * fs, this.mapY + f.dy * k - f.y * fs)
   }
 
   /** World (x, y) to panel px about the window round (cx, cy); null outside it. */

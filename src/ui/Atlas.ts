@@ -20,6 +20,8 @@ const DEPTH = 1_080_000
 const LIVE_HZ = 6
 /** A press that travels further than this is a drag, not a tap (CSS px). */
 const DRAG_SLOP = 8
+/** Seen cells (256 px) inside a region before the atlas names it: about a screen's worth. */
+const EXPLORED_CELLS = 6
 /** How long a refusal stays in the footer, s. */
 const NOTE_S = 3
 
@@ -292,7 +294,7 @@ export class Atlas {
   private refreshExplored() {
     for (const r of REGIONS) {
       if (this.explored.has(r.id)) continue
-      if (this.gs.regions.claimed(r.id) || this.memory.anySeenIn(r.poly)) this.explored.add(r.id)
+      if (this.gs.regions.claimed(r.id) || this.memory.anySeenIn(r.poly, EXPLORED_CELLS)) this.explored.add(r.id)
     }
   }
 

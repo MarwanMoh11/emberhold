@@ -197,22 +197,30 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S11: outposts and waystones
 
-*Status: landed (S11). [src/systems/Waystones.ts](../../src/systems/Waystones.ts), the list at [src/ui/TravelList.ts](../../src/ui/TravelList.ts), `respawnPoint` in `GameScene`, `dropoffFor` / `outposts` in `BuildingManager`.*
+*Status: landed (S11). [src/systems/Waystones.ts](../../src/systems/Waystones.ts), `respawnPoint` in `GameScene`, `dropoffFor` / `outposts` in `BuildingManager`.*
 
 - `BuildingKey` gains `'outpost'` (2 levels; Lv.2 stat `aura: 1`). `FUTURE_PADS` now holds only fishery and tradingPost pads. Constants `OUTPOST { heal 5, healRadius 220, calmRadius 420, light 600, safeRadius 600, stoneDx 44, stoneDy 8 }` and `WAYSTONE { touch 56, channel 1.2, escort 500, hallStone 'wsHall' }` in `config/balance.ts`; **S14** raises `OUTPOST.heal` (Kettle Springs).
 - `buildings.outposts() → Building[]`: built, standing outposts. `buildings.dropoffFor(x, y)`: the depot (hall door while it is down) or the standing outpost nearest by path (`nav.findPath` + `pathLength`), cached per 256 px block until a drop site rises or falls or `nav.version` moves. The hero banks the pack at an outpost as at the depot (not while committed to its upgrade).
 - `scene.respawnPoint() → { x, y, padId }`: the standing outpost nearest the hero's fall with no enemy within `safeRadius` and `damageT <= 0` (not struck in 6 s), if nearer than the hall; else the hall (`padId: 'hall'`). A built outpost reveals ~600 px of fog on build and on load; Lv.2 heals allies within `healRadius` each second while no enemy is within `calmRadius`.
 - `scene.waystones: Waystones`: stone ids are outpost pad ids plus the POIs `wsHall`, `wsIsle` (`LONE_STONES`, drawn with `ws_stone`). `stones() → Stone { id, name, x, y, region, lone }[]` (standing now), `stone(id)`, `list() → StoneInfo (Stone + active)[]`, `isActive(id)`, `activate(id, silent?)` (also on touch within `touch`; `wsHall` starts lit), `here` (the lit stone the hero stands on), `canTravel(to) → { ok, why }`, `travel(to) → boolean` (starts the channel; `lastWhy` on refusal), `channel: { from, to, t } | null`, `progress`, `cancel(why)`, `toJSON()`, `load(ids)`. Night: only `wsHall`. The channel breaks on any hp loss, stepping off the stone, a fall, or nightfall. Soldiers within `escort` arrive in rings of 10 round (stone.x, stone.y + 40).
 - Events: `waystone:lit { id }`, `waystone:travelled { from, to, escort }`.
-- **S12 swap point:** `ui/TravelList.ts` (mounted in `UIScene.create` / `update`, field `travel`) is the stopgap list; replace it with the atlas and call `canTravel` / `travel`. `DockBands.card?: number | null` (the list's bottom edge when it reaches the middle of the view): `GameScene.updateCamera` frames the hero between it and the dock.
+- S12 replaced the stopgap `ui/TravelList.ts` with the atlas (travel calls `canTravel` / `travel`). `DockBands.card?: number | null` stays (nothing sets it now); `GameScene.updateCamera` still frames the hero between it and the dock.
 - Harness: `H.stones() → { here, channel, list: ['id*@x,y'], offers }`, `H.travel(from, to, s = 1.6) → { ok, why, here, hero, dest, escort, escortAtDest }`.
 
 ## S12: minimap and atlas
 
-*Status: planned.*
+*Status: landed (S12). [src/ui/Atlas.ts](../../src/ui/Atlas.ts), [src/ui/Minimap.ts](../../src/ui/Minimap.ts), pure parts in [src/ui/chart.ts](../../src/ui/chart.ts), marks in [src/ui/chartMarks.ts](../../src/ui/chartMarks.ts), the bake in [src/world/AtlasBake.ts](../../src/world/AtlasBake.ts).*
 
-- `Minimap` shows a local window of 2400 px radius.
-- `Atlas` is full-screen on `M` or Back. It shows regions, claims, discovered POIs and tonight's routes, and clicking a waystone travels there.
+- `paintAtlasRect(ctx, wx, wy, size)` (Terrain.ts): the painter's low-detail pass (wash every `ATLAS_STEP` 16 px, feature lines, roads, crossings, claim tint; no decals, set pieces or grain). `paintWash` takes a `step`.
+- `scene.atlasBake: AtlasBake`: canvas texture `ATLAS_KEY` = `'atlas_bake'`, `ATLAS_W × ATLAS_H` = 640 × 576 (`ATLAS_SCALE` 16 world px per texel), painted in `ATLAS_BLOCK` 1024 px blocks after the chunk queue empties (or 3 s), 2.5 ms a frame. `invalidate(rect?)` (RegionManager calls it with `claimRect` on every claim), `update(dt)`, `flush()`, `done`, `version`, `stats() → { done, queued, bakeMs, wallMs, worstFrameMs }` (also in `scene.stats.atlas`). `atlasBlocks(rect?)` is pure.
+- The world fog page is saved as texture `FOG_KEY` = `'fog_live'` (RegionManager; the last run's page lives on as `fog_live_prev` for one restart). Charts crop or scale it; they never keep their own shroud.
+- `ui/chart.ts` (pure): `ChartMemory` (256 px seen grid: `reveal(x, y, r = 480)`, `revealPoly`, `seenAt`, `anySeenIn(poly, min)`, `version`), `AtlasView` (`z, ox, oy, vp, zMin, zMax`, `resize`, `centre`, `pan`, `zoomAt`, `toScreen`, `toWorld`), `pickStone`, `travelOrder` (Hall first, then nearest), `windowCrop`.
+- `ui/chartMarks.ts`: `CHART` inks, `drawCamp`, `drawStone`, `drawOutpost`. **S14 hooks:** `POI_GLYPH[kind]` (every kind a generic ring until S14 draws its own) and `poiState(gs, memory, poi)`, which already answers from `gs.pois.state(id)` once a `pois` field exists (else seen = its cell seen).
+- `Minimap(ui, gs, openAtlas)`: `MINI_RADIUS` 2400, north up; crops `atlas_bake` and `fog_live`; marks at 9 Hz (pads, seen camps and POIs, stones, bodies, tonight's routes in the warning and the march, the view box, the hero). `memory` is the shared `ChartMemory`. The chip and a tap on the map open the atlas. `inspect()`.
+- `Atlas(ui, gs, memory, onClose)` in `UIScene.atlas`: `show()`, `hide()`, `close()`, `open`, `cycle(±1)`, `confirm()`, `travelTo(id) → boolean`, `tap(x, y)`, `focus`, `openMs`, `inspect()`. `UIScene.openAtlas()` pauses the Game scene (no save), `toggleAtlas()`; `M`, the Map chip, the minimap, the Travel chip and gamepad Back (8) open it; M, Close, ESC/P/Start, B or Back close it; d-pad cycles the lit stones, A or Enter travels. The atlas counts as a modal (`anyModalOpen`).
+- `TravelChip` (`UIScene.travel`): a plate at the bottom of the view while the hero stands on a lit stone; opens the atlas and shows the channel's progress.
+- `GameScene.questRoute: Pt[] | null`: the nav path to an off-screen quest target (`nav.requestPath`, re-asked on a new target, 400 px of drift or 4 s); the objective arrow aims at its first point 260 px ahead, the atlas draws it.
+- Harness: `H.atlas(open?)`, `H.mini()`; `H.stones().offers` now lists every other lit stone with `canTravel`.
 
 ## S13: fish and trade
 

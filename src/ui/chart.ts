@@ -67,12 +67,16 @@ export class ChartMemory {
     }
   }
 
-  /** Any seen cell inside `poly`: the region has been looked into. */
-  anySeenIn(poly: readonly Pt[]) {
+  /**
+   * At least `min` seen cells inside `poly`: the region has been looked into,
+   * not just glimpsed across its border from the next one.
+   */
+  anySeenIn(poly: readonly Pt[], min = 1) {
     const [x0, y0, x1, y1] = bounds(poly)
+    let n = 0
     for (let r = Math.floor(y0 / SEEN_CELL); r <= Math.min(this.rows - 1, Math.floor(y1 / SEEN_CELL)); r++) {
       for (let c = Math.floor(x0 / SEEN_CELL); c <= Math.min(this.cols - 1, Math.floor(x1 / SEEN_CELL)); c++) {
-        if (this.cells[r * this.cols + c] && inPoly((c + 0.5) * SEEN_CELL, (r + 0.5) * SEEN_CELL, poly)) return true
+        if (this.cells[r * this.cols + c] && inPoly((c + 0.5) * SEEN_CELL, (r + 0.5) * SEEN_CELL, poly) && ++n >= min) return true
       }
     }
     return false

@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S12** ([card](sessions/S12-minimap-and-atlas.md)), then S13 · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S13** ([card](sessions/S13-fish-and-trade.md)), then S13b · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -25,6 +25,16 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S12 · Minimap and atlas: done (2026-09-25)
+- C1: `Minimap` is a local 2400 px window, north up: crops of `atlas_bake` and the world's own fog page (`fog_live`, saved by RegionManager), marks at 9 Hz (pads, seen camps/POIs, stones, bodies, tonight's routes, hero). Seen ground is `ChartMemory` (256 px), shared with the atlas.
+- C2: `AtlasBake` paints the world at 1/16 (640 × 576) through `paintAtlasRect` (low detail) after the visible chunks, ≤2.5 ms a frame; a claim re-queues its box (9 blocks for Downs). **Bake: 79–93 ms of painting over ~100–116 ms wall, worst frame 3–4 ms.**
+- C3: `Atlas` (full screen, pauses the game): explored borders and names (≥6 seen cells), claim state, camps (burned crossed), POIs, outposts, stones, routes, the quest walk, the hero; drag, pinch, wheel. Tap a lit stone to travel; controller Back opens, d-pad cycles, A travels, B closes. `TravelList` deleted; a Travel chip opens the atlas from a stone. The quest arrow follows `questRoute` (nav path) off screen. API in CONTRACTS §S12.
+- Verify (harness, one run each): atlas opens in 0.9–3.9 ms; desktop click wsHall → wsIsle travelled; mobile (375×812) synthetic touch: pinch ×2.3, drag pans, tap on wsIsle started the channel and closed the atlas; gamepad Back/right/A travelled wsIsle → wsHall, B and ESC close. Minimap marks rebuild 0.1–0.3 ms (at 9 Hz; the old per-tick RT bake is gone). Fog crop checked by pixel sample (clear at the hero, vellum at the edge). User saves restored byte-identical. 2 screenshots (the game with its minimap at 1280×800; the mobile atlas zoomed out), not the card's 3: the README caps it at 2.
+- Deviations: the Map chip opens the atlas (the minimap no longer folds away; on a phone it is 127 px). The old world's footprint (optional) is not drawn. Region names show after 6 seen cells, so the hold's neighbours are named once looked into, not at boot.
+- Trips: a render-texture crop in Phaser 3.90 is top-down like any texture (don't mirror y). `DockBands.card` has no writer now. After a waystone arrival `here` was sometimes null on the phone run (S11 arrival ring vs `touch` 56; not investigated). S14: set `POI_GLYPH[kind]` and add `gs.pois` (`poiState` picks it up).
+- Not measured: old-vs-new minimap frame cost side by side, a river-bending quest route by eye, landscape phone layout.
+- No blueprint moves, no new open decisions.
+
 ### S11 · Outposts and waystones: done (2026-09-24)
 - C1: `outpost` building (150c 100w; Lv.2 300c 150 stone, 800 → 1200 hp): log blockhouse, lantern pole, standing stone; `ws_stone` for the lone stones. The 17 outpost pads left `FUTURE_PADS`. `dropoffFor` = depot or nearest standing outpost by path (cached per 256 px block). The hero banks the pack at an outpost.
 - C2: `scene.respawnPoint()`; outposts clear ~600 px of fog; Lv.2 heals 5/s within 220 px while no enemy is within 420 (`OUTPOST.heal`, for S14).
@@ -44,14 +54,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - No blueprint moves, no new open decisions.
 
 ### S09b · Walls and panels: done (2026-09-24)
-- C1–C2 (walls): `src/world/wallLine.ts` (`layWallLine`, `capDiscs`, `legacyRingPads`). The palisade is 92 pads: `palisade.0`–`palisade.87` (76 runs, 12 posts on corners and jambs) plus gateN/E/S/W. NavGrid capsules via `setBlockerDiscs` (discs every 16 px, r 28); `Building.boxDy/boxHW/boxHH`; end-on `bld_wall_v_*`, `bld_wallpost_*`, side-on `bld_gate_v_*`. Old `wall\d+` saves remap to the nearest piece. `H.wallGaps`: 0 nav and 0 body leaks at L1 and L3, and after an old-id load; `H.assault` from N, E, W and NE never got in unbroken.
-- C3 (`f0cb901`): `src/ui/dock.ts`, re-exported by skin: `DOCK`, `DockSheet` (a bottom sheet in portrait, a right column otherwise; collapsed or expanded, remembered per page session; publishes `uiBands.dock`), `CostChips`, `StatLine`, compact `PlateButton`. The camera eases toward the dock's `focus` and back.
-- C4: `BuildingPanel` draws the unchanged `PanelView` into a DockSheet (header: title and UPGRADE, or the funding bar on a site; body: stat, cost chips, unit chips, hint, hold-to-demolish). The border stone's card is its own sheet within 220 px of the stone, and the world label is just the name. `H.panel()`, `H.tap()`. API in CONTRACTS §S09b.
-- Verify (375×812, one run): barracks collapsed frac 0.072, expanded 0.282; hall 0.169; wall piece 0.16; Downs stone 0.169 and 0.072 collapsed. No overlap with the building, stone or hero in any; every target ≥ 44×44; minFont 12. Synthesised taps fired upgrade (committed), pickUnit, raze (hold, then release), expand and collapse. Leaving a pad clears `uiBands.dock` and the camera shift eases to 0. Screenshot at L3: the west run reads as one stone wall through the gateW gatehouse and around the SW corner.
-- Not measured (S20/S21): desktop fracs at 1280×800 and 1920×1080 (the token cap says ≤ 0.20), the right-side dock, L2 wall art by eye, and paying at a stone through the new card (the claim path itself is unchanged).
-- Trips: the browser pane's localStorage was empty before the smoke run and now holds a dev `emberhold.save.v2` (5000 of each resource); clearing it was refused by the permission classifier, so delete it by hand if it matters. Locked unit chips fire `pickUnit`, but `setTrains` refuses them (by design). `BuildingManager.destroyPanel` has no caller (pre-existing; the UI scene's shutdown tears the sheets down). The minimap still draws the ring from `WALL_RING`.
-- For S10: lay the other `WALLS` lines with `layWallLine` (ids `${line}.${k}`); `WALL_RING` can go once every line is laid. Later panels (S11, S13, S13b, S15) use only `DockSheet`, `CostChips`, `StatLine` and compact `PlateButton`.
-- Deviations (from C1): capsules stay 48 px straight-line from a gate's centre; the remap is piece-centric (72 px, or 128 px beside a gate). No blueprint moves, no new open decisions.
+- `layWallLine` (palisade 92 pads, NavGrid capsules, `H.wallGaps` 0 leaks) and the docked panel (`DockSheet`, `CostChips`, `StatLine`, compact `PlateButton`; CONTRACTS §S09b).
 
 ### Plan amended after the playtest (2026-09-24)
 - Inserted S09b (wall gaps; compact docked panel), and S13b and S13c (village buildings; a settled country). Pacing was slowed in 01, and S10, S14, S18, S20 and S21 were updated to match. No code changed.
