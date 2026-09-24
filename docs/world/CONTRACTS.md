@@ -72,7 +72,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `HALL = { x, y }` (:40, from the `hall` pad), `REGIONS: RegionDef[]` (:34, `RegionBP & { index }`), `REGION_BY_ID`, and `type RegionId, Biome`.
   - `PADS: PadSpec[]` (:75; `region`, `requiresTownHall` from `hall`, `startLevel`) and `FUTURE_PADS: PadBP[]` (:78; outpost, fishery, tradingPost).
   - `CAMPS: CampSpec[]` (:146; `region`, `reward: ResourceBag`, bracketed spawn keys resolved by `resolveSpawnKey`), `NODE_CLUSTERS: NodeCluster[]` (:167; `region`, no fish), `NODE_DEFS`.
-  - `WALL_LINES: WallLineSpec[]` (:87; `WallLineBP & { active }`, only the palisade active) and `WALL_RING` (:94; the palisade's bounds, `step` and gates `gateN/S/E/W`).
+  - `WALL_LINES: WallLineSpec[]` (`WallLineBP & { active }`; every line active since S10). `WALL_RING` was removed in S10 (the minimap strokes `WALL_LINES`).
   - `SPAWN_GATES`, `GATE_BY_ID`: removed by S09 (see §S09).
   - `APPROACHES`, `MAWS`, `CROSSINGS`, `ROADS`, `POIS`, `THRONE`, `FEATURES`, passed through from the blueprint.
   - `raster(): WorldRaster` (:44), built once and memoised.
@@ -183,11 +183,17 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S10: camps and lines
 
-*Status: planned.*
+*Status: landed (S10). Camps in [src/systems/CampManager.ts](../../src/systems/CampManager.ts), patrol AI in `EnemyManager.acquirePatrol / strayed / wanderGoal / patrolWay`, the fire in [src/world/CausewayFire.ts](../../src/world/CausewayFire.ts), lines in `BuildingManager.generateWalls`.*
 
-- `CampSpec.tier` (`'warcamp' | 'stronghold' | 'fortress'`), plus `leash` and `wakeRadius`.
-- `nav.setSealed(crossingId, sealed)`. The Regent's Causeway is sealed until `campAshgate` burns.
-- Every blueprint `WALLS` line becomes pieces through S09b's `layWallLine` (ids `${lineId}.${k}`), and its gates. Each line is buildable from `hall`.
+- `CampSpec` adds `tier: CampTier` (`'warcamp' | 'stronghold' | 'fortress'`), `leash` (`CAMP_LEASH` 700), `wakeRadius` (`CAMP_WAKE` 900), `siegeRadius` (`CAMP_SIEGE` 600), `boss?` (blueprint key). `WAKE_RADIUS` = `CAMP_WAKE`.
+- `Enemy.home: CampHome { id, x, y, leash, siege } | null` (patrols and guards), `returning`, `wanderX/Y/T`, `guard` (skipped by `clearWalkers`), `shielded` (`applyDamage` and burn ticks do nothing; `damageEnemy` pops WARDED), `path/pathX/pathY/pathI`. A patrol targets the hero within its leash and 520 px, allies inside the leash, else (melee only) `nearestStructure(camp, siege)`; with nothing, it strolls inside 0.45 × leash; past leash + 60 it walks home. No line of sight: `nav.requestPath`, never the hall field.
+- `CampManager`: `CampRec.patrols` (≤ 2 × `spawns.count`), `CampRec.guards`, `CampRec.home`; `guardIds(spec)` (`['boss']` for a stronghold with a boss, `brazier0..2` for the fortress), `guardsUp(id)`, `guardsDown: Set<'${campId}.${guardId}'>`, `guardsJSON()`, `load(burned, awake?, guardsDown?)`. `BRAZIERS { count 3, ring 260, hp 2000 }`; `STAND_IN { hp ×8, dmg ×1.6, leash 420, dy 90 }`; `bossName(key)`.
+  - **S17 swap point:** `CampManager.spawnGuard`, the `gid === 'boss'` branch: it spawns `'elite'` with a renamed def at `(camp.x, camp.y + 90)`. Spawn the boss's own `EnemyKey` there instead; keep `e.guard = true` and `e.home`.
+- `EnemyManager.spawn(key, x, y, hpMult?, dmgMult?, def = ENEMIES[key])`. New `EnemyKey` `'brazier'` (structure, texture `enm_brazier`).
+- Events: `camp:burned { id, tier?, boss? }` (the boss key is for S15's relic); new `crossing:opened { id }` (the HUD banners "The fire on the causeway dies.").
+- `CausewayFire` (scene field `causeway`): `sync()` at boot after load (sealed unless `campAshgate` burned), `douse()`, `lit`, `update(dt)`. `CAUSEWAY`, `CAUSEWAY_KEEPER`. `nav.setSealed` / `isSealed` are S05's.
+- Every `WALLS` line is laid by `layWallLine` (ids `${line}.${k}`, gates by blueprint id); pads carry `requiresTownHall: line.hall` above 1. Pads: palisade 92, bridgehead 23, millfordLine 19, gorgeLine 18, stairLine 21, passLine 15. `buildings.lineComplete(lineId) → boolean` (every piece and gate built and standing).
+- Harness: `H.camp(id)`, `H.leash(id, s, away)`, `H.siege(id, key, d, s)` (a dev pad `siegeTest.${id}` on open ground in sight of the camp).
 
 ## S11: outposts and waystones
 
@@ -274,4 +280,5 @@ Each session that adds persistent state lists its field here: the owner, then a 
 | `regions` | S04, S08 | unchanged shape; S08 owns the rules (`RegionManager.toJSON`, in `REGIONS` order) |
 | `campAwake` | S08 | `string[]` of camp ids awake and standing (optional; every id in `CAMPS`). Load also wakes any camp with a `campHealth` entry |
 | `buildings[].padId` | S09b | wall pieces are `${line}.${k}` (`palisade.0`–`palisade.87`), gates their blueprint ids. Old `wall\d+` still validates; on load each new palisade piece the save does not name takes the level and hp of the nearest old pad within 72 px (128 px within 130 px of a gate). The next save writes the new ids |
+| `campGuards` | S10 | `string[]` of fallen camp guards, `${campId}.boss` or `${campId}.brazier${k}` (optional; ≤ 64; camp ids from `CAMPS`). Guards not listed respawn at full hp on an awake camp |
 | _(add rows as they land)_ | | |

@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S10** ([card](sessions/S10-camps-and-lines.md)), then S11 · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S11** ([card](sessions/S11-outposts-and-waystones.md)), then S12 · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -24,6 +24,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s (landed in S09 as `dayLength` in `config/balance.ts`). Tuned in S20.
 
 ## Log
+
+### S10 · Camps 2.0 and fortification lines: done (2026-09-24)
+- C1: `CampSpec.tier/leash/wakeRadius/siegeRadius/boss`; patrols (`Enemy.home`) capped at 2 × `spawns.count`, fight only inside the leash, stroll, walk home past it, path round obstacles (never the hall field). Melee patrols besiege structures within 600 px. Strongholds raise a stand-in boss (scaled `elite`, "GALLOWS KNIGHT" etc.) at camp + (0, 90) in `CampManager.spawnGuard` (**S17 swaps it there**); Ashgate rings itself with 3 braziers (`enm_brazier`, 2000 hp, 260 px). The camp is `shielded` (WARDED) until its guards fall. Save `campGuards`; `camp:burned { id, tier, boss }`.
+- C2: `src/world/CausewayFire.ts`: 15 flickering flames seal `calderaCauseway` (S05's `setSealed`) until Ashgate burns, then fade; `crossing:opened` → banner "The fire on the causeway dies."
+- C3: every `WALLS` line laid by `layWallLine`, gated by region claim and `line.hall`. Pads: bridgehead 23, millfordLine 19, gorgeLine 18, stairLine 21, passLine 15 (palisade 92). `buildings.lineComplete(id)`. `WALL_RING` removed; the minimap strokes the lines.
+- Verify (harness, one run): Diggers' patrols chased the hero, then stayed ≤ 302 px of camp after he left (leash 700); a dev farm 420 px from Rotwood was razed by its runners; Ashgate took 0 damage with braziers up (guardsUp 3→2→1→0), then 3000; Gallows warded by its knight; `passableAt(6500, 7655)` false → true on burn, banner fired. All five new lines: `H.wallGaps` 0 nav / 0 body leaks, `lineComplete` true; bridgehead hidden at hall 1, shown at 2; stair hidden at 2. User saves restored byte-identical.
+- Deviations: the south route already ran through the bridgehead gate's spot before the line was built (16 px from its centre both ways, 0 wall cells after), so "reroutes" is "still goes through the gate". Archer bands never besiege (arrows sail over structures). Patrols of a burned camp keep strolling its ruin. The stand-in boss has no HUD boss bar (not `def.boss`). 3 screenshots (bridgehead, causeway fire, one hidden-pane miss); no stronghold screenshot.
+- Trips: burning Ashgate still spawns the Cinder Regent at the fortress after 1.6 s (v1 `scheduleFinalBoss`; S17 moves her to the island). A fresh-game hero tp'd onto lava is slid ~500 px to ground. Not measured: patrol path cost with many camps awake (S21), assault through each new gate (the gap check stands in).
+- No blueprint moves, no new open decisions.
 
 ### S09b · Walls and panels: done (2026-09-24)
 - C1–C2 (walls): `src/world/wallLine.ts` (`layWallLine`, `capDiscs`, `legacyRingPads`). The palisade is 92 pads: `palisade.0`–`palisade.87` (76 runs, 12 posts on corners and jambs) plus gateN/E/S/W. NavGrid capsules via `setBlockerDiscs` (discs every 16 px, r 28); `Building.boxDy/boxHW/boxHH`; end-on `bld_wall_v_*`, `bld_wallpost_*`, side-on `bld_gate_v_*`. Old `wall\d+` saves remap to the nearest piece. `H.wallGaps`: 0 nav and 0 body leaks at L1 and L3, and after an old-id load; `H.assault` from N, E, W and NE never got in unbroken.
