@@ -5,6 +5,7 @@ export type BuildingKey =
   | 'barracks' | 'archeryRange' | 'stable' | 'house' | 'warehouse'
   | 'blacksmith' | 'workshop' | 'healingTent'
   | 'watchtower' | 'cannonTower' | 'wall' | 'gate'
+  | 'outpost'
 
 export type BuildingCategory = 'core' | 'production' | 'military' | 'support' | 'defense'
 
@@ -170,6 +171,16 @@ export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
     { cost: { coins: 1200, stone: 400, food: 400 }, hp: 1050, stats: { heal: 32, radius: 320 } },
   ], 'Mends you and any troops standing in its light.',
     { requiresTownHall: 1, blocking: true }),
+
+  // One per region beyond the hold (S11): a drop-off, a waystone, a place to
+  // wake up after a fall, and a lantern the fog gives way to. Its heal aura
+  // (Lv.2) is `OUTPOST.heal` in balance, not a stat here: a `heal` stat would
+  // compete with the infirmary for the settlement-wide bonus.
+  outpost: B('outpost', 'Outpost', 'OUTPOST', 'support', 60, 50, [
+    { cost: { coins: 150, wood: 100 }, hp: 800, stats: { light: 600 }, label: 'Outpost' },
+    { cost: { coins: 300, stone: 150 }, hp: 1200, stats: { light: 600, aura: 1 }, label: 'Fortified Outpost' },
+  ], 'Drop hauls here, travel from its waystone, and wake here after a fall if it is safe.',
+    { blocking: true }),
 
   watchtower: B('watchtower', 'Watchtower', 'TOWER', 'defense', 46, 46, [
     { cost: { wood: 150, coins: 100 }, hp: 600, stats: { dmg: 12, rate: 1, range: 250, splash: 0 } },

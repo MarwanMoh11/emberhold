@@ -6,7 +6,7 @@ const W = await loadTs('src/config/world/index.ts')
 const BP = await loadTs('src/config/world/blueprint.ts')
 const { ENEMIES } = await loadTs('src/config/enemies.ts')
 
-const FUTURE = new Set(['outpost', 'fishery', 'tradingPost'])
+const FUTURE = new Set(['fishery', 'tradingPost'])
 const regionIds = new Set(BP.REGIONS.map(r => r.id))
 
 test('the world is the blueprint size', () => {
@@ -26,6 +26,15 @@ test('counts match the blueprint', () => {
   assert.equal(W.WALL_LINES.length, BP.WALLS.length)
   assert.ok(W.WALL_LINES.every(l => l.active), 'S10 lays every line')
   W.REGIONS.forEach((r, i) => assert.equal(r.index, i))
+})
+
+test('outposts are pads (S11): exactly one in every region but the hold', () => {
+  const outs = W.PADS.filter(p => p.key === 'outpost')
+  for (const r of W.REGIONS) {
+    assert.equal(outs.filter(p => p.region === r.id).length, r.id === 'hold' ? 0 : 1, r.id)
+  }
+  assert.ok(W.POIS.some(p => p.id === 'wsHall' && p.kind === 'waystone'))
+  assert.ok(W.POIS.some(p => p.id === 'wsIsle' && p.kind === 'waystone'))
 })
 
 test('every pad, camp and cluster names a region', () => {

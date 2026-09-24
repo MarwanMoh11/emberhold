@@ -884,6 +884,35 @@ const DRAW: Record<BuildingKey, Painter> = {
     if (lvl >= 5) form(x, P.poly([[cx + 1, by - h - 50], [cx + 4, by - h - 57], [cx + 7, by - h - 50], [cx + 4, by - h - 47]]), PAL.crystal, { rim: 0.8, core: 1 })
   },
 
+  outpost: ({ x, lvl, cx, by }) => {
+    // the lantern pole first, behind the blockhouse's west end
+    const px = cx - 40, top = by - 76
+    form(x, P.round(px - 1.8, top, 3.6, by - top + 2, 1.5), WOOD_D, { rim: 0.6, core: 1.2 })
+    form(x, P.round(px - 2, top + 2, 16, 3, 1), BEAM, { rim: 0.4, core: 0.8 })
+    line(x, x2 => { x2.moveTo(px + 11, top + 5); x2.lineTo(px + 11, top + 10) }, 0.8, INK, 0.8)
+    const lantern = P.poly([[px + 7, top + 12], [px + 15, top + 12], [px + 14, top + 22], [px + 8, top + 22]])
+    fill(x, lantern, 0xffd27a)
+    line(x, lantern, 1, INK, 0.9)
+    fill(x, P.poly([[px + 6, top + 12], [px + 11, top + 8], [px + 16, top + 12]]), IRON)
+    // the blockhouse: squared logs, an overhanging upper storey at Lv.2
+    const s: BoxSpec = { L: cx - 28, B: by, w: 38, h: lvl >= 2 ? 20 : 22, d: 20, mat: 'log', c: WOOD, footing: lvl >= 2 ? 6 : 0 }
+    box(x, s)
+    doorAt(x, s.L + 12, by, 10, 15, WOOD_D)
+    fill(x, P.rect(s.L + 27, by - 16, 4, 7), 0x2a1a10)
+    if (lvl >= 2) {
+      const u: BoxSpec = { L: s.L - 3, B: by - s.h, w: s.w + 6, h: 14, d: 22, mat: 'plank', c: shade(WOOD, 0.06) }
+      box(x, u)
+      for (const wx of [u.L + 10, u.L + 30]) fill(x, P.rect(wx - 1.5, u.B - 10, 3, 6), 0x2a1a10)
+      roofSide(x, u, 16, 4, SLATE, 'slate')
+      banner(x, u.L + u.w / 2 + 4, u.B - u.h - 18, 16)
+    } else {
+      roofSide(x, s, 15, 4, 0x8a5a36, 'plank')
+      banner(x, s.L + s.w / 2 + 4, by - s.h - 18, 14)
+    }
+    logPile(x, s.L + s.w + 2, by + 6, 3)
+    standingStone(x, cx + 44, by + 4, 1)
+  },
+
   cannonTower: ({ x, lvl, cx, by }) => {
     const h = 30 + lvl * 6
     const t: BoxSpec = { L: cx - 20, B: by, w: 34, h, d: 16, mat: 'stone', c: shade(STONE, -0.04) }
@@ -1002,13 +1031,47 @@ const GLOW: Partial<Record<BuildingKey, Glow>> = {
   healingTent: ({ x, lvl, cx, by }) => {
     if (lvl >= 3) glow(x, cx - 6, by - 14, 30, PAL.good, 0.28)
   },
+  outpost: ({ x, lvl, cx, by }) => {
+    glow(x, cx - 29, by - 59, 14, 0xffb050, 0.85)
+    if (lvl >= 2) glow(x, cx, by - 14, 30, PAL.good, 0.18)
+  },
+}
+
+/**
+ * A waystone (S11): a weathered monolith with a carved lapis rune. Outposts
+ * paint one beside the blockhouse; the lone stones (the Hall Stone, the Isle
+ * Stone) use `ws_stone`, and the Waystones system lays a glow over it once lit.
+ */
+function standingStone(x: Ctx, sx: number, B: number, k: number) {
+  const h = 34 * k, w = 8 * k
+  const body = P.blob([[sx - w, B], [sx - w - 1, B - h * 0.55], [sx - w * 0.55, B - h], [sx + w * 0.4, B - h - 2 * k], [sx + w, B - h * 0.5], [sx + w + 1, B]], 0.9)
+  form(x, body, 0x9a968a, { rim: 1.4 * k, core: 3 * k, hatch: 0.12 })
+  const ry = B - h * 0.55
+  line(x, x2 => {
+    x2.moveTo(sx, ry - 7 * k); x2.lineTo(sx, ry + 7 * k)
+    x2.moveTo(sx - 4 * k, ry - 3 * k); x2.lineTo(sx, ry); x2.lineTo(sx + 4 * k, ry - 3 * k)
+    x2.moveTo(sx - 3 * k, ry + 4 * k); x2.lineTo(sx + 3 * k, ry + 4 * k)
+  }, 1.3 * k, 0x3c62a0, 0.95)
+  for (let i = 0; i < 3; i++) fill(x, P.ellipse(sx + (i - 1) * 5 * k, B + 1, 3 * k, 1.4 * k), shade(0x7a8a5a, -0.1 * i), 0.8)
+  line(x, body, 1.1, INK, 0.85)
+}
+
+/** The lone waystone's texture: 40×64, pad point 16 px above the bottom like a building. */
+function buildWaystoneTexture(scene: Phaser.Scene) {
+  const w = 40, h = 64, cx = w / 2, by = h - 16
+  register(scene, 'ws_stone', paint(w, h, {
+    under: x => contactShadow(x, cx, by + 2, 26),
+    body: x => standingStone(x, cx, by, 1),
+    outline: 1.6,
+    grain: 0.1,
+  }))
 }
 
 /** Texture canvas size per building. Generous headroom for roofs and flags. */
 function texSize(key: BuildingKey, lvl: number) {
   const d = BUILDINGS[key]
   const extra = key === 'watchtower' ? 64 + lvl * 8 : key === 'cannonTower' ? 44 + lvl * 7
-    : key === 'townHall' ? 60 + lvl * 8 : 48
+    : key === 'townHall' ? 60 + lvl * 8 : key === 'outpost' ? 64 : 48
   return { w: d.w + 72, h: d.h + extra + 28 }
 }
 
@@ -1052,6 +1115,7 @@ function paintBuilding(key: BuildingKey, lvl: number, w: number, h: number) {
 }
 
 export function buildBuildingTextures(scene: Phaser.Scene) {
+  buildWaystoneTexture(scene)
   for (const def of Object.values(BUILDINGS)) {
     for (let lvl = 1; lvl <= def.levels.length; lvl++) {
       const { w, h } = texSize(def.key, lvl)

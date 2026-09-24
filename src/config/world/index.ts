@@ -64,8 +64,8 @@ export interface PadSpec {
   piece?: Pick<WallPiece, 'part' | 'dir' | 'len' | 'ux' | 'uy' | 'cap'>
 }
 
-/** Pads whose buildings arrive later: outposts (S11), fisheries and trading posts (S13). */
-const FUTURE_KEYS = new Set<BP.PadKey>(['outpost', 'fishery', 'tradingPost'])
+/** Pads whose buildings arrive later: fisheries and trading posts (S13). Outposts landed in S11. */
+const FUTURE_KEYS = new Set<BP.PadKey>(['fishery', 'tradingPost'])
 
 const toPad = (p: BP.PadBP): PadSpec => ({
   id: p.id, key: p.key as BuildingKey, x: p.x, y: p.y, region: p.region,

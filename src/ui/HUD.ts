@@ -212,7 +212,7 @@ export class HUD {
       // The bar going red does not explain why loot stopped coming to you.
       if (this.game.time.now - this.lastCarryHint > 6000) {
         this.lastCarryHint = this.game.time.now
-        this.hint('Pack full — empty it at the depot')
+        this.hint('Pack full — empty it at the depot or an outpost')
       }
     })
     // the region banner: its name on the ribbon, its blurb beneath

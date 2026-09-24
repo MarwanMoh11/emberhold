@@ -7,8 +7,8 @@
 import type { BuildingKey } from '../buildings'
 import type { PadKey } from './blueprint'
 
-/** outpost (S11), fishery and tradingPost (S13) are pads before they are buildings. */
-type PlannedPadKey = 'outpost' | 'fishery' | 'tradingPost'
+/** fishery and tradingPost (S13) are pads before they are buildings; outpost landed in S11. */
+type PlannedPadKey = 'fishery' | 'tradingPost'
 
 type Assignable<A extends B, B> = A
 

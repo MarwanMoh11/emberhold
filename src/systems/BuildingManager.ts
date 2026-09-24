@@ -3,6 +3,7 @@ import { Building } from '../entities/Building'
 import type { BuildingKey } from '../config/buildings'
 import { PADS, WALL_LINES, type PadSpec } from '../config/world'
 import { walkRadius } from '../world/NavGrid'
+import { pathLength } from '../world/PathFind'
 import { capDiscs, layWallLine, legacyRingPads, WALL_CAP_R } from '../world/wallLine'
 
 /**
@@ -71,6 +72,13 @@ export class BuildingManager {
   buildings: Building[] = []
   byPad = new Map<string, Building>()
   grid = new Grid<Building>(PERF.gridCell * 2)
+
+  /** The depot and every outpost pad: where a haul can end (S11). */
+  private dropSites: Building[] = []
+  /** `dropoffFor` answers by 256 px block; cleared when `dropSig` moves on */
+  private dropCache = new Map<number, Building | null>()
+  private dropSig = ''
+  private dropCacheSig = ''
 
   /** aggregated settlement bonuses, recomputed whenever something is built */
   bonus = {
@@ -142,6 +150,7 @@ export class BuildingManager {
     this.scene.culler.add(b.ghost, b.x, b.y - b.ghost.height / 2, r)
     this.buildings.push(b)
     this.byPad.set(spec.id, b)
+    if (spec.key === 'depot' || spec.key === 'outpost') this.dropSites.push(b)
     if (spec.startLevel) {
       for (let i = 0; i < spec.startLevel; i++) b.completeLevel()
       this.onBuilt(b, true)
@@ -184,16 +193,55 @@ export class BuildingManager {
   get townHall() { return this.byPad.get('hall')! }
   get depot() { return this.byPad.get('depot')! }
 
+  /** Built outposts still standing (S11): drop-offs, waystones, respawn points. */
+  outposts(): Building[] {
+    return this.dropSites.filter(b => b.key === 'outpost' && b.level > 0 && b.alive)
+  }
+
   /**
-   * Where a hauler standing at (x, y) unloads: the depot, or the hall's door
-   * while the depot is down. The one place drop-offs are chosen; S11 adds the
-   * nearest outpost by path.
+   * Where a hauler standing at (x, y) unloads: the depot (the hall's door
+   * while the depot is down) or, since S11, a standing outpost, whichever is
+   * nearest by path. The one place drop-offs are chosen. Answers are cached
+   * per 256 px block until an outpost or the depot rises or falls, or the
+   * NavGrid changes, so a crew walking home costs one search per block.
    */
-  dropoffFor(_x: number, _y: number): { x: number; y: number } {
+  dropoffFor(x: number, y: number): { x: number; y: number } {
+    let pick: Building | null = null
+    if (this.dropSites.length > 1) {
+      if (this.dropCacheSig !== this.dropSig) { this.dropCache.clear(); this.dropCacheSig = this.dropSig }
+      const key = Math.floor(x / 256) + Math.floor(y / 256) * 64
+      const hit = this.dropCache.get(key)
+      pick = hit !== undefined ? hit : this.nearestDrop(x, y)
+      if (hit === undefined) this.dropCache.set(key, pick)
+      if (pick && !(pick.level > 0 && pick.alive)) pick = null
+    }
+    if (pick) return { x: pick.x, y: pick.y + 14 }
     const d = this.depot
     if (d && d.level > 0) return { x: d.x, y: d.y + 14 }
     const h = this.townHall
     return { x: h.x, y: h.y + 30 }
+  }
+
+  /** The outpost nearer by path than the depot (or hall door) to (x, y), else null. */
+  private nearestDrop(x: number, y: number): Building | null {
+    const outs = this.outposts()
+    if (!outs.length) return null
+    const d = this.depot, h = this.townHall
+    const home = d && d.level > 0 ? { x: d.x, y: d.y + 14 } : { x: h.x, y: h.y + 30 }
+    const cands = [{ b: null as Building | null, ...home }, ...outs.map(b => ({ b, x: b.x, y: b.y + 14 }))]
+      .map(c => ({ ...c, d: Math.hypot(c.x - x, c.y - y) }))
+      .sort((a, b) => a.d - b.d)
+    let best = Infinity
+    let pick: Building | null = null
+    for (const c of cands) {
+      // a path is never shorter than the straight line, so the rest cannot win
+      if (c.d >= best) break
+      const path = this.scene.nav.findPath(x, y, c.x, c.y, Number.isFinite(best) ? best : undefined)
+      if (!path) continue
+      const len = pathLength(path)
+      if (len < best) { best = len; pick = c.b }
+    }
+    return pick
   }
   get townHallLevel() { return this.townHall?.level ?? 1 }
 
@@ -541,6 +589,9 @@ export class BuildingManager {
   update(dt: number) {
     const player = this.scene.player
     this.grid.clear()
+    let sig = `${this.scene.nav.version}:`
+    for (const b of this.dropSites) sig += b.level > 0 && b.alive ? '1' : '0'
+    this.dropSig = sig
 
     let nearest: Building | null = null
     let nearestD = Infinity
@@ -636,7 +687,8 @@ export class BuildingManager {
           if (b.level > 0) {
             if (this.rosterFor(b).length) this.tickRecruit(b, dt)
             else if (WORKER_FOR[b.key]) this.tickHireWorker(b, dt)
-            else if (b.key === 'depot') this.tickDepotDump(b, dt)
+            // an outpost takes the pack like the depot, unless you are paying into its upgrade
+            else if (b.key === 'depot' || (b.key === 'outpost' && !b.committed)) this.tickDepotDump(b, dt)
           }
         }
       } else {
@@ -945,6 +997,8 @@ export class BuildingManager {
       hint = `workers ${b.workers.length}/${b.stats.workers ?? 0} — stand here to hire (${costStr})`
     } else if (b.level > 0 && b.key === 'depot') {
       hint = `stand here to bank your pack — ${short(res.storedTotal)} in store`
+    } else if (b.level > 0 && b.key === 'outpost') {
+      hint = b.level >= 2 ? 'banks your pack · waystone · mends allies nearby' : 'banks your pack · waystone beside it'
     }
 
     this.panel.show(b, {

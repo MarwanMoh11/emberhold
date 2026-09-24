@@ -17,7 +17,7 @@ const HEARTH: Partial<Record<BuildingKey, number>> = {
   townHall: 380, watchtower: 250, cannonTower: 200, blacksmith: 240, barracks: 210,
   house: 190, warehouse: 190, workshop: 190, healingTent: 200, depot: 180,
   lumberCamp: 170, farm: 170, quarry: 150, mine: 190, crystalDelve: 230,
-  archeryRange: 170, stable: 170, gate: 150,
+  archeryRange: 170, stable: 170, gate: 150, outpost: 200,
 }
 
 /** Ambient colour for a given darkness: warm afternoon, amber dusk, violet gloaming, blue night. */

@@ -82,6 +82,35 @@ export function dayLength(claimedRegions: number): number {
   return Math.min(DAYNIGHT.dayMax, DAYNIGHT.dayBase + DAYNIGHT.dayPerRegion * Math.max(0, claimedRegions))
 }
 
+/**
+ * Outposts and waystones (S11, design 04). `heal` is the Lv.2 aura's base
+ * (hp per second to allies within `healRadius`, only while no enemy is within
+ * `calmRadius`); S14's Kettle Springs shrine makes it modifiable.
+ */
+export const OUTPOST = {
+  heal: 5,
+  healRadius: 220,
+  calmRadius: 420,
+  /** fog cleared round a built outpost */
+  light: 600,
+  /** respawn: no enemy this near, and not burning (hit in the last few seconds) */
+  safeRadius: 600,
+  /** where the stone stands, from the outpost's pad point (the painted stone) */
+  stoneDx: 44,
+  stoneDy: 26,
+}
+
+export const WAYSTONE = {
+  /** stand this near a stone to activate it or open the travel list */
+  touch: 56,
+  /** seconds of channel; damage interrupts it */
+  channel: 1.2,
+  /** soldiers this near come along */
+  escort: 500,
+  /** the stone that works at night too */
+  hallStone: 'wsHall',
+}
+
 export const POP = {
   base: 8,
   perHouse: 6,
