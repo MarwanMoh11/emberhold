@@ -5,7 +5,8 @@ import { PERF } from '../config/balance'
 import { MAX_ENEMIES } from '../core/device'
 import { PAL } from '../config/palette'
 import { WORLD } from '../config/world'
-import { walkRadius } from '../world/NavGrid'
+import { walkRadius, type FlowField } from '../world/NavGrid'
+import { MARCH_SPEED, VIA_REACH, viaMid } from './Approaches'
 import { Grid } from '../core/Grid'
 import { clamp, rr } from '../core/math'
 import type { Targetable } from '../core/types'
@@ -174,6 +175,7 @@ export class EnemyManager {
     const combat = this.scene.combat
     const nav = this.scene.nav
     const hallField = nav.field('hall')
+    const claim = this.scene.regions.claimMask()
 
     for (let i = 0; i < list.length; i++) {
       const e = list[i]
@@ -231,84 +233,102 @@ export class EnemyManager {
         continue
       }
 
-      // staggered re-target
-      e.retargetIn -= dt
-      if (e.retargetIn <= 0 || !e.target || !e.target.alive) {
-        e.target = this.acquire(e)
-        e.retargetIn = 0.35 + (e.id % 7) * 0.05
-        e.los = !!e.target && this.sight(e, e.target)
-      }
-
-      const t = e.target
-      if (!t) { this.render(e, dt); continue }
-
-      const dx = t.x - e.x
-      const dy = t.y - e.y
-      const d = Math.hypot(dx, dy) || 1
-      const reach = e.range + t.radius + e.radius * 0.4
-
-      if (e.def.boss) {
-        this.bossUpdate(e, dt, d)
-        // A ground warning must stay under the attack that follows it.
-        if (e.telegraphT > 0) {
-          e.vx = e.vy = 0
-          e.state = 'attack'
-          this.render(e, dt)
-          continue
+      // the night's approach: legs in order until the first claimed cell,
+      // which ends the march and logs the arrival
+      if (e.route) {
+        const ci = nav.r.cell(e.x, e.y)
+        if (ci >= 0 && claim[ci]) {
+          e.route = null
+          if (e.marching) { e.marching = false; e.retargetIn = 0 }
+          if (e.fromWave) this.scene.waves.arrived(e)
+        } else {
+          this.advanceLeg(e, hallField)
         }
       }
 
-      if (d <= reach) {
-        e.state = 'attack'
-        e.attackCd -= dt
-        if (e.attackCd <= 0) {
-          e.attackCd = 1 / Math.max(0.1, e.attackRate)
-          this.strike(e, t)
-        }
-        // drift to keep a loose ring instead of stacking on one point
-        e.vx = -dx / d * 12
-        e.vy = -dy / d * 12
+      if (e.marching) {
+        this.march(e, dt)
       } else {
-        e.state = 'move'
-        const speedMul = e.auraSpeed * (e.slowT > 0 ? 0.55 : 1) * (e.chargeT > 0 ? 2.6 : 1) * nav.speedAt(e.x, e.y)
-        let mx = dx / d
-        let my = dy / d
+        // staggered re-target
+        e.retargetIn -= dt
+        if (e.retargetIn <= 0 || !e.target || !e.target.alive) {
+          e.target = this.acquire(e)
+          e.retargetIn = 0.35 + (e.id % 7) * 0.05
+          e.los = !!e.target && this.sight(e, e.target)
+        }
 
-        if (!e.los) {
-          // no straight line: take the hall's flow field, over the crossings and
-          // through the gates. If its next cell is a wall, that wall is the way on.
-          const j = hallField.nextCell(nav.r.cell(e.x, e.y))
-          if (j >= 0) {
-            const [cx, cy] = nav.r.xy(j)
-            if (nav.blocked(j)) {
-              const wall = this.scene.buildings.blockerAt(cx, cy, nav.r.C / 2)
-              if (wall && wall.id !== t.id) this.latch(e, wall)
-            }
-            if (!e.los) {
-              const fx = cx - e.x, fy = cy - e.y
-              const fl = Math.hypot(fx, fy) || 1
-              mx = fx / fl; my = fy / fl
-            }
+        const t = e.target
+        if (!t) { this.render(e, dt); continue }
+
+        const dx = t.x - e.x
+        const dy = t.y - e.y
+        const d = Math.hypot(dx, dy) || 1
+        const reach = e.range + t.radius + e.radius * 0.4
+
+        if (e.def.boss) {
+          this.bossUpdate(e, dt, d)
+          // A ground warning must stay under the attack that follows it.
+          if (e.telegraphT > 0) {
+            e.vx = e.vy = 0
+            e.state = 'attack'
+            this.render(e, dt)
+            continue
           }
         }
 
-        // buildings in the way: sappers smash walls, everyone smashes the rest;
-        // a wall across a straight line sends the walker back to the field
-        const nx = e.x + mx * e.radius * 2.2
-        const ny = e.y + my * e.radius * 2.2
-        const blocker = this.scene.buildings.blockerAt(nx, ny, e.radius)
-        if (blocker && blocker.id !== e.target?.id) {
-          if (e.sapper || blocker.key !== 'wall') {
-            e.target = blocker
-            e.los = true
-          } else if (e.los) {
-            e.los = false
+        if (d <= reach) {
+          e.state = 'attack'
+          e.attackCd -= dt
+          if (e.attackCd <= 0) {
+            e.attackCd = 1 / Math.max(0.1, e.attackRate)
+            this.strike(e, t)
           }
-        }
+          // drift to keep a loose ring instead of stacking on one point
+          e.vx = -dx / d * 12
+          e.vy = -dy / d * 12
+        } else {
+          e.state = 'move'
+          const speedMul = e.auraSpeed * (e.slowT > 0 ? 0.55 : 1) * (e.chargeT > 0 ? 2.6 : 1) * nav.speedAt(e.x, e.y)
+          let mx = dx / d
+          let my = dy / d
 
-        const sp = e.speed * speedMul
-        e.vx += (mx * sp - e.vx) * Math.min(1, dt * 9)
-        e.vy += (my * sp - e.vy) * Math.min(1, dt * 9)
+          if (!e.los) {
+            // no straight line: take the flow field (its approach's leg until it
+            // reaches claimed ground, then the hall's), over the crossings and
+            // through the gates. If its next cell is a wall, that wall is the way on.
+            const j = (e.route ? nav.field(e.route[e.leg]) : hallField).nextCell(nav.r.cell(e.x, e.y))
+            if (j >= 0) {
+              const [cx, cy] = nav.r.xy(j)
+              if (nav.blocked(j)) {
+                const wall = this.scene.buildings.blockerAt(cx, cy, nav.r.C / 2)
+                if (wall && wall.id !== t.id) this.latch(e, wall)
+              }
+              if (!e.los) {
+                const fx = cx - e.x, fy = cy - e.y
+                const fl = Math.hypot(fx, fy) || 1
+                mx = fx / fl; my = fy / fl
+              }
+            }
+          }
+
+          // buildings in the way: sappers smash walls, everyone smashes the rest;
+          // a wall across a straight line sends the walker back to the field
+          const nx = e.x + mx * e.radius * 2.2
+          const ny = e.y + my * e.radius * 2.2
+          const blocker = this.scene.buildings.blockerAt(nx, ny, e.radius)
+          if (blocker && blocker.id !== e.target?.id) {
+            if (e.sapper || blocker.key !== 'wall') {
+              e.target = blocker
+              e.los = true
+            } else if (e.los) {
+              e.los = false
+            }
+          }
+
+          const sp = e.speed * speedMul
+          e.vx += (mx * sp - e.vx) * Math.min(1, dt * 9)
+          e.vy += (my * sp - e.vy) * Math.min(1, dt * 9)
+        }
       }
 
       // separation against a handful of neighbours
@@ -343,6 +363,54 @@ export class EnemyManager {
 
     // players and towers can be swarmed off-screen — let the HUD know
     this.drawBars()
+  }
+
+  /** Past its via crossing (within VIA_REACH of the midpoint, on the crossing, or nearer the hall than it): take the next leg. */
+  private advanceLeg(e: Enemy, hallField: FlowField) {
+    const route = e.route
+    if (!route) return
+    const nav = this.scene.nav
+    while (e.leg < route.length - 1) {
+      const leg = route[e.leg]
+      const [mx, my] = this.viaMid(leg)
+      const onIt = nav.field(leg).dist(e.x, e.y) <= 0
+      const near = Math.hypot(e.x - mx, e.y - my) <= VIA_REACH
+      const past = hallField.dist(e.x, e.y) < hallField.dist(mx, my)
+      if (!onIt && !near && !past) break
+      e.leg++
+    }
+  }
+
+  private viaMids = new Map<string, [number, number]>()
+  private viaMid(leg: string): [number, number] {
+    let m = this.viaMids.get(leg)
+    if (!m) { m = viaMid(leg.slice(4)); this.viaMids.set(leg, m) }
+    return m
+  }
+
+  /**
+   * The march: down the current leg's field at MARCH_SPEED, no targets, no
+   * detours. A wall across the way, or ground the field cannot reach, ends it.
+   */
+  private march(e: Enemy, dt: number) {
+    const nav = this.scene.nav
+    const route = e.route
+    e.target = null
+    e.state = 'move'
+    if (!route) { e.marching = false; return }
+    const j = nav.field(route[e.leg]).nextCell(nav.r.cell(e.x, e.y))
+    if (j < 0 || nav.blocked(j)) {
+      e.marching = false
+      e.retargetIn = 0
+      return
+    }
+    const [cx, cy] = nav.r.xy(j)
+    const fx = cx - e.x, fy = cy - e.y
+    const fl = Math.hypot(fx, fy) || 1
+    const sp = e.speed * MARCH_SPEED * e.auraSpeed * (e.slowT > 0 ? 0.55 : 1) * nav.speedAt(e.x, e.y)
+    const k = Math.min(1, dt * 9)
+    e.vx += ((fx / fl) * sp - e.vx) * k
+    e.vy += ((fy / fl) * sp - e.vy) * k
   }
 
   private strike(e: Enemy, t: Targetable) {

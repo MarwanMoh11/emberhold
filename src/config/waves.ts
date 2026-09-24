@@ -1,11 +1,15 @@
 import type { EnemyKey } from './enemies'
-
-export type GateId = 'north' | 'east' | 'south' | 'west' | 'northeast' | 'southwest'
+import type { ApproachId } from '../systems/Approaches'
 
 export interface WaveDef {
   wave: number
   enemies: Partial<Record<EnemyKey, number>>
-  gates: GateId[]
+  /**
+   * Fronts this night would rather use, in order. Only live approaches count,
+   * and the fronts-per-night limit still applies; the rest of the night is
+   * chosen by `Approaches.tonight`. Most waves leave it out.
+   */
+  approaches?: ApproachId[]
   banner?: string
   /** boss spawns alongside the listed enemies */
   boss?: EnemyKey
@@ -16,25 +20,24 @@ export interface WaveDef {
 }
 
 export const WAVES: WaveDef[] = [
-  { wave: 1, enemies: { grunt: 8 }, gates: ['north'], banner: 'Scouts on the ridge', spread: 5 },
-  { wave: 2, enemies: { grunt: 12, runner: 4 }, gates: ['north'], spread: 6 },
-  { wave: 3, enemies: { grunt: 16, runner: 8 }, gates: ['north', 'west'], spread: 7 },
-  { wave: 4, enemies: { grunt: 20, runner: 10, brute: 3 }, gates: ['north', 'west'], banner: 'Brutes in the line', spread: 8 },
-  { wave: 5, enemies: { grunt: 18, runner: 10, brute: 4 }, gates: ['north', 'east'], boss: 'siegeBeast', banner: 'A SIEGE BEAST IS COMING', spread: 9 },
-  { wave: 6, enemies: { grunt: 24, runner: 14, swarm: 20 }, gates: ['north', 'east', 'west'], spread: 9 },
-  { wave: 7, enemies: { grunt: 22, archer: 8, brute: 4, runner: 10 }, gates: ['north', 'east'], banner: 'They brought slingers', spread: 9 },
-  { wave: 8, enemies: { grunt: 26, archer: 10, shield: 6, bomber: 4, runner: 12 }, gates: ['north', 'east', 'south'], spread: 10 },
-  { wave: 9, enemies: { grunt: 24, archer: 12, brute: 6, elite: 2, swarm: 30 }, gates: ['north', 'west', 'southwest'], banner: 'Champions among them', spread: 10 },
-  { wave: 10, enemies: { grunt: 30, archer: 12, shield: 8, brute: 6, bomber: 6 }, gates: ['north', 'east', 'south', 'west'], boss: 'warlord', banner: 'WARLORD KRAHN MARCHES', spread: 12 },
-  { wave: 11, enemies: { grunt: 34, runner: 20, archer: 14, shield: 8, commander: 2 }, gates: ['north', 'east', 'west'], spread: 11 },
-  { wave: 12, enemies: { grunt: 36, brute: 10, elite: 3, bomber: 8, swarm: 40 }, gates: ['north', 'east', 'south', 'west'], spread: 12 },
+  { wave: 1, enemies: { grunt: 8 }, banner: 'Scouts on the ridge', spread: 5 },
+  { wave: 2, enemies: { grunt: 12, runner: 4 }, spread: 6 },
+  { wave: 3, enemies: { grunt: 16, runner: 8 }, spread: 7 },
+  { wave: 4, enemies: { grunt: 20, runner: 10, brute: 3 }, banner: 'Brutes in the line', spread: 8 },
+  { wave: 5, enemies: { grunt: 18, runner: 10, brute: 4 }, boss: 'siegeBeast', banner: 'A SIEGE BEAST IS COMING', spread: 9 },
+  { wave: 6, enemies: { grunt: 24, runner: 14, swarm: 20 }, spread: 9 },
+  { wave: 7, enemies: { grunt: 22, archer: 8, brute: 4, runner: 10 }, banner: 'They brought slingers', spread: 9 },
+  { wave: 8, enemies: { grunt: 26, archer: 10, shield: 6, bomber: 4, runner: 12 }, spread: 10 },
+  { wave: 9, enemies: { grunt: 24, archer: 12, brute: 6, elite: 2, swarm: 30 }, banner: 'Champions among them', spread: 10 },
+  { wave: 10, enemies: { grunt: 30, archer: 12, shield: 8, brute: 6, bomber: 6 }, boss: 'warlord', banner: 'WARLORD KRAHN MARCHES', spread: 12 },
+  { wave: 11, enemies: { grunt: 34, runner: 20, archer: 14, shield: 8, commander: 2 }, spread: 11 },
+  { wave: 12, enemies: { grunt: 36, brute: 10, elite: 3, bomber: 8, swarm: 40 }, spread: 12 },
 ]
 
 /** Past the scripted list, the director keeps building waves that scale. */
 export function proceduralWave(wave: number): WaveDef {
   const t = wave - WAVES.length
   const s = 1 + t * 0.14
-  const gates: GateId[] = ['north', 'east', 'south', 'west', 'northeast', 'southwest']
   const def: WaveDef = {
     wave,
     enemies: {
@@ -48,7 +51,6 @@ export function proceduralWave(wave: number): WaveDef {
       elite: 2 + Math.floor(t / 2),
       commander: 1 + Math.floor(t / 3),
     },
-    gates: gates.slice(0, Math.min(6, 3 + Math.floor(t / 2))),
     hpMult: 1 + t * 0.22,
     dmgMult: 1 + t * 0.13,
     spread: 12,
@@ -76,7 +78,7 @@ export interface DirectorInput {
 }
 
 export function directorAdjust(def: WaveDef, input: DirectorInput): WaveDef {
-  const out: WaveDef = { ...def, enemies: { ...def.enemies } }
+  const out: WaveDef = { ...def, enemies: { ...def.enemies }, ...(def.approaches ? { approaches: [...def.approaches] } : {}) }
   // Lots of walls up -> send more sappers to make the player defend actively.
   if (input.wallHp > 3000 && def.wave >= 6) {
     out.enemies.bomber = (out.enemies.bomber ?? 0) + Math.min(8, Math.floor(input.wallHp / 2500))

@@ -447,9 +447,15 @@ export class Minimap {
 
     // ---- where the night is coming from ----------------------------------
     if (gs.waves.phase !== 'day') {
+      // tonight's approaches: ember dotted routes, a pulsing mark where each spawns
+      g.fillStyle(PAL.ember, 0.9)
+      for (const t of gs.waves.tonight) {
+        const pts = t.route
+        for (let k = 0; k < pts.length; k += 5) g.fillCircle(pts[k][0] * sx, pts[k][1] * sy, 1.3)
+      }
       const pulse = 0.55 + Math.sin(gs.now * 0.006) * 0.35
       g.fillStyle(CHART.wax, pulse)
-      for (const gate of gs.waves.nextGates()) {
+      for (const gate of gs.waves.nextApproaches()) {
         const x = gate.x * sx, y = gate.y * sy
         g.fillPoints([
           { x, y: y - 5 }, { x: x + 4.5, y: y + 4 }, { x: x - 4.5, y: y + 4 },

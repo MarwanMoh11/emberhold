@@ -62,6 +62,18 @@ export class CampManager {
   /** A camp in `requiresCamps` has burned. Unknown ids have not. */
   isBurned(id: string) { return this.rec(id)?.state === 'burned' }
 
+  /** asleep, awake or burned; null for an unknown id. The approaches muster by this (S09). */
+  stateOf(id: string): CampState | null { return this.rec(id)?.state ?? null }
+
+  /** Burn a camp outright, sleeping or awake, with its reward and `camp:burned` (harness, quests). */
+  burn(id: string): boolean {
+    const rec = this.rec(id)
+    if (!rec || rec.state === 'burned') return false
+    if (rec.enemy?.active) this.scene.enemies.despawn(rec.enemy)
+    this.onBurned(rec)
+    return true
+  }
+
   /** Wake a sleeping camp: it becomes an enemy that can be fought, and starts sending patrols. */
   wake(id: string, silent = false) {
     const rec = this.rec(id)

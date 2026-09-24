@@ -65,7 +65,7 @@ function validSave(v: unknown): v is SaveBlob {
     || (v.waves.phase !== undefined && !['day', 'warning', 'night'].includes(v.waves.phase as string))
     || (v.waves.phaseT !== undefined && (!finite(v.waves.phaseT)
       || v.waves.phaseT < -1
-      || v.waves.phaseT > Math.max(DAYNIGHT.daySeconds, DAYNIGHT.nightSeconds) + 1))) return false
+      || v.waves.phaseT > Math.max(DAYNIGHT.dayMax, DAYNIGHT.nightSeconds) + 1))) return false
   if (!record(v.quests) || !finite(v.quests.index) || !Number.isInteger(v.quests.index)
     || v.quests.index < 0 || v.quests.index > QUESTS.length
     || !Array.isArray(v.quests.done) || !v.quests.done.every(id => typeof id === 'string')

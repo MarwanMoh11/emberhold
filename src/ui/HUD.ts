@@ -451,11 +451,12 @@ export class HUD {
     const secs = Math.floor(w.timeLeft % 60)
     const clock = `${mins}:${secs.toString().padStart(2, '0')}`
     if (w.phase === 'night') {
-      setColour(this.phaseText.setText(`Night ${w.wave}   ·   ${w.enemiesRemaining} left`), PAL.danger)
+      setColour(this.phaseText.setText(`Night ${w.wave}   ·   ${w.enemiesRemaining} ${w.marching ? 'marching' : 'left'}`), PAL.danger)
       this.phaseIcon.setTexture('ico_moon')
     } else if (w.phase === 'warning') {
       const flash = Math.sin(this.game.now * 0.02) > 0
-      const words = w.bannerText.charAt(0).toUpperCase() + w.bannerText.slice(1).toLowerCase()
+      const shout = w.bannerText === w.bannerText.toUpperCase()
+      const words = shout ? w.bannerText.charAt(0) + w.bannerText.slice(1).toLowerCase() : w.bannerText
       setColour(this.phaseText.setText(`${words}   ${Math.ceil(w.timeLeft)}`), flash ? PAL.danger : PAL.gold)
       this.phaseIcon.setTexture('ico_moon')
     } else {

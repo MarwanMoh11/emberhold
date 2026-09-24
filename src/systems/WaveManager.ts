@@ -1,28 +1,59 @@
-import { waveDef, directorAdjust, type WaveDef, type GateId } from '../config/waves'
-import { SPAWN_GATES, GATE_BY_ID, WORLD } from '../config/world'
-import { DAYNIGHT } from '../config/balance'
+import { waveDef, directorAdjust, type WaveDef } from '../config/waves'
+import { WORLD } from '../config/world'
+import type { Pt } from '../config/world/blueprint'
+import { DAYNIGHT, dayLength } from '../config/balance'
 import { PAL } from '../config/palette'
 import { rr, ri, shuffled, clamp } from '../core/math'
-import type { EnemyKey } from '../config/enemies'
+import { ENEMIES, type EnemyKey } from '../config/enemies'
+import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
+import { CAMP_MIX, SPAWN_SCATTER, splitBudget, type ApproachId, type NightPlan } from './Approaches'
 
 export type Phase = 'day' | 'warning' | 'night'
 
 interface SpawnOrder {
   key: EnemyKey
-  gateX: number
-  gateY: number
+  approach: ApproachId
+  /** the approach's spawn point; each spawn scatters around it */
+  x: number
+  y: number
   at: number
   hpMult: number
   dmgMult: number
   boss?: boolean
 }
 
+/** One of tonight's approaches, as drawn and spawned. */
+export interface TonightRoute {
+  id: ApproachId
+  name: string
+  raid: boolean
+  /** the spawn point (the muster, or clamped forward of it) */
+  x: number
+  y: number
+  /** from the spawn point to the hall, one point per 32 px cell */
+  route: Pt[]
+}
+
+/** "the south road", "the south road and the west ford", "a, b and c". */
+export function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
 export class WaveManager {
   wave = 0
   phase: Phase = 'day'
-  phaseT = DAYNIGHT.daySeconds
+  phaseT: number = DAYNIGHT.dayBase
   nightElapsed = 0
+  /** the fight window has started: the first arrival on claimed ground, or `marchMax` after dusk */
+  fighting = false
+  fightElapsed = 0
+  /** seconds after dusk of each approach's first arrival on claimed ground, tonight */
+  arrivals: Record<ApproachId, number> = {}
+  /** tonight's approaches: chosen at the warning, re-resolved at dusk */
+  plan: NightPlan | null = null
+  tonight: TonightRoute[] = []
 
   private queue: SpawnOrder[] = []
   private queueHead = 0
@@ -53,6 +84,14 @@ export class WaveManager {
   /** Seconds left in the current phase, for the HUD. */
   get timeLeft() { return Math.max(0, this.phaseT) }
 
+  /** Today's length: `60 + 10 × claimed regions` beyond the hold, capped (DAYNIGHT). */
+  get dayLength() {
+    return dayLength((this.scene?.regions?.claimedCount ?? 1) - 1)
+  }
+
+  /** Marchers are still out and nobody has reached claimed ground. */
+  get marching() { return this.phase === 'night' && !this.fighting }
+
   update(dt: number) {
     this.phaseT -= dt
 
@@ -66,8 +105,12 @@ export class WaveManager {
       case 'night': {
         this.nightElapsed += dt
         this.drainQueue()
+        if (!this.fighting && this.nightElapsed >= DAYNIGHT.marchMax) this.beginFight()
+        if (this.fighting) this.fightElapsed += dt
         const spawnedAll = this.queueHead >= this.queue.length
-        const timedOut = this.nightElapsed > Math.max(DAYNIGHT.nightSeconds * 2.2, (this.current?.spread ?? 8) + 80)
+        // the old rule, counted from the start of the fight rather than dusk
+        const timedOut = this.fighting
+          && this.fightElapsed > Math.max(DAYNIGHT.nightSeconds * 2.2, (this.current?.spread ?? 8) + 80)
         if (spawnedAll && (this.remaining <= 0 || timedOut)) this.endNight()
         break
       }
@@ -86,14 +129,55 @@ export class WaveManager {
     this.phase = 'warning'
     this.phaseT = DAYNIGHT.warningSeconds
     const def = this.peekNext()
-    this.bannerText = def.banner ?? 'ENEMY HORDE APPROACHING'
+    const plan = this.scene.approaches.tonight(this.wave + 1, def.approaches)
+    this.plan = plan
+    this.tonight = this.routesFor(plan)
+    this.bannerText = `Tonight: ${joinNames(this.tonight.map(t => t.name))}`
     this.scene.audio.play('waveWarn')
-    this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 110, this.bannerText.toUpperCase(), PAL.danger, 26)
-    // arrows at the gates they will come from
-    for (const g of def.gates) {
-      const gate = GATE_BY_ID.get(g)
-      if (gate) this.scene.fx.ring(gate.x, gate.y, 220, PAL.danger, 1.2)
+    const p = this.scene.player
+    if (def.banner) this.scene.fx.popup(p.x, p.y - 140, def.banner.toUpperCase(), PAL.danger, 26)
+    this.scene.fx.popup(p.x, p.y - 110, `${this.bannerText}.`, PAL.danger, 22)
+    this.scene.bus.emit('night:warning', {
+      approaches: this.tonight.map(t => t.id),
+      routes: this.tonight.map(t => t.route),
+    })
+  }
+
+  /** Spawn points and drawn routes for a plan, fronts first. Closed approaches drop out. */
+  private routesFor(plan: NightPlan): TonightRoute[] {
+    const ap = this.scene.approaches
+    const out: TonightRoute[] = []
+    for (const id of [...plan.fronts, ...(plan.raid ? [plan.raid] : [])]) {
+      if (!ap.muster(id)) continue
+      const [x, y] = ap.spawnPoint(id)
+      out.push({ id, name: ap.name(id), raid: ap.isRaid(id), x, y, route: ap.marchRoute(id) })
     }
+    return out
+  }
+
+  /** A spawn within SPAWN_SCATTER of the point, on passable ground in sight of it. */
+  private scatter(x: number, y: number): Pt {
+    const nav = this.scene.nav
+    for (let k = 0; k < 6; k++) {
+      const a = rr(0, Math.PI * 2), d = rr(0, SPAWN_SCATTER)
+      const sx = x + Math.cos(a) * d, sy = y + Math.sin(a) * d
+      if (nav.passableAt(sx, sy) && nav.lineClear(x, y, sx, sy)) return [sx, sy]
+    }
+    return [x, y]
+  }
+
+  private beginFight() {
+    this.fighting = true
+    this.fightElapsed = 0
+    this.phaseT = DAYNIGHT.nightSeconds
+  }
+
+  /** A wave walker set foot on claimed ground (EnemyManager): log it, and the fight starts. */
+  arrived(e: Enemy) {
+    if (this.phase !== 'night') return
+    const id = e.approach ?? '?'
+    if (!(id in this.arrivals)) this.arrivals[id] = Math.round(this.nightElapsed * 100) / 100
+    if (!this.fighting) this.beginFight()
   }
 
   private peekNext(): WaveDef {
@@ -126,32 +210,59 @@ export class WaveManager {
     this.remaining = 0
     this.bossName = null
 
-    const gates: GateId[] = def.gates.length ? def.gates : ['north']
+    const ap = this.scene.approaches
+    // re-resolve the warning's plan: a camp may have burned or a region been claimed since
+    const warned = this.plan?.wave === this.wave ? this.plan : null
+    const keep = (id: ApproachId) => ap.muster(id) !== null
+    let plan: NightPlan = warned
+      ? { wave: this.wave, fronts: warned.fronts.filter(keep), raid: warned.raid && keep(warned.raid) ? warned.raid : null }
+      : ap.tonight(this.wave, def.approaches)
+    if (!plan.fronts.length && !plan.raid) plan = ap.tonight(this.wave, def.approaches)
+    this.plan = plan
+    this.tonight = this.routesFor(plan)
+    this.arrivals = {}
+    this.fighting = false
+    this.fightElapsed = 0
+
     const spread = def.spread ?? 8
     const hpMult = def.hpMult ?? 1
     const dmgMult = def.dmgMult ?? 1
 
-    for (const [key, countRaw] of Object.entries(def.enemies) as [EnemyKey, number][]) {
-      const count = countRaw ?? 0
-      for (let i = 0; i < count; i++) {
-        const g = GATE_BY_ID.get(gates[i % gates.length]) ?? SPAWN_GATES[0]
-        this.queue.push({
-          key,
-          gateX: g.x + rr(-110, 110),
-          gateY: g.y + rr(-110, 110),
-          at: (i / Math.max(1, count)) * spread + rr(0, 0.5),
-          hpMult, dmgMult,
-        })
-      }
+    // one flat, shuffled list of the night's walkers, dealt out by budget
+    const units: EnemyKey[] = []
+    for (const [key, n] of Object.entries(def.enemies) as [EnemyKey, number][]) {
+      for (let i = 0; i < (n ?? 0); i++) units.push(key)
     }
-    // interleave so different gates arrive together instead of type-by-type
+    const deck = shuffled(units)
+    const split = splitBudget(plan, deck.length)
+    const mult = (t: TonightRoute) => {
+      const tier = ap.tier(t.id)
+      return { hp: hpMult * (1 + 0.25 * tier), dmg: dmgMult * (1 + 0.15 * tier) }
+    }
+    for (const t of this.tonight) {
+      const hand = deck.splice(0, split.get(t.id) ?? 0)
+      // the muster camp's own walker makes up its share of the approach
+      const own = ap.campKey(t.id)
+      if (own && own in ENEMIES) {
+        const k = Math.round(hand.length * CAMP_MIX)
+        for (let i = 0; i < k; i++) hand[i] = own as EnemyKey
+      }
+      const m = mult(t)
+      hand.forEach((key, i) => this.queue.push({
+        key, approach: t.id, x: t.x, y: t.y,
+        at: (i / Math.max(1, hand.length)) * spread + rr(0, 0.5),
+        hpMult: m.hp, dmgMult: m.dmg,
+      }))
+    }
+    // interleave so different approaches arrive together instead of type-by-type
     this.queue = shuffled(this.queue).sort((a, b) => a.at - b.at)
 
-    if (def.boss) {
-      const g = GATE_BY_ID.get(gates[0]) ?? SPAWN_GATES[0]
+    const lead = this.tonight[0]
+    if (def.boss && lead) {
+      const m = mult(lead)
       this.queue.push({
-        key: def.boss, gateX: g.x, gateY: g.y, at: Math.min(2.5, spread * 0.3),
-        hpMult, dmgMult, boss: true,
+        key: def.boss, approach: lead.id, x: lead.x, y: lead.y, at: Math.min(2.5, spread * 0.3),
+        hpMult: m.hp, dmgMult: m.dmg, boss: true,
       })
       this.queue.sort((a, b) => a.at - b.at)
     }
@@ -165,9 +276,14 @@ export class WaveManager {
   private drainQueue() {
     while (this.queueHead < this.queue.length && this.queue[this.queueHead].at <= this.nightElapsed) {
       const o = this.queue[this.queueHead++]
-      const e = this.scene.enemies.spawn(o.key, o.gateX, o.gateY, o.hpMult, o.dmgMult)
+      const [x, y] = o.boss ? [o.x, o.y] : this.scatter(o.x, o.y)
+      const e = this.scene.enemies.spawn(o.key, x, y, o.hpMult, o.dmgMult)
       if (!e) { this.remaining--; continue }
       e.fromWave = true
+      e.approach = o.approach
+      e.route = this.scene.approaches.legs(o.approach)
+      e.leg = 0
+      e.marching = true
       if (o.boss) {
         this.bossName = e.def.name
         this.scene.fx.flash(0x6a0d18, 0.3)
@@ -177,7 +293,7 @@ export class WaveManager {
           if (prog >= 1) this.scene.cameras.main.startFollow(this.scene.player.container, true, 0.09, 0.09)
         })
       } else {
-        this.scene.fx.dust(o.gateX, o.gateY, 3)
+        this.scene.fx.dust(x, y, 3)
       }
     }
   }
@@ -189,7 +305,10 @@ export class WaveManager {
 
   private endNight() {
     this.phase = 'day'
-    this.phaseT = DAYNIGHT.daySeconds
+    this.phaseT = this.dayLength
+    this.plan = null
+    this.tonight = []
+    this.fighting = false
     this.wavesCleared++
     this.bannerText = ''
     const reward = 40 + this.wave * 25
@@ -218,8 +337,11 @@ export class WaveManager {
   recoverSettlement() {
     if (this.phase === 'night') this.wave = Math.max(0, this.wave - 1)
     this.phase = 'day'
-    this.phaseT = DAYNIGHT.daySeconds
+    this.phaseT = this.dayLength
     this.nightElapsed = 0
+    this.fighting = false
+    this.plan = null
+    this.tonight = []
     this.queue.length = 0
     this.queueHead = 0
     this.remaining = 0
@@ -229,13 +351,12 @@ export class WaveManager {
 
   get bossLabel() { return this.bossName }
 
-  /** Where the next attack is coming from, for the HUD compass. */
-  nextGates() {
-    const def = this.current ?? waveDef(this.wave + 1)
-    return def.gates.map(g => GATE_BY_ID.get(g)).filter(Boolean) as { x: number; y: number; name: string }[]
+  /** Where tonight's approaches spawn, for the edge markers and the minimap (empty by day). */
+  nextApproaches(): { x: number; y: number; name: string }[] {
+    return this.phase === 'day' ? [] : this.tonight
   }
 
-  toJSON() { return { wave: this.wave, wavesCleared: this.wavesCleared, phase: this.phase, phaseT: this.phaseT } }
+  toJSON() { return { wave: this.wave, wavesCleared: this.wavesCleared, phase: this.phase, phaseT: Math.max(0, this.phaseT) } }
   load(d: { wave: number; wavesCleared: number; phase?: Phase; phaseT?: number }, recovering = false) {
     // Enemy positions and the live spawn queue are intentionally transient.
     // An ordinary interrupted night restarts at its warning. A saved Hall loss
@@ -243,9 +364,9 @@ export class WaveManager {
     this.wave = d.phase === 'night' ? Math.max(0, d.wave - 1) : d.wave
     this.wavesCleared = d.wavesCleared
     this.phase = 'day'
-    this.phaseT = recovering ? DAYNIGHT.daySeconds
+    this.phaseT = recovering ? this.dayLength
       : d.phase === 'night' || d.phase === 'warning' ? DAYNIGHT.warningSeconds + 0.01
-        : Number.isFinite(d.phaseT) ? clamp(d.phaseT!, 0, DAYNIGHT.daySeconds) : DAYNIGHT.daySeconds
+        : Number.isFinite(d.phaseT) ? clamp(d.phaseT!, 0, DAYNIGHT.dayMax) : this.dayLength
   }
 }
 

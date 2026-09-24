@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import type { ResourceType } from './types'
 import type { BuildingKey } from '../config/buildings'
 import type { RegionId } from '../config/world'
+import type { Pt } from '../config/world/blueprint'
 
 export interface GameEvents {
   'res:gained': { type: ResourceType; amount: number }
@@ -13,6 +14,8 @@ export interface GameEvents {
   'building:built': { key: BuildingKey; level: number }
   'soldier:recruited': { key: string }
   'worker:hired': { key: string }
+  /** `warningSeconds` before dusk (S09): tonight's approach ids and their routes from the spawn point to the hall. */
+  'night:warning': { approaches: string[]; routes: Pt[][] }
   'wave:start': { wave: number }
   'wave:cleared': { wave: number }
   'camp:burned': { id: string }

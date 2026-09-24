@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import type { EnemyDef, EnemyKey } from '../config/enemies'
 import type { Targetable } from '../core/types'
 import { nextId } from '../core/ids'
+import type { FieldTarget } from '../world/NavGrid'
 
 export type EnemyState = 'move' | 'attack' | 'stun' | 'dead'
 
@@ -65,6 +66,17 @@ export class Enemy implements Targetable {
   bobSeed = 0
   /** true when this one belongs to the current night's wave */
   fromWave = false
+  /**
+   * On a night march (S09): MARCH_SPEED, following `route`, deaf to aggro.
+   * Cleared by a hit or by the first claimed cell.
+   */
+  marching = false
+  /** the approach it came by, for the arrival log; null for camp patrols and ring spawns */
+  approach: string | null = null
+  /** fields to follow in order (each via crossing, then the hall) until claimed ground; null after */
+  route: FieldTarget[] | null = null
+  /** index into `route` */
+  leg = 0
 
   sprite!: Phaser.GameObjects.Image
 
@@ -110,6 +122,10 @@ export class Enemy implements Targetable {
     this.spawnT = 0.35
     this.bobSeed = Math.random() * 10
     this.fromWave = false
+    this.marching = false
+    this.approach = null
+    this.route = null
+    this.leg = 0
 
     const tex = `enm_${def.key}`
     this.sprite.setTexture(tex)
@@ -122,6 +138,7 @@ export class Enemy implements Targetable {
 
   applyDamage(amount: number, srcX: number, srcY: number, knockback = 0): boolean {
     if (!this.alive) return false
+    this.marching = false
     this.hp -= amount
     this.flashT = 0.09
     if (knockback > 0) {

@@ -4,11 +4,10 @@
  * only reshapes it into the forms the systems already speak (pads, camps,
  * node clusters, the rampart ring) and memoises the raster.
  *
- * Replaces the old hand-placed map module (S04). Nothing here should hold a coordinate of
- * its own except the temporary night gates, which S09's approaches replace.
+ * Replaces the old hand-placed map module (S04). Nothing here holds a
+ * coordinate of its own; the night approaches live in `systems/Approaches.ts` (S09).
  */
 import type { BuildingKey } from '../buildings'
-import type { GateId } from '../waves'
 import type { ResourceBag } from '../../core/types'
 import { rasterise, type WorldRaster } from '../../world/raster'
 import * as BP from './blueprint'
@@ -99,30 +98,6 @@ export const WALL_RING = {
   step: palisade.step,
   gates: palisade.gates.map(g => ({ ...g })),
 }
-
-// ---------------------------------------------------------------------------
-// Night gates
-// ---------------------------------------------------------------------------
-
-export interface SpawnGate {
-  id: GateId
-  x: number
-  y: number
-  name: string
-}
-
-// TEMP until S09: six fixed gates on claimed-side ground at the hold's edge,
-// along each approach, so nights stay short. S09 replaces them with approaches.
-export const SPAWN_GATES: SpawnGate[] = [
-  { id: 'south', x: 5120, y: 4450, name: 'the Old Bridge' },
-  { id: 'west', x: 3150, y: 4880, name: 'the Millford road' },
-  { id: 'east', x: 7500, y: 2850, name: 'the Gorge Bridge' },
-  { id: 'north', x: 5000, y: 1900, name: 'the north road' },
-  { id: 'northeast', x: 6100, y: 1700, name: 'the scarp' },
-  { id: 'southwest', x: 2400, y: 3400, name: 'the Saltmere shore' },
-]
-
-export const GATE_BY_ID = new Map(SPAWN_GATES.map(g => [g.id, g]))
 
 // ---------------------------------------------------------------------------
 // Camps

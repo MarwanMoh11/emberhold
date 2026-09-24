@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
-import { WORLD, HALL, REGIONS, SPAWN_GATES, CAMPS, raster, type Biome } from '../config/world'
+import { WORLD, HALL, REGIONS, CAMPS, raster, type Biome } from '../config/world'
 import { T, inPoly, polyArea, polyCentroid } from './raster'
-import { applyGrain, css, fill, form, glow, line, makeCanvas, mix, P, Rng, register, INK, type Ctx } from '../art/ink'
+import { applyGrain, css, fill, form, line, makeCanvas, mix, P, Rng, register, INK, type Ctx } from '../art/ink'
 import { fbm, hash32, Mulberry, smooth, vnoise } from './noise'
 import { boxBlur, cellValue, sample, terrainFields, type TerrainFields } from './terrainField'
 import { Batch, paintCrossings, paintFeatureLines, paintRoads, warmFeatures, type Rect } from './TerrainFeatures'
@@ -478,20 +478,6 @@ function paintCamps(x: Ctx, b: Box) {
   })
 }
 
-/** The spawn gates: burned-out waymarks where the horde comes through. */
-function paintSpawnGates(x: Ctx, b: Box) {
-  for (const gate of SPAWN_GATES) {
-    const gx = gate.x * S, gy = gate.y * S
-    if (!meets(b, gx - 30, gy - 30, gx + 30, gy + 30)) continue
-    glow(x, gx, gy, 30, 0x2a1810, 0.6)
-    for (const s of [-1, 1]) {
-      const post = P.poly([[gx + s * 12 - 2.5, gy + 4], [gx + s * 12 - 2, gy - 14], [gx + s * 12, gy - 18], [gx + s * 12 + 2, gy - 14], [gx + s * 12 + 2.5, gy + 4]])
-      form(x, post, 0x3a2e28, { rim: 0.5, core: 1.4 })
-      line(x, post, 0.8, INK, 0.8)
-    }
-  }
-}
-
 /**
  * Paint world rect [wx, wx+size) × [wy, wy+size). `x` arrives with a
  * transform from world px to canvas px, usually clipped to the part the
@@ -512,7 +498,6 @@ export function paintTerrainRect(x: Ctx, wx: number, wy: number, size: number, _
   const b: Box = { x0: wx * S, y0: wy * S, x1: (wx + size) * S, y1: (wy + size) * S }
   paintPlaza(x, b)
   paintCamps(x, b)
-  paintSpawnGates(x, b)
   // paper tooth over everything, pinned to the world's origin
   const W = WORLD.width * S, H = WORLD.height * S
   applyGrain(x, W, H, 0.07)

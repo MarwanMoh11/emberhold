@@ -228,21 +228,18 @@ export class Approaches {
   /**
    * Tonight's fronts: up to `frontsFor(wave)` live main approaches (the south
    * road first when it is live, the rest rotating with the wave), plus at most
-   * one live raid, rotating the same way.
+   * one live raid, rotating the same way. `prefer` (a wave's own list) goes
+   * first where those approaches are live.
    */
-  tonight(wave: number): NightPlan {
+  tonight(wave: number, prefer: readonly ApproachId[] = []): NightPlan {
     const live = this.live(wave)
     const mains = live.filter(id => !this.isRaid(id))
     const raids = live.filter(id => this.isRaid(id))
     const n = frontsFor(wave)
-    let fronts = mains
-    if (mains.length > n) {
-      const first = mains.includes('south') ? ['south'] : []
-      const rest = mains.filter(id => id !== 'south')
-      const off = wave % rest.length
-      const rot = [...rest.slice(off), ...rest.slice(0, off)]
-      fronts = [...first, ...rot].slice(0, n)
-    }
+    const first = [...prefer.filter(id => mains.includes(id)), ...(mains.includes('south') ? ['south'] : [])]
+    const rest = mains.filter(id => !first.includes(id))
+    const off = rest.length ? wave % rest.length : 0
+    const fronts = [...new Set([...first, ...rest.slice(off), ...rest.slice(0, off)])].slice(0, n)
     return { wave, fronts, raid: raids.length ? raids[wave % raids.length] : null }
   }
 }

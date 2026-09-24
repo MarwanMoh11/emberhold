@@ -60,11 +60,10 @@ test('the rampart ring is the palisade', () => {
   assert.equal(r.gates.length, 4)
 })
 
-test('the temporary night gates stand on land, outside the palisade', () => {
-  const r = W.raster()
-  assert.equal(W.SPAWN_GATES.length, 6)
-  for (const g of W.SPAWN_GATES) {
-    assert.ok(r.passable(r.cell(g.x, g.y)), `${g.id} at ${g.x},${g.y}`)
-    assert.ok(g.x < W.WALL_RING.left || g.x > W.WALL_RING.right || g.y < W.WALL_RING.top || g.y > W.WALL_RING.bottom, g.id)
-  }
+test('the temporary night gates are gone (S09 approaches replace them)', () => {
+  assert.equal(W.SPAWN_GATES, undefined)
+  assert.equal(W.GATE_BY_ID, undefined)
+  // every approach's chain resolves to camps and maws the world has
+  const ids = new Set([...W.CAMPS.map(c => c.id), ...W.MAWS.map(m => m.id)])
+  for (const a of W.APPROACHES) for (const m of a.chain) assert.ok(ids.has(m), `${a.id}: ${m}`)
 })

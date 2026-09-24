@@ -18,7 +18,7 @@ test('a lost night retries the same wave after a rebuild day', () => {
   waves.recoverSettlement()
   assert.equal(waves.wave, 3)
   assert.equal(waves.phase, 'day')
-  assert.equal(waves.phaseT, 46)
+  assert.equal(waves.phaseT, 60)
   assert.equal(waves.nightElapsed, 0)
   assert.equal(waves.remaining, 0)
   assert.deepEqual(waves.queue, [])
@@ -37,7 +37,7 @@ test('a daytime loss also grants a full rebuild day', () => {
   waves.remaining = 0
   waves.recoverSettlement()
   assert.equal(waves.wave, 3)
-  assert.equal(waves.phaseT, 46)
+  assert.equal(waves.phaseT, 60)
 })
 
 test('loading an interrupted night also retries its wave', () => {
@@ -54,7 +54,7 @@ test('loading a saved settlement loss grants rebuilding time', () => {
   waves.load({ wave: 4, wavesCleared: 3, phase: 'night' }, true)
   assert.equal(waves.wave, 3)
   assert.equal(waves.phase, 'day')
-  assert.equal(waves.phaseT, 46)
+  assert.equal(waves.phaseT, 60)
 })
 
 test('loading during the day preserves the time left to prepare', () => {
@@ -69,5 +69,5 @@ test('older daytime saves without a countdown still load', () => {
   const waves = Object.create(WaveManager.prototype)
   waves.load({ wave: 2, wavesCleared: 2, phase: 'day' })
   assert.equal(waves.wave, 2)
-  assert.equal(waves.phaseT, 46)
+  assert.equal(waves.phaseT, 60)
 })

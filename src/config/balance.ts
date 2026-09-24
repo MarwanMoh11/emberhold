@@ -64,9 +64,22 @@ export const CAMERA = {
 }
 
 export const DAYNIGHT = {
-  daySeconds: 46,
+  /**
+   * Day length is `dayBase + dayPerRegion × claimed regions` (the hold not
+   * counted), capped at `dayMax`: see `dayLength`. Open decision, tuned in S20.
+   */
+  dayBase: 60,
+  dayPerRegion: 10,
+  dayMax: 180,
+  /** the fight window: it starts on the first arrival on claimed ground, or `marchMax` after dusk */
   nightSeconds: 34,
+  marchMax: 25,
   warningSeconds: 8,
+}
+
+/** Seconds of day, given how many regions beyond the hold are claimed. */
+export function dayLength(claimedRegions: number): number {
+  return Math.min(DAYNIGHT.dayMax, DAYNIGHT.dayBase + DAYNIGHT.dayPerRegion * Math.max(0, claimedRegions))
 }
 
 export const POP = {

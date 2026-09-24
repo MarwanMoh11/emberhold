@@ -15,6 +15,9 @@ import { REGIONS, WORLD } from '../config/world'
  * World v2 helpers:
  *   H.tp(5120, 4230)     teleport the hero (camera and terrain follow at once)
  *   H.claim('downs')     claim a region without paying (regions.claim(id, true))
+ *   H.burn('campFerrow') burn a camp outright (the approaches muster at the next one)
+ *   H.night(5)           jump to night 5's warning: tonight's approaches, spawn points, musters
+ *   H.march(30)          pump the night: per-approach arrivals, enemies off the ground, road share, speeds
  *   H.reveal()           clear the fog everywhere
  *   H.where()            { x, y, region } of the hero
  *   H.world()            counts: size, regions claimed, pads, camps, nodes, enemies, chunks
@@ -133,10 +136,64 @@ export function installHarness(game: Phaser.Game) {
   }
 
   const claim = (id: string) => {
-    const z = gs().zones
+    const z = gs().regions
     if (!REGIONS.some(r => r.id === id)) return `no region "${id}"`
-    z.unlock(id, true)
-    return `${id}: ${z.isUnlocked(id) ? 'claimed' : 'locked'}`
+    z.claim(id, true)
+    return `${id}: ${z.claimed(id) ? 'claimed' : 'unclaimed'}`
+  }
+
+  /** Burn a camp outright (asleep or awake), reward and all. */
+  const burn = (id: string) => (gs().camps.burn(id) ? `${id}: burned` : `${id}: no such standing camp`)
+
+  /**
+   * Skip to the warning of night `wave` (default: the next), pump through it,
+   * and report tonight's plan: approaches, spawn points, musters.
+   */
+  const night = (wave?: number) => {
+    const g = gs(); const w = g.waves
+    if (wave !== undefined) w.wave = Math.max(0, wave - 1)
+    w.forceNextWave()
+    pump(0.1)
+    const plan = w.tonight.map((t: any) => ({
+      id: t.id, spawn: [Math.round(t.x), Math.round(t.y)], muster: g.approaches.muster(t.id)?.id,
+      toClaimed: Math.round(g.approaches.toClaimed(t.id).d), routeCells: t.route.length,
+    }))
+    return { wave: w.wave + 1, banner: w.bannerText, plan }
+  }
+
+  /**
+   * Pump a night in steps, logging per-approach first arrivals (seconds after
+   * dusk), enemies on impassable cells, the fastest marcher seen and where the
+   * walkers are. Stops at `seconds` or the dawn.
+   */
+  const march = (seconds = 30, step = 0.5) => {
+    const g = gs(); const w = g.waves; const n = g.nav
+    let offGround = 0, onRoadFrames = 0, frames = 0, maxMarch = 0, maxWalk = 0
+    const seen = new Set<string>()
+    const pos = new Map<number, [number, number]>()
+    for (let t = 0; t < seconds && (w.phase !== 'day' || t === 0); t += step) {
+      pump(step)
+      for (const e of g.enemies.list) {
+        if (!e.active || !e.alive || e.def.structure) continue
+        frames++
+        if (!n.passableAt(e.x, e.y)) offGround++
+        if (n.onRoad(e.x, e.y)) onRoadFrames++
+        if (e.approach) seen.add(`${e.approach}:${g.regions.regionAt(e.x, e.y)?.id ?? '?'}`)
+        const last = pos.get(e.id)
+        if (last) {
+          const v = Math.hypot(e.x - last[0], e.y - last[1]) / step / (e.def.speed || 1)
+          if (e.marching) maxMarch = Math.max(maxMarch, v); else maxWalk = Math.max(maxWalk, v)
+        }
+        pos.set(e.id, [e.x, e.y])
+      }
+    }
+    return {
+      phase: w.phase, nightElapsed: +w.nightElapsed.toFixed(1), fighting: w.fighting, arrivals: { ...w.arrivals },
+      walkers: g.enemies.walkerCount, marching: g.enemies.list.filter((e: any) => e.active && e.alive && e.marching).length,
+      offGround, onRoadShare: frames ? +(onRoadFrames / frames).toFixed(2) : 0,
+      speedOverBase: { marching: +maxMarch.toFixed(2), walking: +maxWalk.toFixed(2) },
+      seen: [...seen].sort(),
+    }
   }
 
   const reveal = () => { gs().regions.revealAll(); return 'fog cleared' }
@@ -237,5 +294,5 @@ export function installHarness(game: Phaser.Game) {
     return { pxPerSec: Math.round(Math.hypot(p.x - x0, p.y - y0) / seconds), onRoad: +(road / steps).toFixed(2), at: where() }
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, reveal, where, world, nav, watch, run }
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run }
 }

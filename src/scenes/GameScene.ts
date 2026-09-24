@@ -28,6 +28,8 @@ import { ArmyManager } from '../systems/ArmyManager'
 import { WorkerManager } from '../systems/WorkerManager'
 import { WaveManager } from '../systems/WaveManager'
 import { RegionManager } from '../systems/RegionManager'
+import { Approaches, APPROACH_IDS } from '../systems/Approaches'
+import { RouteMarks } from '../world/RouteMarks'
 import { CampManager } from '../systems/CampManager'
 import { AbilitySystem } from '../systems/AbilitySystem'
 import { LevelSystem } from '../systems/LevelSystem'
@@ -71,9 +73,10 @@ export class GameScene extends Phaser.Scene {
   army!: ArmyManager
   workers!: WorkerManager
   waves!: WaveManager
+  /** tonight's routes, musters and spawn points (S09) */
+  approaches!: Approaches
+  routeMarks!: RouteMarks
   regions!: RegionManager
-  /** S04's name for `regions`, kept for S08 only: S09 removes it. */
-  get zones(): RegionManager { return this.regions }
   camps!: CampManager
   abilities!: AbilitySystem
   levels!: LevelSystem
@@ -156,7 +159,16 @@ export class GameScene extends Phaser.Scene {
     this.workers = new WorkerManager(this)
     this.regions = new RegionManager(this, DEPTH.fog)
     this.camps = new CampManager(this)
+    this.approaches = new Approaches({
+      nav: this.nav,
+      claimMask: () => this.regions.claimMask(),
+      claimed: id => this.regions.claimed(id),
+      campState: id => this.camps.stateOf(id),
+    })
+    // each via leg's field builds once here (~36 ms each) rather than at the first warning
+    for (const id of APPROACH_IDS) for (const leg of this.approaches.legs(id)) this.nav.field(leg)
     this.waves = new WaveManager(this)
+    this.routeMarks = new RouteMarks(this, DEPTH.terrain + 10)
     this.levels = new LevelSystem(this)
     this.quests = new QuestManager(this)
     this.saves = new SaveManager(this)
@@ -554,7 +566,7 @@ export class GameScene extends Phaser.Scene {
       consider.push({ x: hall.x, y: hall.y, tint: PAL.gold, scale: 1.3 })
     }
     if (this.waves.isNight) {
-      for (const g of this.waves.nextGates()) {
+      for (const g of this.waves.nextApproaches()) {
         if (!Phaser.Geom.Rectangle.Contains(view, g.x, g.y)) {
           consider.push({ x: g.x, y: g.y, tint: PAL.danger, scale: 1 })
         }
@@ -630,6 +642,7 @@ export class GameScene extends Phaser.Scene {
     this.pickups.update(dt)
     this.abilities.update(dt)
     this.waves.update(dt)
+    this.routeMarks.update()
     this.regions.update(dt)
     this.quests.update()
     this.res.tickRates(dt)
