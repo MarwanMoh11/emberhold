@@ -15,6 +15,7 @@ export class CombatSystem {
 
   kills = 0
   bossKills = 0
+  private lastWardMs = -1e9
 
   constructor(private scene: GameScene) {}
 
@@ -24,6 +25,15 @@ export class CombatSystem {
 
   damageEnemy(e: Enemy, amount: number, srcX: number, srcY: number, knockback = 0, crit = false, fromPlayer = true, showNumber = true) {
     if (!e.alive) return
+    if (e.shielded) {
+      // a warded camp (S10): say why the blows do nothing, but not on every hit
+      const now = this.scene.time.now
+      if (now - this.lastWardMs > 700) {
+        this.lastWardMs = now
+        this.scene.fx.popup(e.x, e.y - e.radius - 40, 'WARDED', PAL.uiDim, 15)
+      }
+      return
+    }
     const dmg = Math.max(1, amount)
     const hpBefore = Math.max(0, e.hp)
     const killed = e.applyDamage(dmg, srcX, srcY, knockback)

@@ -106,6 +106,13 @@ export const WALL_RING = {
 // Camps
 // ---------------------------------------------------------------------------
 
+export type CampTier = BP.CampTier
+
+/** Camps 2.0 (S10): how far patrols roam, how near the hero wakes a camp, and how far it besieges. */
+export const CAMP_LEASH = 700
+export const CAMP_WAKE = 900
+export const CAMP_SIEGE = 600
+
 export interface CampSpec {
   id: string
   name: string
@@ -113,6 +120,15 @@ export interface CampSpec {
   y: number
   hp: number
   region: RegionId
+  tier: CampTier
+  /** patrols stay within this of the camp unless chasing something inside it */
+  leash: number
+  /** the hero coming this near, once, wakes it */
+  wakeRadius: number
+  /** structures this near are besieged by its patrols */
+  siegeRadius: number
+  /** a stronghold's boss (an EnemyKey from S17; a scaled elite until then) */
+  boss?: string
   /** spawns this enemy every interval while alive */
   spawns: { key: string; every: number; count: number }
   reward: ResourceBag
@@ -123,6 +139,8 @@ export const resolveSpawnKey = (key: string): string => /\[(\w+)\]$/.exec(key)?.
 
 export const CAMPS: CampSpec[] = BP.CAMPS.map(c => ({
   id: c.id, name: c.name, x: c.x, y: c.y, hp: c.hp, region: c.region,
+  tier: c.tier, leash: CAMP_LEASH, wakeRadius: CAMP_WAKE, siegeRadius: CAMP_SIEGE,
+  ...(c.boss ? { boss: c.boss } : {}),
   spawns: { ...c.spawns, key: resolveSpawnKey(c.spawns.key) },
   reward: { ...c.reward },
 }))

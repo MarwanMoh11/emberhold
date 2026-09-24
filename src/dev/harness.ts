@@ -297,6 +297,63 @@ export function installHarness(game: Phaser.Game) {
     return out
   }
 
+  /** A camp at a glance (S10): state, tier, hp, wards, patrols and how far they have strayed. */
+  const camp = (id: string) => {
+    const g = gs()
+    const rec = g.camps.camps.find((c: any) => c.spec.id === id)
+    if (!rec) return `no camp "${id}"`
+    const far = (e: any) => Math.round(Math.hypot(e.x - rec.spec.x, e.y - rec.spec.y))
+    return {
+      id, state: rec.state, tier: rec.spec.tier, hp: rec.enemy ? Math.round(rec.enemy.hp) : null,
+      shielded: !!rec.enemy?.shielded, guardsUp: g.camps.guardsUp(id),
+      guards: rec.guards.filter((e: any) => e?.active && e.alive).map((e: any) => ({ key: e.key, name: e.def.name, hp: Math.round(e.hp), d: far(e) })),
+      patrols: rec.patrols.length, patrolFar: Math.max(0, ...rec.patrols.map(far)),
+    }
+  }
+
+  /**
+   * The leash: wake a camp, stand by it until its patrols engage, then walk
+   * off `away` px and pump. The farthest any patrol got from its camp, then
+   * and at the end.
+   */
+  const leash = (id: string, seconds = 20, away = 1600) => {
+    const g = gs()
+    const rec = g.camps.camps.find((c: any) => c.spec.id === id)
+    if (!rec) return `no camp "${id}"`
+    g.camps.wake(id)
+    const heal = () => { g.player.hp = g.player.maxHp }
+    tp(rec.spec.x + 150, rec.spec.y + 220)
+    for (let t = 0; t < Math.max(8, rec.spec.spawns.every + 2); t += 0.5) { heal(); pump(0.5) }
+    const engaged = rec.patrols.filter((e: any) => e.target === g.player).length
+    tp(rec.spec.x + away, rec.spec.y + 200)
+    let worst = 0
+    for (let t = 0; t < seconds; t += 0.5) {
+      heal(); pump(0.5)
+      for (const e of rec.patrols) worst = Math.max(worst, Math.hypot(e.x - rec.spec.x, e.y - rec.spec.y))
+    }
+    return { patrols: rec.patrols.length, cap: 2 * rec.spec.spawns.count, engaged, worstAfterLeaving: Math.round(worst), ...camp(id) as object }
+  }
+
+  /**
+   * The siege radius: put a `key` pad `d` px from a camp (a dev override: no
+   * blueprint pad sits that close), build it, wake the camp, and pump.
+   */
+  const siege = (id: string, key = 'farm', d = 420, seconds = 30) => {
+    const g = gs()
+    const rec = g.camps.camps.find((c: any) => c.spec.id === id)
+    if (!rec) return `no camp "${id}"`
+    const padId = `siegeTest.${id}`
+    let b = g.buildings.byPad.get(padId)
+    if (!b) b = g.buildings.addPad({ id: padId, key, x: rec.spec.x, y: rec.spec.y + d, region: rec.spec.region })
+    g.buildings.load([{ padId, level: 1, hp: 1e9, progress: {}, peakWorkers: 0 }])
+    g.camps.wake(id)
+    tp(rec.spec.x + 2000, rec.spec.y)
+    const hp0 = b.hp
+    pump(seconds)
+    return { pad: padId, at: [Math.round(b.x), Math.round(b.y)], hp0: Math.round(hp0), hp: Math.round(b.hp), alive: b.alive,
+      attackers: rec.patrols.filter((e: any) => e.target === b).length, patrols: rec.patrols.length }
+  }
+
   const reveal = () => { gs().regions.revealAll(); return 'fog cleared' }
 
   const where = () => {
@@ -456,5 +513,5 @@ export function installHarness(game: Phaser.Game) {
     pump(0.05)
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap }
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege }
 }

@@ -366,6 +366,45 @@ export function buildPropTextures(scene: Phaser.Scene) {
     })
   }
 
+  // ---- the fortress's warding brazier (S10): a stone drum, an iron bowl, a tall fire
+  {
+    const w = 72, h = 112, cx = w / 2, by = h - 8
+    bake(scene, 'enm_brazier', w, h, {
+      under: x => groundShadow(x, cx, by, 26, 8, 0.4),
+      body: x => {
+        form(x, P.round(cx - 18, by - 30, 36, 30, 4), 0x4a4440, { rim: 1.2, core: 6, hatch: 0.25 })
+        for (const sy of [by - 21, by - 11]) line(x, x2 => { x2.moveTo(cx - 17, sy); x2.lineTo(cx + 17, sy) }, 1, 0x2e2a28, 0.8)
+        form(x, P.poly([[cx - 24, by - 46], [cx + 24, by - 46], [cx + 15, by - 30], [cx - 15, by - 30]]), 0x2e2a2c, { rim: 1.2, core: 3 })
+        for (const s of [-1, 1]) {
+          form(x, P.poly([[cx + s * 24, by - 46], [cx + s * 30, by - 54], [cx + s * 26, by - 44]]), 0x2e2a2c, { rim: 0.6, core: 1 })
+        }
+      },
+      over: x => {
+        glow(x, cx, by - 62, 30, 0xff7a2e, 0.9)
+        fill(x, P.blob([[cx - 20, by - 46], [cx - 12, by - 76], [cx - 5, by - 64], [cx, by - 100], [cx + 6, by - 66], [cx + 13, by - 82], [cx + 20, by - 46]], 0.8), 0xff8a34)
+        fill(x, P.blob([[cx - 12, by - 46], [cx - 5, by - 70], [cx, by - 84], [cx + 6, by - 68], [cx + 12, by - 46]], 0.8), 0xffc050)
+        fill(x, P.blob([[cx - 6, by - 46], [cx, by - 64], [cx + 6, by - 46]], 0.8), 0xfff0b0)
+      },
+      outline: 2,
+      grain: 0.12,
+    })
+  }
+
+  // ---- a tongue of the causeway's fire wall (S10) -----------------------------------
+  {
+    const w = 56, h = 96, cx = w / 2, by = h - 6
+    bake(scene, 'fx_firewall', w, h, {
+      under: x => glow(x, cx, by - 30, 30, 0xff5a1e, 0.8),
+      body: x => {
+        fill(x, P.blob([[cx - 22, by], [cx - 16, by - 44], [cx - 7, by - 34], [cx - 2, by - 88], [cx + 6, by - 40], [cx + 14, by - 60], [cx + 22, by]], 0.8), 0xe0461a)
+        fill(x, P.blob([[cx - 14, by], [cx - 6, by - 50], [cx + 1, by - 66], [cx + 8, by - 44], [cx + 14, by]], 0.8), 0xff9a34)
+        fill(x, P.blob([[cx - 7, by], [cx, by - 34], [cx + 7, by]], 0.8), 0xfff0b0)
+      },
+      outline: 0,
+      grain: 0,
+    })
+  }
+
   // ---- supply chest ------------------------------------------------------------
   {
     const w = 34, h = 32, cx = w / 2, by = h - 5

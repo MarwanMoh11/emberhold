@@ -3,7 +3,7 @@ import test from 'node:test'
 import { loadTs } from './load-ts.mjs'
 
 const { RegionManager } = await loadTs('src/systems/RegionManager.ts')
-const { CampManager, CampRec, WAKE_RADIUS } = await loadTs('src/systems/CampManager.ts')
+const { CampManager, CampRec, WAKE_RADIUS, BRAZIERS } = await loadTs('src/systems/CampManager.ts')
 const { REGIONS, REGION_BY_ID, CAMPS, raster } = await loadTs('src/config/world/index.ts')
 
 const nop = () => {}
@@ -87,10 +87,11 @@ function camps({ hero = [0, 0], claimed = ['hold'] } = {}) {
     player: { x: hero[0], y: hero[1], alive: true },
     regions: { claimed: id => claimed.includes(id) },
     bus: { emit: (k, p) => events.push([k, p.id]) },
+    fx: { popup: nop }, audio: { play: nop },
     enemies: {
       walkerCount: 0,
-      spawn: (key, x, y) => {
-        const e = { key, x, y, alive: true, hp: 1, maxHp: 1, sprite: { setScale: nop } }
+      spawn: (key, x, y, _hp, _dmg, def) => {
+        const e = { key, x, y, def, active: true, alive: true, hp: 1, maxHp: 1, sprite: { setScale: nop } }
         spawned.push(e)
         return e
       },
@@ -99,7 +100,7 @@ function camps({ hero = [0, 0], claimed = ['hold'] } = {}) {
   }
   const label = { setVisible: nop, setText: nop }
   const c = Object.create(CampManager.prototype)
-  Object.assign(c, { scene, destroyedCount: 0, camps: CAMPS.map(spec => new CampRec(spec, label, null)) })
+  Object.assign(c, { scene, destroyedCount: 0, guardsDown: new Set(), camps: CAMPS.map(spec => new CampRec(spec, label, null)) })
   return { c, scene, events, spawned }
 }
 
@@ -135,4 +136,54 @@ test('burned and awake camps survive a save and load; sleepers stay asleep', () 
   assert.equal(b.c.isBurned('campRotwood'), false)
   assert.equal(b.events.length, 0) // loading wakes quietly
   assert.equal(b.c.camps.filter(k => k.state === 'asleep').length, CAMPS.length - 2)
+})
+
+test('an awake camp keeps at most two bands of patrols, tied to it (S10)', () => {
+  const ferrow = CAMPS.find(k => k.id === 'campFerrow')
+  const { c, spawned } = camps()
+  c.wake('campFerrow')
+  for (let i = 0; i < 12; i++) c.update(ferrow.spawns.every)
+  const patrols = spawned.filter(e => e.key !== 'camp')
+  assert.equal(patrols.length, 2 * ferrow.spawns.count)
+  assert.ok(patrols.every(e => e.home?.id === 'campFerrow' && e.home.leash === 700 && e.home.siege === 600))
+  patrols[0].alive = false // one falls: the next band only tops it back up
+  c.update(ferrow.spawns.every)
+  assert.equal(spawned.filter(e => e.key !== 'camp').length, 2 * ferrow.spawns.count + 1)
+})
+
+test('a stronghold is warded while its boss lives; the fortress while a brazier burns (S10)', () => {
+  const { c, spawned, events } = camps()
+  c.wake('campGallows')
+  c.wake('campAshgate')
+  c.update(0.1)
+  const gallows = c.camps.find(k => k.spec.id === 'campGallows')
+  const boss = spawned.find(e => e.key === 'elite')
+  assert.match(boss.def.name, /GALLOWS KNIGHT/)
+  assert.ok(boss.guard && boss.home.id === 'campGallows')
+  assert.equal(gallows.enemy.shielded, true)
+  const braziers = spawned.filter(e => e.key === 'brazier')
+  const ash = CAMPS.find(k => k.id === 'campAshgate')
+  assert.equal(braziers.length, BRAZIERS.count)
+  for (const b of braziers) assert.equal(Math.round(Math.hypot(b.x - ash.x, b.y - ash.y)), 260)
+  assert.ok(braziers.every(b => b.hp === 2000))
+
+  boss.alive = false; boss.hp = 0
+  c.update(0.1)
+  assert.equal(gallows.enemy.shielded, false)
+  const ashgate = c.camps.find(k => k.spec.id === 'campAshgate')
+  for (let k = 0; k < braziers.length; k++) {
+    assert.equal(ashgate.enemy.shielded, true)
+    braziers[k].alive = false; braziers[k].hp = 0
+    c.update(0.1)
+  }
+  assert.equal(ashgate.enemy.shielded, false)
+  assert.deepEqual(c.guardsJSON().sort(), ['campAshgate.brazier0', 'campAshgate.brazier1', 'campAshgate.brazier2', 'campGallows.boss'])
+
+  // a reload remembers the fallen; a swept-away (not killed) boss comes back
+  const b = camps()
+  b.c.load([], ['campGallows', 'campAshgate', 'campOverseers'], c.guardsJSON())
+  b.c.update(0.1)
+  assert.deepEqual(b.spawned.filter(e => e.key === 'elite').map(e => e.home.id), ['campOverseers'])
+  assert.equal(b.spawned.filter(e => e.key === 'brazier').length, 0)
+  assert.ok(events.every(([k]) => k !== 'camp:burned'))
 })

@@ -98,6 +98,8 @@ function validSave(v: unknown): v is SaveBlob {
   if (v.exploredFog !== undefined && (typeof v.exploredFog !== 'string' || v.exploredFog.length > FogMemory.maxEncodedLength(WORLD.width, WORLD.height))) return false
   if (v.campAwake !== undefined && (!Array.isArray(v.campAwake)
     || !v.campAwake.every(id => typeof id === 'string' && CAMPS.some(c => c.id === id)))) return false
+  if (v.campGuards !== undefined && (!Array.isArray(v.campGuards) || v.campGuards.length > 64
+    || !v.campGuards.every(g => typeof g === 'string' && CAMPS.some(c => g.startsWith(`${c.id}.`))))) return false
   if (v.campHealth !== undefined && (!record(v.campHealth)
     || !Object.entries(v.campHealth).every(([id, hp]) => CAMPS.some(c => c.id === id)
       && finite(hp) && hp > 0 && hp <= 100000))) return false
@@ -156,6 +158,8 @@ export interface SaveBlob {
   /** Camps awake and standing (S08). Burned ones are in `camps`; the rest sleep. */
   campAwake?: string[]
   campHealth?: Record<string, number>
+  /** Camp guards fallen (S10): `${campId}.boss` or `${campId}.brazier${k}`. */
+  campGuards?: string[]
   abilities: ReturnType<GameScene['abilities']['toJSON']>
   combat: { kills: number; bossKills: number }
   coreLost?: boolean
@@ -249,6 +253,7 @@ export class SaveManager {
       camps: s.camps.toJSON(),
       campAwake: s.camps.awakeJSON(),
       campHealth: s.camps.healthJSON(),
+      campGuards: s.camps.guardsJSON(),
       abilities: s.abilities.toJSON(),
       combat: { kills: s.combat.kills, bossKills: s.combat.bossKills },
       coreLost: s.coreLost,
@@ -315,7 +320,7 @@ export class SaveManager {
     const coreLost = blob.coreLost ?? blob.buildings.some(b => b.padId === 'hall' && b.level === 0)
     s.waves.load(blob.waves, coreLost)
     // a damaged camp was awake, whether or not the save says so
-    s.camps.load(blob.camps, [...blob.campAwake ?? [], ...Object.keys(blob.campHealth ?? {})])
+    s.camps.load(blob.camps, [...blob.campAwake ?? [], ...Object.keys(blob.campHealth ?? {})], blob.campGuards)
     if (blob.campHealth) s.camps.loadHealth(blob.campHealth)
     s.coreLost = coreLost
     s.combat.kills = blob.combat?.kills ?? 0

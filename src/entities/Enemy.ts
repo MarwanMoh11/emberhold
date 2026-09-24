@@ -11,6 +11,9 @@ export type EnemyState = 'move' | 'attack' | 'stun' | 'dead'
  * detection all run through the spatial grid, which is what keeps several
  * hundred of these cheap.
  */
+/** The camp a patrol belongs to (S10). */
+export interface CampHome { id: string; x: number; y: number; leash: number; siege: number }
+
 export class Enemy implements Targetable {
   active = false
   readonly id = nextId()
@@ -77,6 +80,16 @@ export class Enemy implements Targetable {
   route: FieldTarget[] | null = null
   /** index into `route` */
   leg = 0
+  /** a camp patrol's (or guard's) camp: it roams within `leash` and besieges within `siege` (S10); null otherwise */
+  home: CampHome | null = null
+  /** heading back to `home` after straying past the leash */
+  returning = false
+  /** where an idle patrol is strolling to, and how long before it picks another spot */
+  wanderX = 0; wanderY = 0; wanderT = 0
+  /** a camp's guard (its boss or a brazier): a failed night's sweep leaves it standing */
+  guard = false
+  /** takes no damage (a stronghold while its boss lives, the fortress while a brazier burns) */
+  shielded = false
 
   sprite!: Phaser.GameObjects.Image
 
@@ -126,6 +139,11 @@ export class Enemy implements Targetable {
     this.approach = null
     this.route = null
     this.leg = 0
+    this.home = null
+    this.returning = false
+    this.wanderT = 0
+    this.guard = false
+    this.shielded = false
 
     const tex = `enm_${def.key}`
     this.sprite.setTexture(tex)
@@ -137,7 +155,7 @@ export class Enemy implements Targetable {
   }
 
   applyDamage(amount: number, srcX: number, srcY: number, knockback = 0): boolean {
-    if (!this.alive) return false
+    if (!this.alive || this.shielded) return false
     this.marching = false
     this.hp -= amount
     this.flashT = 0.09

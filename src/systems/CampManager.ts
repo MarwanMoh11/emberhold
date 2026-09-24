@@ -1,17 +1,34 @@
-import { CAMPS, type CampSpec } from '../config/world'
+import { CAMPS, CAMP_WAKE, type CampSpec } from '../config/world'
 import { PAL } from '../config/palette'
 import { textStyle } from '../ui/theme'
 import { rr } from '../core/math'
-import type { Enemy } from '../entities/Enemy'
-import type { EnemyKey } from '../config/enemies'
+import type { CampHome, Enemy } from '../entities/Enemy'
+import { ENEMIES, type EnemyKey } from '../config/enemies'
 import type { GameScene } from '../scenes/GameScene'
 import Phaser from 'phaser'
 
 /** Camps 2.0 (S08): every camp stands from the start, asleep until its region is claimed or the hero comes near. */
 export type CampState = 'asleep' | 'awake' | 'burned'
 
-/** How close the hero has to come, once, to wake a camp in unclaimed ground. */
-export const WAKE_RADIUS = 900
+/** How close the hero has to come, once, to wake a camp in unclaimed ground. Each camp's own is `spec.wakeRadius`. */
+export const WAKE_RADIUS = CAMP_WAKE
+/** The fortress's braziers (S10): each must fall before the fortress can be damaged. */
+export const BRAZIERS = { count: 3, ring: 260, hp: 2000 }
+/**
+ * A stronghold's boss until S17 brings the real ones: an elite this much
+ * tougher, named after the boss key, standing within `leash` of its camp.
+ * S17 swaps `CampManager.spawnGuard`'s boss branch for the boss's own EnemyKey.
+ */
+export const STAND_IN = { hp: 8, dmg: 1.6, leash: 420, dy: 90 }
+
+/** 'gallowsKnight' → 'the Gallows Knight' */
+export const bossName = (key: string) => `the ${key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase())}`
+
+/** The guards a camp's wards hang on: a stronghold's boss, the fortress's braziers, nothing for the rest. */
+export function guardIds(spec: CampSpec): string[] {
+  if (spec.tier === 'fortress') return Array.from({ length: BRAZIERS.count }, (_, k) => `brazier${k}`)
+  return spec.tier === 'stronghold' && spec.boss ? ['boss'] : []
+}
 /** A sleeping camp is drawn with the colour gone out of it, like the ground it sits on. */
 const SLEEP_TINT = 0x8a8278
 const SLEEP_ALPHA = 0.8
@@ -20,12 +37,20 @@ export class CampRec {
   state: CampState = 'asleep'
   enemy: Enemy | null = null
   timer = rr(3, 8)
+  /** its living patrols, at most `2 × spawns.count` */
+  patrols: Enemy[] = []
+  /** the standing guard per `guardIds` slot (null: not spawned yet, or fallen) */
+  guards: (Enemy | null)[] = []
+  /** what its patrols and guards are tied to */
+  readonly home: CampHome
   constructor(
     readonly spec: CampSpec,
     readonly label: Phaser.GameObjects.Text,
     /** The camp as drawn while it sleeps. It is not an enemy yet, so nothing can target or damage it. */
     readonly sleeper: Phaser.GameObjects.Image | null,
-  ) {}
+  ) {
+    this.home = { id: spec.id, x: spec.x, y: spec.y, leash: spec.leash, siege: spec.siegeRadius }
+  }
   get destroyed() { return this.state === 'burned' }
 }
 
@@ -38,6 +63,8 @@ export class CampRec {
 export class CampManager {
   camps: CampRec[] = []
   destroyedCount = 0
+  /** guards that have fallen, as `${campId}.${guardId}` (save `campGuards`) */
+  readonly guardsDown = new Set<string>()
 
   constructor(private scene: GameScene) {}
 
@@ -70,6 +97,8 @@ export class CampManager {
     const rec = this.rec(id)
     if (!rec || rec.state === 'burned') return false
     if (rec.enemy?.active) this.scene.enemies.despawn(rec.enemy)
+    for (const g of rec.guards) if (g?.active && g.guard) this.scene.enemies.despawn(g)
+    rec.guards = []
     this.onBurned(rec)
     return true
   }
@@ -83,6 +112,62 @@ export class CampManager {
     rec.sleeper?.setVisible(false)
     if (!silent) this.scene.bus.emit('camp:woke', { id })
     return true
+  }
+
+  /** Guards standing at a camp; 0 means its wards are down and it can be damaged. */
+  guardsUp(id: string): number {
+    const rec = this.rec(id)
+    if (!rec) return 0
+    return guardIds(rec.spec).filter(g => !this.guardsDown.has(`${rec.spec.id}.${g}`)).length
+  }
+
+  /**
+   * Keep an awake camp's guards standing: settle any that died since the
+   * last frame, and raise the rest (the first wake, a reload, or anything
+   * that swept them away without killing them).
+   */
+  private ensureGuards(rec: CampRec) {
+    const ids = guardIds(rec.spec)
+    for (let k = 0; k < ids.length; k++) {
+      const key = `${rec.spec.id}.${ids[k]}`
+      if (this.guardsDown.has(key)) continue
+      const g = rec.guards[k]
+      if (g && g.active && g.alive && g.guard) continue
+      if (g && !g.alive && g.hp <= 0) {
+        rec.guards[k] = null
+        this.guardsDown.add(key)
+        this.onGuardFell(rec, ids[k])
+        continue
+      }
+      rec.guards[k] = this.spawnGuard(rec, ids[k], k)
+    }
+  }
+
+  /** A stronghold's boss stands at the camp; the fortress's braziers ring it. */
+  private spawnGuard(rec: CampRec, gid: string, k: number): Enemy | null {
+    const { spec } = rec
+    const s = this.scene
+    let e: Enemy | null
+    if (gid === 'boss' && spec.boss) {
+      // S17: spawn the boss's own EnemyKey here instead of the stand-in
+      const def = { ...ENEMIES.elite, name: bossName(spec.boss).replace(/^the /, '').toUpperCase() }
+      e = s.enemies.spawn('elite', spec.x, spec.y + STAND_IN.dy, STAND_IN.hp, STAND_IN.dmg, def)
+      if (e) e.home = { ...rec.home, leash: STAND_IN.leash }
+    } else {
+      const a = -Math.PI / 2 + (k * Math.PI * 2) / BRAZIERS.count
+      e = s.enemies.spawn('brazier', spec.x + Math.cos(a) * BRAZIERS.ring, spec.y + Math.sin(a) * BRAZIERS.ring)
+      if (e) { e.maxHp = BRAZIERS.hp; e.hp = BRAZIERS.hp }
+    }
+    if (e) e.guard = true
+    return e
+  }
+
+  private onGuardFell(rec: CampRec, gid: string) {
+    const s = this.scene, left = this.guardsUp(rec.spec.id)
+    const what = gid === 'boss' && rec.spec.boss ? `${bossName(rec.spec.boss)} falls` : 'a brazier gutters out'
+    const then = left > 0 ? `${left} still burn` : `${rec.spec.name} lies open`
+    s.fx.popup(rec.spec.x, rec.spec.y - 150, `${what.toUpperCase()} · ${then.toUpperCase()}`, PAL.gold, 20)
+    s.audio.play('boom', 0.4, 0.9)
   }
 
   private ensureEnemy(rec: CampRec) {
@@ -101,7 +186,7 @@ export class CampManager {
       const d = Math.hypot(p.x - rec.spec.x, p.y - rec.spec.y)
 
       if (rec.state === 'asleep') {
-        if (this.scene.regions.claimed(rec.spec.region) || (p.alive && d < WAKE_RADIUS)) this.wake(rec.spec.id)
+        if (this.scene.regions.claimed(rec.spec.region) || (p.alive && d < rec.spec.wakeRadius)) this.wake(rec.spec.id)
         else {
           const near = d < 620
           rec.label.setVisible(near)
@@ -119,26 +204,33 @@ export class CampManager {
         continue
       }
       this.ensureEnemy(rec)
+      this.ensureGuards(rec)
 
       const e = rec.enemy
+      const warded = this.guardsUp(rec.spec.id)
+      if (e) e.shielded = warded > 0
 
       const near = d < 620
       rec.label.setVisible(near)
       if (near && e) {
-        rec.label.setText(`${rec.spec.name}   ${Math.ceil(e.hp)}/${e.maxHp}`)
+        const by = rec.spec.tier === 'fortress' ? `${warded} brazier${warded === 1 ? '' : 's'}` : bossName(rec.spec.boss ?? '')
+        rec.label.setText(warded > 0 ? `${rec.spec.name}   ·   warded by ${by}` : `${rec.spec.name}   ${Math.ceil(e.hp)}/${e.maxHp}`)
       }
 
-      // keep feeding its region while it stands (S10 adds the leash and the cap)
+      // patrols: a new band every `spawns.every` s, never more than two bands alive
+      rec.patrols = rec.patrols.filter(q => q.active && q.alive && q.home === rec.home)
       rec.timer -= dt
       if (rec.timer <= 0) {
         rec.timer = rec.spec.spawns.every
-        if (this.scene.enemies.walkerCount > 240) continue
-        for (let i = 0; i < rec.spec.spawns.count; i++) {
-          this.scene.enemies.spawn(
+        const room = Math.min(rec.spec.spawns.count, 2 * rec.spec.spawns.count - rec.patrols.length)
+        if (room <= 0 || this.scene.enemies.walkerCount > 240) continue
+        for (let i = 0; i < room; i++) {
+          const q = this.scene.enemies.spawn(
             rec.spec.spawns.key as EnemyKey,
             rec.spec.x + rr(-70, 70), rec.spec.y + rr(30, 80),
             1 + this.scene.waves.wave * 0.05, 1 + this.scene.waves.wave * 0.03,
           )
+          if (q) { q.home = rec.home; rec.patrols.push(q) }
         }
       }
     }
@@ -166,7 +258,7 @@ export class CampManager {
       }
     }
     s.pickups.drop('chest', 1, rec.spec.x, rec.spec.y + 40, 1)
-    s.bus.emit('camp:burned', { id: rec.spec.id })
+    s.bus.emit('camp:burned', { id: rec.spec.id, tier: rec.spec.tier, ...(rec.spec.boss ? { boss: rec.spec.boss } : {}) })
   }
 
   toJSON() { return this.camps.filter(c => c.state === 'burned').map(c => c.spec.id) }
@@ -185,8 +277,12 @@ export class CampManager {
     return hp
   }
 
-  /** Burned camps first, then the ones already awake (quietly: no `camp:woke`). */
-  load(burned: string[], awake: string[] = []) {
+  /** The save's `campGuards`: fallen guards, `${campId}.${guardId}`. */
+  guardsJSON() { return [...this.guardsDown] }
+
+  /** Burned camps first, then the ones already awake (quietly: no `camp:woke`), and the guards already fallen. */
+  load(burned: string[], awake: string[] = [], guardsDown: string[] = []) {
+    for (const g of guardsDown) this.guardsDown.add(g)
     for (const rec of this.camps) {
       if (burned.includes(rec.spec.id)) {
         rec.state = 'burned'

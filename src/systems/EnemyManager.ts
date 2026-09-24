@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { Enemy } from '../entities/Enemy'
-import { ENEMIES, type EnemyKey } from '../config/enemies'
+import { Enemy, type CampHome } from '../entities/Enemy'
+import { ENEMIES, type EnemyDef, type EnemyKey } from '../config/enemies'
 import { PERF } from '../config/balance'
 import { MAX_ENEMIES } from '../core/device'
 import { PAL } from '../config/palette'
@@ -38,9 +38,9 @@ export class EnemyManager {
 
   get count() { return this.aliveCount }
 
-  spawn(key: EnemyKey, x: number, y: number, hpMult = 1, dmgMult = 1): Enemy | null {
+  /** `def` overrides the key's own (a stronghold's stand-in boss is a renamed elite until S17). */
+  spawn(key: EnemyKey, x: number, y: number, hpMult = 1, dmgMult = 1, def: EnemyDef = ENEMIES[key]): Enemy | null {
     if (this.aliveCount >= MAX_ENEMIES) return null
-    const def = ENEMIES[key]
     let e = this.free.pop()
     if (!e) {
       if (this.list.length >= MAX_ENEMIES + 40) return null
@@ -82,7 +82,7 @@ export class EnemyManager {
   /** Clear a failed night without awarding kills or erasing standing camps. */
   clearWalkers() {
     for (const e of this.list) {
-      if (e.active && !e.def.structure) this.despawn(e)
+      if (e.active && !e.def.structure && !e.guard) this.despawn(e)
     }
   }
 
@@ -93,6 +93,7 @@ export class EnemyManager {
 
   // ---- targeting -------------------------------------------------------
   private acquire(e: Enemy): Targetable | null {
+    if (e.home) return this.acquirePatrol(e, e.home)
     const s = this.scene
     const prefs = e.def.prefers
     let t: Targetable | null = null
@@ -112,6 +113,48 @@ export class EnemyManager {
       t = hall && hall.level > 0 && hall.alive ? hall : (s.player.alive ? s.player : null)
     }
     return t
+  }
+
+  /**
+   * A camp's patrol (S10) only fights inside its leash: the hero or an ally
+   * within it, else the nearest structure within the camp's siege radius.
+   * Nothing there: null, and it strolls about the camp.
+   */
+  private acquirePatrol(e: Enemy, h: CampHome): Targetable | null {
+    const s = this.scene
+    const inside = (t: { x: number; y: number }) => (t.x - h.x) ** 2 + (t.y - h.y) ** 2 <= h.leash * h.leash
+    const siege = () => s.buildings.nearestStructure(h.x, h.y, h.siege, e.sapper)
+    if (e.def.prefers === 'structures') { const b = siege(); if (b) return b }
+    const p = s.player
+    if (p.alive && inside(p) && (p.x - e.x) ** 2 + (p.y - e.y) ** 2 < 520 * 520) return p
+    return s.allyGrid.nearest(e.x, e.y, 440, a => a.alive && a.kind !== 'building' && inside(a)) ?? siege()
+  }
+
+  /** Past the leash with nothing inside it to fight: walk home. */
+  private strayed(e: Enemy, h: CampHome) {
+    const far = (x: number, y: number, r: number) => (x - h.x) ** 2 + (y - h.y) ** 2 > r * r
+    if (e.returning) {
+      if (!far(e.x, e.y, h.leash * 0.5)) e.returning = false
+    } else if (far(e.x, e.y, h.leash + 60) || (e.target && far(e.target.x, e.target.y, h.leash + 40))) {
+      e.returning = true
+      e.target = null
+    }
+    return e.returning
+  }
+
+  /** Somewhere to stroll inside the leash; home itself when heading back. */
+  private wanderGoal(e: Enemy, h: CampHome, dt: number): { x: number; y: number } {
+    if (e.returning) return h
+    e.wanderT -= dt
+    if (e.wanderT <= 0) {
+      e.wanderT = rr(4, 9)
+      const a = rr(0, Math.PI * 2), r = rr(90, h.leash * 0.45)
+      const x = h.x + Math.cos(a) * r, y = h.y + Math.sin(a) * r
+      const ok = this.scene.nav.passableAt(x, y)
+      e.wanderX = ok ? x : h.x
+      e.wanderY = ok ? y : h.y + 90
+    }
+    return { x: e.wanderX, y: e.wanderY }
   }
 
   /**
@@ -189,7 +232,7 @@ export class EnemyManager {
       }
 
       // damage over time
-      if (e.burnT > 0) {
+      if (e.burnT > 0 && !e.shielded) {
         e.burnT -= dt
         const tick = e.burnDps * dt
         e.hp -= tick
@@ -251,19 +294,23 @@ export class EnemyManager {
       } else {
         // staggered re-target
         e.retargetIn -= dt
-        if (e.retargetIn <= 0 || !e.target || !e.target.alive) {
+        const home = e.home, back = !!home && this.strayed(e, home)
+        if (!back && (e.retargetIn <= 0 || !e.target || !e.target.alive)) {
           e.target = this.acquire(e)
           e.retargetIn = 0.35 + (e.id % 7) * 0.05
           e.los = !!e.target && this.sight(e, e.target)
         }
 
         const t = e.target
-        if (!t) { this.render(e, dt); continue }
+        if (!t && !home) { this.render(e, dt); continue }
+        // a patrol with nothing to fight strolls about its camp, or walks back to it
+        const goal = t ?? this.wanderGoal(e, home!, dt)
+        if (!t) e.los = true
 
-        const dx = t.x - e.x
-        const dy = t.y - e.y
+        const dx = goal.x - e.x
+        const dy = goal.y - e.y
         const d = Math.hypot(dx, dy) || 1
-        const reach = e.range + t.radius + e.radius * 0.4
+        const reach = t ? e.range + t.radius + e.radius * 0.4 : 24
 
         if (e.def.boss) {
           this.bossUpdate(e, dt, d)
@@ -276,7 +323,11 @@ export class EnemyManager {
           }
         }
 
-        if (d <= reach) {
+        if (!t && d <= reach) {
+          e.state = 'move'
+          e.vx *= 0.85
+          e.vy *= 0.85
+        } else if (d <= reach && t) {
           e.state = 'attack'
           e.attackCd -= dt
           if (e.attackCd <= 0) {
@@ -301,7 +352,7 @@ export class EnemyManager {
               const [cx, cy] = nav.r.xy(j)
               if (nav.blocked(j)) {
                 const wall = this.scene.buildings.blockerAt(cx, cy, nav.r.C / 2)
-                if (wall && wall.id !== t.id) this.latch(e, wall)
+                if (wall && wall.id !== t?.id) this.latch(e, wall)
               }
               if (!e.los) {
                 const fx = cx - e.x, fy = cy - e.y

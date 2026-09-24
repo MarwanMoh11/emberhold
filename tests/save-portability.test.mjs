@@ -94,7 +94,7 @@ test('claimed regions and awake camps round-trip through the save', () => {
     waves: { toJSON: () => f.waves }, quests: { toJSON: () => f.quests }, abilities: { toJSON: () => f.abilities },
     combat: { kills: 0, bossKills: 0 },
     regions: { toJSON: () => ['hold', 'downs', 'ferrow'], fogJSON: () => undefined },
-    camps: { toJSON: () => ['campScarp'], awakeJSON: () => ['campFerrow'], healthJSON: () => ({ campRotwood: 500 }) },
+    camps: { toJSON: () => ['campScarp'], awakeJSON: () => ['campFerrow'], healthJSON: () => ({ campRotwood: 500 }), guardsJSON: () => ['campGallows.boss'] },
   })
   assert.equal(new SaveManager(scene).save(), true)
   const blob = JSON.parse(data.get('emberhold.save.v2'))
@@ -105,12 +105,13 @@ test('claimed regions and awake camps round-trip through the save', () => {
   const into = loose({
     player: loose(), combat: {},
     regions: loose({ load: ids => { got.regions = ids } }),
-    camps: loose({ load: (burned, awake) => { got.burned = burned; got.awake = awake } }),
+    camps: loose({ load: (burned, awake, guards) => { got.burned = burned; got.awake = awake; got.guards = guards } }),
   })
   assert.equal(new SaveManager(into).load(), true)
   assert.deepEqual(got.regions, ['hold', 'downs', 'ferrow'])
   assert.deepEqual(got.burned, ['campScarp'])
   assert.deepEqual(got.awake, ['campFerrow', 'campRotwood']) // a damaged camp was awake
+  assert.deepEqual(got.guards, ['campGallows.boss'])
 })
 
 test('a save naming an unknown region or camp is refused', () => {
@@ -120,4 +121,6 @@ test('a save naming an unknown region or camp is refused', () => {
   assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, regions: ['hold', 'atlantis'] })), null)
   assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, campAwake: ['campNowhere'] })), null)
   assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, campAwake: 'campFerrow' })), null)
+  assert.ok(SaveManager.inspectImport(JSON.stringify({ ...ok, campGuards: ['campAshgate.brazier1'] })))
+  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, campGuards: ['campNowhere.boss'] })), null)
 })

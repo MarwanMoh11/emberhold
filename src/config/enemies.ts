@@ -3,7 +3,7 @@ import { PAL } from './palette'
 export type EnemyKey =
   | 'grunt' | 'runner' | 'brute' | 'archer' | 'shield'
   | 'bomber' | 'swarm' | 'elite' | 'commander'
-  | 'siegeBeast' | 'warlord' | 'cinderRegent' | 'camp'
+  | 'siegeBeast' | 'warlord' | 'cinderRegent' | 'camp' | 'brazier'
 
 export type TargetPref = 'nearest' | 'structures' | 'workers' | 'player'
 
@@ -110,6 +110,13 @@ export const ENEMIES: Record<EnemyKey, EnemyDef> = {
     key: 'camp', name: 'Warcamp',
     hp: 1400, damage: 0, speed: 0, range: 0, attackRate: 0.01, radius: 46, scale: 1,
     colour: 0xff6a2e, accent: 0x3f1c14, xp: 120, coins: 200, prefers: 'player',
+    knockbackResist: 1, healthbar: true, structure: true,
+  },
+  // S10: the fortress's wards. Three ring Ashgate; it takes no damage until they fall.
+  brazier: {
+    key: 'brazier', name: 'Warding Brazier',
+    hp: 2000, damage: 0, speed: 0, range: 0, attackRate: 0.01, radius: 26, scale: 1,
+    colour: 0xff8a34, accent: 0x2a1c16, xp: 40, coins: 60, prefers: 'player',
     knockbackResist: 1, healthbar: true, structure: true,
   },
   warlord: {

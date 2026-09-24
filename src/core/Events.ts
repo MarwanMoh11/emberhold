@@ -18,7 +18,10 @@ export interface GameEvents {
   'night:warning': { approaches: string[]; routes: Pt[][] }
   'wave:start': { wave: number }
   'wave:cleared': { wave: number }
-  'camp:burned': { id: string }
+  /** A camp burned (S10: with its tier, and a stronghold's boss key for S15's relic drop). */
+  'camp:burned': { id: string; tier?: 'warcamp' | 'stronghold' | 'fortress'; boss?: string }
+  /** A sealed crossing opened (S10: the Regent's Causeway, when Ashgate burns). */
+  'crossing:opened': { id: string }
   /** A sleeping camp woke: its region was claimed or the hero came within `WAKE_RADIUS` (S08). */
   'camp:woke': { id: string }
   'region:claimed': { id: RegionId }

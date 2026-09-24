@@ -54,6 +54,17 @@ test('camp spawn keys resolve to enemies the game has', () => {
   assert.equal(W.resolveSpawnKey('grunt'), 'grunt')
 })
 
+test('camps carry their tier, leash and radii (S10)', () => {
+  for (const c of W.CAMPS) {
+    const bp = BP.CAMPS.find(b => b.id === c.id)
+    assert.equal(c.tier, bp.tier)
+    assert.equal(c.boss, bp.boss)
+    assert.deepEqual([c.leash, c.wakeRadius, c.siegeRadius], [700, 900, 600])
+  }
+  assert.deepEqual(W.CAMPS.filter(c => c.tier === 'fortress').map(c => c.id), ['campAshgate'])
+  assert.equal(W.CAMPS.filter(c => c.tier === 'stronghold' && c.boss).length, 4, 'four stronghold bosses; the Slag Forges have none')
+})
+
 test('the rampart ring is the palisade', () => {
   const r = W.WALL_RING
   assert.ok(r.left < W.HALL.x && W.HALL.x < r.right && r.top < W.HALL.y && W.HALL.y < r.bottom)
