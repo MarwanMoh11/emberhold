@@ -168,7 +168,8 @@ export class GameScene extends Phaser.Scene {
     // each via leg's field builds once here (~36 ms each) rather than at the first warning
     for (const id of APPROACH_IDS) for (const leg of this.approaches.legs(id)) this.nav.field(leg)
     this.waves = new WaveManager(this)
-    this.routeMarks = new RouteMarks(this, DEPTH.terrain + 10)
+    // above the lightmap: embers carry their own light, and the night must not swallow the warning
+    this.routeMarks = new RouteMarks(this, DEPTH.light + 1)
     this.levels = new LevelSystem(this)
     this.quests = new QuestManager(this)
     this.saves = new SaveManager(this)

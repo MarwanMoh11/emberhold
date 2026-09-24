@@ -6,7 +6,7 @@ import type { GameScene } from '../scenes/GameScene'
 /** Route dots are drawn on the ground only this close to the hero. */
 export const ROUTE_NEAR = 1200
 /** Spacing of the dots along a route, px. */
-export const ROUTE_GAP = 30
+export const ROUTE_GAP = 28
 
 /** Points every `gap` px along a polyline, the first point included. */
 export function dotsAlong(route: readonly Pt[], gap = ROUTE_GAP): Pt[] {
@@ -62,11 +62,11 @@ export class RouteMarks {
         if (d2 > near2) continue
         const edge = Math.min(1, (ROUTE_NEAR - Math.sqrt(d2)) / 240)
         const glint = (((k - run) % 6) + 6) % 6 < 1.2
-        const a = (glint ? 1 : 0.6) * edge
-        g.fillStyle(0x1a0c06, 0.45 * a)
-        g.fillEllipse(x, y + 1.5, 10, 6)
+        const a = (glint ? 1 : 0.72) * edge
+        g.fillStyle(0x1a0c06, 0.5 * a)
+        g.fillCircle(x, y + 1.5, glint ? 6.5 : 5.5)
         g.fillStyle(glint ? 0xffc36a : PAL.ember, a)
-        g.fillEllipse(x, y, glint ? 7 : 5.5, glint ? 4.6 : 3.6)
+        g.fillCircle(x, y, glint ? 5 : 3.8)
       }
     }
   }

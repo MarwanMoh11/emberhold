@@ -168,30 +168,40 @@ export function installHarness(game: Phaser.Game) {
    */
   const march = (seconds = 30, step = 0.5) => {
     const g = gs(); const w = g.waves; const n = g.nav
-    let offGround = 0, onRoadFrames = 0, frames = 0, maxMarch = 0, maxWalk = 0
+    let offGround = 0, onRoadFrames = 0, frames = 0, maxMarch = 0, maxWalk = 0, maxRoad = 0
     const seen = new Set<string>()
-    const pos = new Map<number, [number, number]>()
+    const pos = new Map<object, [number, number, boolean]>()
+    const crossings = n.r.bp.FEATURES.crossings
     for (let t = 0; t < seconds && (w.phase !== 'day' || t === 0); t += step) {
       pump(step)
       for (const e of g.enemies.list) {
-        if (!e.active || !e.alive || e.def.structure) continue
+        if (!e.active || !e.alive || e.def.structure) { pos.delete(e); continue }
         frames++
         if (!n.passableAt(e.x, e.y)) offGround++
         if (n.onRoad(e.x, e.y)) onRoadFrames++
-        if (e.approach) seen.add(`${e.approach}:${g.regions.regionAt(e.x, e.y)?.id ?? '?'}`)
-        const last = pos.get(e.id)
-        if (last) {
-          const v = Math.hypot(e.x - last[0], e.y - last[1]) / step / (e.def.speed || 1)
-          if (e.marching) maxMarch = Math.max(maxMarch, v); else maxWalk = Math.max(maxWalk, v)
+        if (e.approach) {
+          seen.add(`${e.approach}:${g.regions.regionAt(e.x, e.y)?.id ?? '?'}`)
+          const k = n.r.crossing[n.r.cell(e.x, e.y)]
+          if (k >= 0) seen.add(`${e.approach}@${crossings[k].id}`)
         }
-        pos.set(e.id, [e.x, e.y])
+        const last = pos.get(e)
+        const steady = !e.kx && !e.ky && e.auraSpeed === 1 && !(e.slowT > 0)
+        if (last && last[2] === e.marching && steady) {
+          const v = Math.hypot(e.x - last[0], e.y - last[1]) / step / (e.def.speed || 1)
+          if (e.marching) maxMarch = Math.max(maxMarch, v)
+          else {
+            maxWalk = Math.max(maxWalk, v)
+            if (n.onRoad(e.x, e.y) && n.onRoad(last[0], last[1])) maxRoad = Math.max(maxRoad, v)
+          }
+        }
+        pos.set(e, [e.x, e.y, e.marching])
       }
     }
     return {
       phase: w.phase, nightElapsed: +w.nightElapsed.toFixed(1), fighting: w.fighting, arrivals: { ...w.arrivals },
       walkers: g.enemies.walkerCount, marching: g.enemies.list.filter((e: any) => e.active && e.alive && e.marching).length,
       offGround, onRoadShare: frames ? +(onRoadFrames / frames).toFixed(2) : 0,
-      speedOverBase: { marching: +maxMarch.toFixed(2), walking: +maxWalk.toFixed(2) },
+      speedOverBase: { marching: +maxMarch.toFixed(2), walking: +maxWalk.toFixed(2), walkingOnRoad: +maxRoad.toFixed(2) },
       seen: [...seen].sort(),
     }
   }
