@@ -93,6 +93,8 @@ function validSave(v: unknown): v is SaveBlob {
       && typeof u[0] === 'string' && UPGRADE_BY_ID.has(u[0] as never)
       && finite(u[1]) && Number.isInteger(u[1]) && u[1] >= 0 && u[1] <= 10000)) return false
   if (v.exploredFog !== undefined && (typeof v.exploredFog !== 'string' || v.exploredFog.length > FogMemory.maxEncodedLength(WORLD.width, WORLD.height))) return false
+  if (v.campAwake !== undefined && (!Array.isArray(v.campAwake)
+    || !v.campAwake.every(id => typeof id === 'string' && CAMPS.some(c => c.id === id)))) return false
   if (v.campHealth !== undefined && (!record(v.campHealth)
     || !Object.entries(v.campHealth).every(([id, hp]) => CAMPS.some(c => c.id === id)
       && finite(hp) && hp > 0 && hp <= 100000))) return false
@@ -148,6 +150,8 @@ export interface SaveBlob {
   regions: string[]
   exploredFog?: string
   camps: string[]
+  /** Camps awake and standing (S08). Burned ones are in `camps`; the rest sleep. */
+  campAwake?: string[]
   campHealth?: Record<string, number>
   abilities: ReturnType<GameScene['abilities']['toJSON']>
   combat: { kills: number; bossKills: number }
@@ -237,9 +241,10 @@ export class SaveManager {
       army: s.army.toJSON(),
       waves: s.waves.toJSON(),
       quests: s.quests.toJSON(),
-      regions: s.zones.toJSON(),
-      exploredFog: s.zones.fogJSON(),
+      regions: s.regions.toJSON(),
+      exploredFog: s.regions.fogJSON(),
       camps: s.camps.toJSON(),
+      campAwake: s.camps.awakeJSON(),
       campHealth: s.camps.healthJSON(),
       abilities: s.abilities.toJSON(),
       combat: { kills: s.combat.kills, bossKills: s.combat.bossKills },
@@ -287,8 +292,8 @@ export class SaveManager {
     this.playtime = blob.playtime ?? 0
     this.lastSavedAt = blob.savedAt
     this.awaySeconds = blob.savedAt ? Math.max(0, (Date.now() - blob.savedAt) / 1000) : 0
-    s.zones.load(blob.regions as never)
-    if (blob.exploredFog) s.zones.loadFog(blob.exploredFog)
+    s.regions.load(blob.regions as never)
+    if (blob.exploredFog) s.regions.loadFog(blob.exploredFog)
     s.buildings.load(blob.buildings)
     s.res.load(blob.res)
     s.player.level = blob.player.level
@@ -306,7 +311,8 @@ export class SaveManager {
     s.army.load(blob.army)
     const coreLost = blob.coreLost ?? blob.buildings.some(b => b.padId === 'hall' && b.level === 0)
     s.waves.load(blob.waves, coreLost)
-    s.camps.load(blob.camps)
+    // a damaged camp was awake, whether or not the save says so
+    s.camps.load(blob.camps, [...blob.campAwake ?? [], ...Object.keys(blob.campHealth ?? {})])
     if (blob.campHealth) s.camps.loadHealth(blob.campHealth)
     s.coreLost = coreLost
     s.combat.kills = blob.combat?.kills ?? 0

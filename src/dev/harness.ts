@@ -14,7 +14,7 @@ import { REGIONS, WORLD } from '../config/world'
  *
  * World v2 helpers:
  *   H.tp(5120, 4230)     teleport the hero (camera and terrain follow at once)
- *   H.claim('downs')     claim a region without paying (zones.unlock(id, true))
+ *   H.claim('downs')     claim a region without paying (regions.claim(id, true))
  *   H.reveal()           clear the fog everywhere
  *   H.where()            { x, y, region } of the hero
  *   H.world()            counts: size, regions claimed, pads, camps, nodes, enemies, chunks
@@ -139,11 +139,11 @@ export function installHarness(game: Phaser.Game) {
     return `${id}: ${z.isUnlocked(id) ? 'claimed' : 'locked'}`
   }
 
-  const reveal = () => { gs().zones.revealAll(); return 'fog cleared' }
+  const reveal = () => { gs().regions.revealAll(); return 'fog cleared' }
 
   const where = () => {
     const g = gs(); const p = g.player
-    return { x: Math.round(p.x), y: Math.round(p.y), region: g.zones.zoneAt(p.x, p.y)?.spec.id ?? null }
+    return { x: Math.round(p.x), y: Math.round(p.y), region: g.regions.regionAt(p.x, p.y)?.id ?? null }
   }
 
   const world = () => {
@@ -152,11 +152,12 @@ export function installHarness(game: Phaser.Game) {
     return {
       size: `${WORLD.width}x${WORLD.height}`,
       regions: REGIONS.length,
-      claimed: REGIONS.filter(r => g.zones.isUnlocked(r.id)).map(r => r.id),
+      claimed: REGIONS.filter(r => g.regions.claimed(r.id)).map(r => r.id),
       pads: pads.length,
       built: pads.filter((b: any) => b.level > 0).length,
       camps: g.camps.camps.length,
       campsLive: g.camps.camps.filter((c: any) => !c.destroyed).length,
+      campsAwake: g.camps.camps.filter((c: any) => c.state === 'awake').map((c: any) => c.spec.id),
       nodes: g.nodes.nodes.length,
       enemies: g.enemies.walkerCount,
       wave: g.waves.wave,

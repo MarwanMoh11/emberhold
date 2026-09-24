@@ -3,7 +3,7 @@ import test from 'node:test'
 import { loadTs } from './load-ts.mjs'
 
 const { FogMemory } = await loadTs('src/core/FogMemory.ts')
-const { ZoneManager, FOG_SCALE } = await loadTs('src/systems/ZoneManager.ts')
+const { RegionManager, FOG_SCALE } = await loadTs('src/systems/RegionManager.ts')
 const { Minimap } = await loadTs('src/ui/Minimap.ts')
 const { WORLD } = await loadTs('src/config/world/index.ts')
 
@@ -105,7 +105,7 @@ test('foreign or damaged fog strings load nothing', () => {
 test('loading exploration restores the fog brush marks', () => {
   const makeZones = () => {
     const marks = []
-    const zones = Object.create(ZoneManager.prototype)
+    const zones = Object.create(RegionManager.prototype)
     zones.explored = new FogMemory(WORLD.width, WORLD.height)
     zones.fog = { erase(_brush, x, y) { marks.push([x, y]) } }
     zones.brush = {}
@@ -132,7 +132,7 @@ test('the minimap rebuilds travel outside the hold from saved world fog', () => 
   minimap.explored = new Uint8Array(34 * 28)
   minimap.coldDirty = false
   minimap.game = {
-    zones: { forEachExplored: fn => restored.forEachMarked(fn) },
+    regions: { forEachExplored: fn => restored.forEachMarked(fn) },
   }
   minimap.restoreWorldExploration()
   assert.equal(minimap.exploredAt(3100, 2400), true)

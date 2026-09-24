@@ -5,6 +5,7 @@ import { applyGrain, css, fill, form, glow, line, makeCanvas, mix, P, Rng, regis
 import { fbm, hash32, Mulberry, smooth, vnoise } from './noise'
 import { boxBlur, cellValue, sample, terrainFields, type TerrainFields } from './terrainField'
 import { Batch, paintCrossings, paintFeatureLines, paintRoads, warmFeatures, type Rect } from './TerrainFeatures'
+import { paintClaimTint } from './claimTint'
 
 /**
  * The ground, painted a piece at a time (S07).
@@ -22,7 +23,8 @@ import { Batch, paintCrossings, paintFeatureLines, paintRoads, warmFeatures, typ
  *    batches, one path per colour.
  * 3. Feature lines (TerrainFeatures): shore ink, foam, river flow, cliff
  *    hatching and rubble, lava cracks and edges.
- * 4. Roads, then crossings (TerrainFeatures).
+ * 4. Roads, then crossings (TerrainFeatures), then the claim tint: unclaimed
+ *    ground drained and darkened, its borders dotted (claimTint, S08).
  * 5. Set pieces (here): the hall's plaza, scorched camps, the spawn gates.
  * 6. Paper grain and the page's vignette.
  *
@@ -504,6 +506,7 @@ export function paintTerrainRect(x: Ctx, wx: number, wy: number, size: number, _
   paintFeatureLines(x, rect)
   paintRoads(x, rect)
   paintCrossings(x, rect)
+  paintClaimTint(x, rect)
   // the set pieces are drawn in texels at S, the resolution they were designed at
   x.scale(1 / S, 1 / S)
   const b: Box = { x0: wx * S, y0: wy * S, x1: (wx + size) * S, y1: (wy + size) * S }

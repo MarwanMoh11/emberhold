@@ -9,7 +9,7 @@ test('legacy quest counters recover from the saved world and stay numeric', () =
   quests.scene = {
     combat: { kills: 80, bossKills: 2 },
     camps: { destroyedCount: 3 },
-    zones: { unlockedCount: 4 },
+    regions: { claimedCount: 4 },
     waves: { wave: 5 },
     saves: { playtime: 100 },
   }

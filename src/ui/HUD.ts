@@ -3,6 +3,7 @@ import { PAL } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { ABILITIES, ABILITY_KEYS, ABILITY_SLOTS } from '../config/abilities'
 import { PLAYER } from '../config/balance'
+import { REGION_BY_ID } from '../config/world'
 import { clamp, short } from '../core/math'
 import { DPR, IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
 import { ABILITY_ICON } from '../art/icons'
@@ -95,6 +96,9 @@ export class HUD {
   private hintText: Phaser.GameObjects.Text
   private toastRibbon: SkinPanel
   private toastText: Phaser.GameObjects.Text
+  /** The line under the ribbon: a claimed region's blurb. */
+  private toastSub: Phaser.GameObjects.Text
+  private toastDur = 3.2
   private comboText: Phaser.GameObjects.Text
   private statsText: Phaser.GameObjects.Text
   private lowHp: Phaser.GameObjects.Image
@@ -179,6 +183,7 @@ export class HUD {
     this.hintText = t({ voice: 'caps', size: 14, weight: '800', colour: PAL.uiText, align: 'center' }, 0.5, 0.5)
     this.toastRibbon = panel('ribbon', D.toast)
     this.toastText = t({ voice: 'display', size: 22, colour: PAL.bone, shadow: true }).setDepth(D.toast + 1)
+    this.toastSub = t({ size: 15, weight: 'italic 500', colour: PAL.bone, stroke: 4, align: 'center', wrap: 460 }, 0.5, 0).setDepth(D.toast + 1)
     this.comboText = t({ voice: 'display', size: 26, colour: PAL.gold, stroke: 5 })
     this.statsText = t({ size: 11, weight: '500', colour: PAL.uiDim, stroke: 3 }, 0, 1)
     this.lowHp = ui.add.image(0, 0, vignetteTexture(ui, 0x7a1408)).setOrigin(0, 0)
@@ -210,7 +215,11 @@ export class HUD {
         this.hint('Pack full — empty it at the depot')
       }
     })
-    this.game.bus.on('zone:unlocked', () => this.toast('New territory claimed'))
+    // the region banner: its name on the ribbon, its blurb beneath
+    this.game.bus.on('region:claimed', ({ id }) => {
+      const r = REGION_BY_ID.get(id)
+      if (r) this.toast(r.name, r.blurb, 4.6)
+    })
 
     this.layout()
     ui.scale.on('resize', () => this.layout())
@@ -252,11 +261,13 @@ export class HUD {
   private get medalR() { return this.W < 720 ? 20 : 22 }
   private get plateW() { return this.medalR * 2 + 16 + this.barW + 12 }
 
-  toast(msg: string) {
+  toast(msg: string, sub = '', secs = 3.2) {
     this.toastText.setText(msg)
-    this.toastT = 3.2
+    this.toastSub.setText(sub)
+    this.toastT = this.toastDur = secs
     this.toastRibbon.setAlpha(0)
     this.toastText.setAlpha(0)
+    this.toastSub.setAlpha(0)
   }
 
   hint(msg: string) {
@@ -599,7 +610,7 @@ export class HUD {
     // A ribbon unfurls with the news and lifts away when it is done.
     if (this.toastT > 0) {
       this.toastT -= dt
-      const age = 3.2 - this.toastT
+      const age = this.toastDur - this.toastT
       const a = Math.min(1, age / 0.18, this.toastT / 0.5)
       const drop = (1 - Math.min(1, age / 0.25)) * -14
       const tw = Math.min(this.W - 24, this.toastText.width + 90)
@@ -609,9 +620,14 @@ export class HUD {
       this.toastRibbon.setVisible(true).setAlpha(a).place(this.W / 2 - tw / 2, ty - th / 2, tw, th)
       this.fit(this.toastText, 22, tw - 70)
       this.toastText.setVisible(true).setAlpha(a).setPosition(this.W / 2, ty - 1)
+      if (this.toastSub.text) {
+        this.toastSub.setWordWrapWidth(Math.min(this.W - 32, 460), true)
+        this.toastSub.setVisible(true).setAlpha(a).setPosition(this.W / 2, ty + th / 2 + 6)
+      } else this.toastSub.setVisible(false)
     } else {
       this.toastRibbon.setVisible(false)
       this.toastText.setVisible(false)
+      this.toastSub.setVisible(false)
     }
 
     if (this.hintT > 0 && !this.blocked) {

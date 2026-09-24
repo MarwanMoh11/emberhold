@@ -1,7 +1,11 @@
 import Phaser from 'phaser'
-import { HALL, REGIONS, WORLD, raster, type RegionDef, type RegionId } from '../config/world'
+import { CAMPS, HALL, REGIONS, REGION_BY_ID, WORLD, raster, type RegionDef, type RegionId } from '../config/world'
+import { BUILDINGS } from '../config/buildings'
 import { segProj } from '../world/raster'
+import { claimRect, setClaimed } from '../world/claimTint'
 import { PAL } from '../config/palette'
+import { bake, form, glow, line, P } from '../art/ink'
+import { groundShadow } from '../art/props'
 import { RESOURCE_ORDER } from '../core/types'
 import { clamp, short } from '../core/math'
 import { FogMemory } from '../core/FogMemory'
@@ -17,9 +21,6 @@ export const FOG_SCALE = 8
 const BANNER_W = 248
 /** How close the hero has to be for a claim to fire. */
 const CLAIM_RADIUS = 70
-/** Tint of unclaimed ground under the fog: the region's own colour, dimmed. */
-const LOCKED_SHADE = 0x140f0b
-const LOCKED_ALPHA = 0.42
 /** How far past a border the soft barrier looks to see what is on the other side. */
 const BARRIER_PROBE = 48
 /** Dwell before a claim fires, mirroring the build pads. */
@@ -28,37 +29,60 @@ const CLAIM_DWELL = 0.45
 const BANNER_RANGE = 460
 /** Far-future claims should explain themselves when approached, not crowd the starting view. */
 const GATED_BANNER_RANGE = 230
-/** Height of the flag planted on the claim ring; the frame clears it. */
-const POLE_H = 44
+/** Height of the border stone standing in the claim ring; the frame clears it. */
+const POLE_H = 58
 /**
  * The banner is something you read, so it sits above the lightmap with the
  * rest of the world's labels. Under it, night dimmed the words you most need.
  */
 const LABEL_DEPTH = 780_000
 
-interface ZoneView {
+/** Why a region cannot be claimed yet, in the order `canClaim` checks them. */
+export type ClaimReason = 'hall' | 'adjacent' | 'camps' | 'cost'
+/** `why` is the border stone's tooltip line: the failing reason, or what to do next. */
+export interface ClaimCheck { ok: boolean; reason: ClaimReason | null; why: string }
+
+/** The hall tier a region asks for, by name: "a Stone Hall". */
+const hallName = (level: number) => BUILDINGS.townHall.levels[level - 1]?.label ?? `level ${level} hall`
+
+interface StoneView {
   spec: RegionDef
   /** Where the hero actually stands to claim: the blueprint's claim point, always outside the region. */
   cx: number
   cy: number
-  overlay: Phaser.GameObjects.Graphics
+  /** The border stone itself; the hold has none (its claim point is the hall). */
+  stone: Phaser.GameObjects.Image | null
   banner: Phaser.GameObjects.Container
   bg: Phaser.GameObjects.Graphics
   frame: SkinPanel
   label: Phaser.GameObjects.Text
   blurb: Phaser.GameObjects.Text
   cost: Phaser.GameObjects.Text
-  post: Phaser.GameObjects.Graphics
   marker: Phaser.GameObjects.Graphics
   dwell: number
-  unlocked: boolean
 }
 
-/** A polygon's bounding circle, for the culler. */
-function bounds(poly: readonly [number, number][]): { x: number; y: number; r: number } {
-  const xs = poly.map(p => p[0]), ys = poly.map(p => p[1])
-  const x = (Math.min(...xs) + Math.max(...xs)) / 2, y = (Math.min(...ys) + Math.max(...ys)) / 2
-  return { x, y, r: Math.max(...poly.map(p => Math.hypot(p[0] - x, p[1] - y))) + 24 }
+/** A standing stone with the hold's mark cut in it: dull until its region is claimed, then the mark burns gold. */
+function stoneTextures(scene: Phaser.Scene) {
+  if (scene.textures.exists('claim_stone')) return
+  const W = 44, H = 72, by = H - 8
+  for (const lit of [false, true]) {
+    bake(scene, lit ? 'claim_stone_lit' : 'claim_stone', W, H, {
+      under: x => groundShadow(x, W / 2 + 3, by, 18, 5),
+      body: x => {
+        form(x, P.blob([[11, by], [9, by - 30], [14, by - 52], [23, by - 58], [32, by - 50], [35, by - 26], [33, by]], 0.5),
+          lit ? 0xa49c8a : 0x8e887c, { rim: 1.4, core: 5 })
+        if (lit) glow(x, 22, by - 30, 15, PAL.gold, 0.4)
+        line(x, c => {
+          c.moveTo(22, by - 44); c.lineTo(22, by - 16)
+          c.moveTo(15, by - 38); c.lineTo(22, by - 31); c.lineTo(29, by - 38)
+          c.moveTo(16, by - 16); c.lineTo(28, by - 16)
+        }, 2.6, lit ? PAL.gold : 0x4a443c, lit ? 1 : 0.85)
+      },
+      outline: 1.8,
+      grain: 0.12,
+    })
+  }
 }
 
 /** True when a polygon edge lies along the world's outer boundary. */
@@ -67,21 +91,31 @@ const onWorldEdge = (a: readonly number[], b: readonly number[]) =>
   || (a[0] >= WORLD.width && b[0] >= WORLD.width) || (a[1] >= WORLD.height && b[1] >= WORLD.height)
 
 /**
- * Territory + fog. Locked ground is visibly walled off and named, so the map
- * always advertises where the next chunk of progress is.
+ * Regions, claims and fog (S08; was ZoneManager). Every region but the hold
+ * starts unclaimed: its ground painted drained and darker, its pads hidden and
+ * its camps asleep. A border stone at the blueprint's claim point names the
+ * price, or what stands in the way, and the hero claims by standing on it.
  */
-export class ZoneManager {
-  private views = new Map<RegionId, ZoneView>()
+export class RegionManager {
+  private views = new Map<RegionId, StoneView>()
   private fog!: Phaser.GameObjects.RenderTexture
   private brush!: Phaser.GameObjects.Image
   private explored = new FogMemory(WORLD.width, WORLD.height)
   private lastRevealX = -9999
   private lastRevealY = -9999
-  unlockedCount = 1
+  /** 1 per claimed region, by `REGIONS` index. */
+  private owned = new Uint8Array(REGIONS.length)
+  private mask: Uint8Array | null = null
+  claimedCount = 1
+  /** Wall time of the last claim's own work (flags, mask, chunk invalidation), for F2 and the handoff. */
+  lastClaimMs = 0
 
   constructor(private scene: GameScene, depth: number) {
+    this.owned[REGION_BY_ID.get('hold')!.index] = 1
+    setClaimed(this.owned)
     this.buildFog(depth)
-    for (const z of REGIONS) this.buildZone(z, depth - 2)
+    stoneTextures(scene)
+    for (const z of REGIONS) this.buildStone(z, depth - 2)
   }
 
   private buildFog(depth: number) {
@@ -131,21 +165,14 @@ export class ZoneManager {
     this.explored.forEachMarked((x, y) => this.fog.erase(this.brush, x / FOG_SCALE, y / FOG_SCALE))
   }
 
-  private buildZone(spec: RegionDef, depth: number) {
-    const unlocked = spec.id === 'hold'
-    const pts = spec.poly.map(([x, y]) => new Phaser.Math.Vector2(x, y))
-    const overlay = this.scene.add.graphics().setDepth(depth).setVisible(!unlocked)
-    overlay.fillStyle(LOCKED_SHADE, LOCKED_ALPHA)
-    overlay.fillPoints(pts, true)
-
-    const post = this.scene.add.graphics().setDepth(depth + 1)
-    if (!unlocked) this.drawBoundary(post, spec)
-    // Graphics replay every command each frame: let the culler skip the far ones.
-    const b = bounds(spec.poly)
-    this.scene.culler.add(overlay, b.x, b.y, b.r)
-    this.scene.culler.add(post, b.x, b.y, b.r)
-
+  private buildStone(spec: RegionDef, depth: number) {
+    const unclaimed = !this.claimed(spec.id)
     const { x: cx, y: cy } = spec.claim
+    let stone: Phaser.GameObjects.Image | null = null
+    if (spec.id !== 'hold') {
+      stone = this.scene.add.image(cx, cy, 'claim_stone').setOrigin(0.5, 1 - 8 / 72).setDepth(cy)
+      this.scene.culler.add(stone, cx, cy - 30, 48)
+    }
     // The ring is the actual affordance: a marked patch of ground you can walk
     // onto. The frame above it is only a label.
     const marker = this.scene.add.graphics().setDepth(depth + 1).setVisible(false)
@@ -166,19 +193,13 @@ export class ZoneManager {
       textStyle({ voice: 'caps', size: 13, weight: '800', colour: PAL.uiText, align: 'center', wrap: BANNER_W - 28 }))
       .setOrigin(0.5, 0).setLineSpacing(2)
     banner.add([bg, frame.img, label, blurb, cost])
-    banner.setVisible(!unlocked)
+    banner.setVisible(unclaimed)
 
-    this.views.set(spec.id, {
-      spec, cx, cy, overlay, banner, bg, frame, label, blurb, cost, post, marker, dwell: 0, unlocked,
-    })
+    this.views.set(spec.id, { spec, cx, cy, stone, banner, bg, frame, label, blurb, cost, marker, dwell: 0 })
   }
 
-  /**
-   * Draw the claim disc where the hero has to stand, plus the flag planted on
-   * it. The pole lives here rather than on the banner container so it stays on
-   * the spot even when the frame above it slides to clear the HUD.
-   */
-  private drawMarker(v: ZoneView, affordable: boolean, inside: boolean) {
+  /** Draw the claim disc around the border stone, where the hero has to stand. */
+  private drawMarker(v: StoneView, affordable: boolean, inside: boolean) {
     const g = v.marker
     const ry = CLAIM_RADIUS * 0.55
     g.clear()
@@ -202,17 +223,10 @@ export class ZoneManager {
       }
       g.strokePath()
     }
-
-    // planted on the spot, rising out of the ring rather than hanging off the
-    // frame — the frame is a label and may slide; this never does
-    g.fillStyle(0x4a3320, 1)
-    g.fillRect(v.cx - 2, v.cy - 34, 4, 34)
-    g.fillStyle(PAL.gold, 1)
-    g.fillTriangle(v.cx + 2, v.cy - 34, v.cx + 26, v.cy - 27, v.cx + 2, v.cy - 19)
   }
 
   /** Fit the frame inside the viewport, with a tether to the real claim ring. */
-  private frameBanner(v: ZoneView) {
+  private frameBanner(v: StoneView) {
     const lh = v.label.height
     const bh = v.blurb.height
     const ch = v.cost.height
@@ -238,90 +252,109 @@ export class ZoneManager {
     v.banner.y = Phaser.Math.Clamp(v.cy, minY, Math.max(minY, maxY))
 
     v.bg.clear()
-    // The banner can move to clear screen edges, but the flag and ring never
+    // The banner can move to clear screen edges, but the stone and ring never
     // move. A diagonal tether keeps the callout unambiguously attached to it.
     const sideways = v.cx - v.banner.x
     const drop = v.cy - v.banner.y
     if (Math.hypot(sideways, drop) > 8) {
       v.bg.lineStyle(2, PAL.gilt, 0.55)
-      v.bg.lineBetween(0, top + h, sideways, drop - 34)
+      v.bg.lineBetween(0, top + h, sideways, drop - 50)
     }
     v.frame.place(-BANNER_W / 2, top, BANNER_W, h)
   }
 
-  /** Rope-and-post fence along every border the region shares with another. S08 swaps it for border stones. */
-  private drawBoundary(g: Phaser.GameObjects.Graphics, spec: RegionDef) {
-    g.clear()
-    const step = 96
-    const poly = spec.poly
-    for (let i = 0; i < poly.length; i++) {
-      const a = poly[i], b = poly[(i + 1) % poly.length]
-      if (onWorldEdge(a, b)) continue
-      g.lineStyle(3, PAL.gold, 0.35)
-      g.lineBetween(a[0], a[1], b[0], b[1])
-      const len = Math.hypot(b[0] - a[0], b[1] - a[1])
-      g.fillStyle(0x6b4a2a, 0.85)
-      for (let d = 0; d <= len; d += step) {
-        const t = d / len
-        g.fillRect(a[0] + (b[0] - a[0]) * t - 2, a[1] + (b[1] - a[1]) * t - 10, 4, 20)
-      }
-    }
+  /** Whether a region is claimed. Unknown ids read as claimed, so nothing hides behind a typo. */
+  claimed(id: RegionId): boolean {
+    const r = REGION_BY_ID.get(id)
+    return r ? this.owned[r.index] === 1 : true
   }
 
-  isUnlocked(id: RegionId) { return this.views.get(id)?.unlocked ?? true }
+  /** Whether the ground under a point is claimed, from the 32 px region raster. Off the map is not. */
+  claimedAt(x: number, y: number): boolean {
+    const r = raster()
+    const i = r.cell(x, y)
+    const k = i < 0 ? -1 : r.region[i]
+    return k >= 0 && this.owned[k] === 1
+  }
 
-  /** Where the hero has to stand to claim a zone — also what the arrow aims at. */
+  /** One byte per raster cell, 1 where the region is claimed. Rebuilt after a claim; do not write to it. */
+  claimMask(): Uint8Array {
+    if (this.mask) return this.mask
+    const reg = raster().region
+    const m = new Uint8Array(reg.length)
+    for (let i = 0; i < reg.length; i++) { const k = reg[i]; if (k >= 0 && this.owned[k]) m[i] = 1 }
+    return (this.mask = m)
+  }
+
+  /** Where the hero has to stand to claim a region: the border stone. Also what the arrow aims at. */
   claimPoint(id: RegionId): { x: number; y: number } | null {
     const v = this.views.get(id)
     return v ? { x: v.cx, y: v.cy } : null
   }
 
   /** The region under a point, from the 32 px region raster. */
-  zoneAt(x: number, y: number): ZoneView | null {
+  regionAt(x: number, y: number): RegionDef | null {
     const r = raster()
     const i = r.cell(x, y)
     const k = i < 0 ? -1 : r.region[i]
-    return k < 0 ? null : this.views.get(REGIONS[k].id) ?? null
+    return k < 0 ? null : REGIONS[k]
   }
 
-  /** The locked region a point sits in, if any. Used to redirect guidance. */
-  lockedZoneAt(x: number, y: number): RegionDef | null {
-    const v = this.zoneAt(x, y)
-    return v && !v.unlocked ? v.spec : null
+  /** The unclaimed region a point sits in, if any. Used to redirect guidance. */
+  unclaimedAt(x: number, y: number): RegionDef | null {
+    const r = this.regionAt(x, y)
+    return r && !this.claimed(r.id) ? r : null
   }
 
-  canUnlock(v: ZoneView) {
-    return this.scene.buildings.townHallLevel >= v.spec.hall &&
-      this.scene.res.canAfford(v.spec.cost)
+  /**
+   * Can the hero claim `id` now? Checked in order: the hall's tier, the
+   * region it is claimed from, the camps that must burn first, then the price.
+   */
+  canClaim(id: RegionId): ClaimCheck {
+    const spec = REGION_BY_ID.get(id)
+    if (!spec || this.claimed(id)) return { ok: false, reason: null, why: 'Claimed' }
+    if (this.scene.buildings.townHallLevel < spec.hall) {
+      return { ok: false, reason: 'hall', why: `Needs a ${hallName(spec.hall)}` }
+    }
+    if (!this.claimed(spec.claim.from)) {
+      return { ok: false, reason: 'adjacent', why: `Claim ${REGION_BY_ID.get(spec.claim.from)?.name ?? spec.claim.from} first` }
+    }
+    const standing = spec.requiresCamps?.find(c => !this.scene.camps.isBurned(c))
+    if (standing) {
+      return { ok: false, reason: 'camps', why: `Burn ${CAMPS.find(c => c.id === standing)?.name ?? standing} first` }
+    }
+    if (!this.scene.res.canAfford(spec.cost)) return { ok: false, reason: 'cost', why: 'Not enough yet' }
+    return { ok: true, reason: null, why: 'Stand on the stone to claim' }
   }
 
-  canUnlockId(id: RegionId) {
+  /**
+   * Claim a region: its pads appear (subject to the hall), its camps wake (on
+   * CampManager's next tick) and its chunks repaint in full colour. `silent`
+   * (loading, the harness) skips the fanfare, the event and the bonus recompute.
+   */
+  claim(id: RegionId, silent = false) {
     const v = this.views.get(id)
-    return !!v && !v.unlocked && this.canUnlock(v)
-  }
-
-  unlock(id: RegionId, silent = false) {
-    const v = this.views.get(id)
-    if (!v || v.unlocked) return
-    v.unlocked = true
-    this.unlockedCount++
-    v.post.clear()
+    const spec = REGION_BY_ID.get(id)
+    if (!v || !spec || this.claimed(id)) return
+    const t0 = performance.now()
+    this.owned[spec.index] = 1
+    this.claimedCount++
+    this.mask = null
+    this.claimMask()
+    setClaimed(this.owned)
+    this.scene.terrain?.invalidate(claimRect(spec.index))
+    this.lastClaimMs = performance.now() - t0
+    v.dwell = 0
     v.marker.clear()
     v.marker.setVisible(false)
     v.banner.setVisible(false)
-    if (silent) {
-      v.overlay.setVisible(false)
-      return
-    }
-    this.scene.tweens.add({
-      targets: v.overlay, alpha: 0, duration: 700, ease: 'Cubic.easeOut',
-      onComplete: () => v.overlay.setVisible(false),
-    })
-    this.scene.fx.popup(v.cx, v.cy - 70, `${v.spec.name} claimed`, PAL.gold, 26)
+    v.stone?.setTexture('claim_stone_lit')
+    if (silent) return
+    this.scene.fx.popup(v.cx, v.cy - 90, `${spec.name} claimed`, PAL.gold, 26)
     this.scene.fx.ring(v.cx, v.cy, 340, PAL.gold, 0.9)
     this.scene.fx.flash(0xffe9b0, 0.22)
     this.scene.audio.play('quest', 0.8)
-    this.scene.bus.emit('zone:unlocked', { id })
+    this.scene.bus.emit('region:claimed', { id })
     this.scene.buildings.recomputeBonuses()
   }
 
@@ -336,9 +369,9 @@ export class ZoneManager {
       this.eraseFog(p.x, p.y)
     }
 
-    const here = this.zoneAt(p.x, p.y)
+    const here = this.regionAt(p.x, p.y)
     for (const v of this.views.values()) {
-      if (v.unlocked) continue
+      if (this.claimed(v.spec.id)) continue
       // Stand off while a build-site card is up. You cannot fund a building and
       // claim territory in the same moment, and two world panels fighting for
       // the middle of a phone screen just looks broken.
@@ -350,14 +383,14 @@ export class ZoneManager {
       v.marker.setVisible(near)
       if (!near) { v.dwell = 0; continue }
 
-      const affordable = this.canUnlock(v)
-      const needHall = this.scene.buildings.townHallLevel < v.spec.hall
+      // the price once it is the only thing left in the way; before that, what is
+      const check = this.canClaim(v.spec.id)
+      const affordable = check.ok
       const costStr = RESOURCE_ORDER.filter(k => v.spec.cost[k])
         .map(k => `${short(v.spec.cost[k] ?? 0)} ${k}`).join('   ')
       setColour(v.cost.setText(
-        needHall ? `Command Hall level ${v.spec.hall} required`
-          : `${costStr}\n${affordable ? 'Stand on the ring to claim' : 'Not enough yet'}`,
-      ), affordable ? PAL.good : needHall ? PAL.danger : PAL.uiDim)
+        check.ok || check.reason === 'cost' ? `${costStr}\n${check.why}` : check.why,
+      ), check.ok ? PAL.good : check.reason === 'cost' ? PAL.uiDim : PAL.danger)
       this.frameBanner(v)
 
       const inside = d < CLAIM_RADIUS
@@ -365,7 +398,7 @@ export class ZoneManager {
         v.dwell += dt
         if (v.dwell >= CLAIM_DWELL) {
           this.scene.res.spend(v.spec.cost)
-          this.unlock(v.spec.id)
+          this.claim(v.spec.id)
           continue
         }
       } else v.dwell = 0
@@ -373,8 +406,8 @@ export class ZoneManager {
     }
 
     // soft barrier: nudge the hero back out of land they have not claimed
-    if (here && !here.unlocked) {
-      const [tx, ty] = this.exitToward(here.spec, p.x, p.y)
+    if (here && !this.claimed(here.id)) {
+      const [tx, ty] = this.exitToward(here, p.x, p.y)
       const d = Math.hypot(tx - p.x, ty - p.y) || 1
       const push = 240 * dt
       p.x = clamp(p.x + (tx - p.x) / d * push, 24, WORLD.width - 24)
@@ -398,8 +431,7 @@ export class ZoneManager {
       if (d >= best) continue
       const qx = a[0] + (b[0] - a[0]) * tc, qy = a[1] + (b[1] - a[1]) * tc
       const k = Math.hypot(qx - x, qy - y) || 1
-      const beyond = this.zoneAt(qx + (qx - x) / k * BARRIER_PROBE, qy + (qy - y) / k * BARRIER_PROBE)
-      if (!beyond?.unlocked) continue
+      if (!this.claimedAt(qx + (qx - x) / k * BARRIER_PROBE, qy + (qy - y) / k * BARRIER_PROBE)) continue
       best = d; bx = qx + (qx - x) / k * BARRIER_PROBE; by = qy + (qy - y) / k * BARRIER_PROBE
     }
     return [bx, by]
@@ -409,11 +441,11 @@ export class ZoneManager {
     this.fog.clear()
   }
 
-  toJSON() {
-    return [...this.views.values()].filter(v => v.unlocked).map(v => v.spec.id)
+  toJSON(): RegionId[] {
+    return REGIONS.filter(r => this.owned[r.index]).map(r => r.id)
   }
 
   load(ids: RegionId[]) {
-    for (const id of ids) this.unlock(id, true)
+    for (const id of ids) this.claim(id, true)
   }
 }

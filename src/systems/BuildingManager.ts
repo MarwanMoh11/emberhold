@@ -251,7 +251,7 @@ export class BuildingManager {
 
   /** A pad only shows once its zone is claimed and the hall is tall enough. */
   isPadAvailable(b: Building) {
-    if (!this.scene.zones.isUnlocked(b.region)) return false
+    if (!this.scene.regions.claimed(b.region)) return false
     const needHall = Math.max(b.requiresTownHall, b.def.requiresTownHall ?? 0)
     return this.townHallLevel >= needHall
   }
@@ -532,7 +532,7 @@ export class BuildingManager {
 
     for (const b of this.buildings) {
       const rampart = b.key === 'wall' || b.key === 'gate'
-      const zoneOpen = this.scene.zones.isUnlocked(b.region)
+      const zoneOpen = this.scene.regions.claimed(b.region)
       const hallNeed = this.hallGate(b)
       const hallShort = this.townHallLevel < hallNeed
       const available = zoneOpen && !hallShort

@@ -79,3 +79,45 @@ test('the frontier never reads, writes or deletes a v1 save', () => {
   assert.equal(data.get('emberhold.save.backup.v1'), v1)
   assert.equal(data.has('emberhold.save.v2'), false)
 })
+
+/** Anything at all: every property is another one and every call returns one. For the parts of a scene a test ignores. */
+const any = () => new Proxy(function () {}, { get: () => any(), apply: () => any(), set: () => true })
+/** An object that answers for everything it does not define. */
+const loose = (o = {}) => new Proxy(o, { get: (t, k) => (k in t ? t[k] : any()), set: (t, k, v) => { t[k] = v; return true } })
+
+test('claimed regions and awake camps round-trip through the save', () => {
+  const data = storage()
+  const f = JSON.parse(fixture(4, 7))
+  const scene = loose({
+    res: { toJSON: () => f.res }, player: { ...f.player }, levels: { toJSON: () => [] },
+    buildings: { toJSON: () => [] }, workers: { toJSON: () => [] }, army: { toJSON: () => f.army },
+    waves: { toJSON: () => f.waves }, quests: { toJSON: () => f.quests }, abilities: { toJSON: () => f.abilities },
+    combat: { kills: 0, bossKills: 0 },
+    regions: { toJSON: () => ['hold', 'downs', 'ferrow'], fogJSON: () => undefined },
+    camps: { toJSON: () => ['campScarp'], awakeJSON: () => ['campFerrow'], healthJSON: () => ({ campRotwood: 500 }) },
+  })
+  assert.equal(new SaveManager(scene).save(), true)
+  const blob = JSON.parse(data.get('emberhold.save.v2'))
+  assert.deepEqual(blob.regions, ['hold', 'downs', 'ferrow'])
+  assert.deepEqual(blob.campAwake, ['campFerrow'])
+
+  const got = {}
+  const into = loose({
+    player: loose(), combat: {},
+    regions: loose({ load: ids => { got.regions = ids } }),
+    camps: loose({ load: (burned, awake) => { got.burned = burned; got.awake = awake } }),
+  })
+  assert.equal(new SaveManager(into).load(), true)
+  assert.deepEqual(got.regions, ['hold', 'downs', 'ferrow'])
+  assert.deepEqual(got.burned, ['campScarp'])
+  assert.deepEqual(got.awake, ['campFerrow', 'campRotwood']) // a damaged camp was awake
+})
+
+test('a save naming an unknown region or camp is refused', () => {
+  storage()
+  const ok = { ...JSON.parse(fixture(2, 3)), regions: ['hold', 'ferrow'], campAwake: ['campFerrow'] }
+  assert.ok(SaveManager.inspectImport(JSON.stringify(ok)))
+  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, regions: ['hold', 'atlantis'] })), null)
+  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, campAwake: ['campNowhere'] })), null)
+  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, campAwake: 'campFerrow' })), null)
+})

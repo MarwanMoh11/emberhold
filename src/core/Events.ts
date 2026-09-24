@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import type { ResourceType } from './types'
 import type { BuildingKey } from '../config/buildings'
+import type { RegionId } from '../config/world'
 
 export interface GameEvents {
   'res:gained': { type: ResourceType; amount: number }
@@ -14,8 +15,10 @@ export interface GameEvents {
   'worker:hired': { key: string }
   'wave:start': { wave: number }
   'wave:cleared': { wave: number }
-  'camp:destroyed': { id: string }
-  'zone:unlocked': { id: string }
+  'camp:burned': { id: string }
+  /** A sleeping camp woke: its region was claimed or the hero came within `WAKE_RADIUS` (S08). */
+  'camp:woke': { id: string }
+  'region:claimed': { id: RegionId }
   'quest:complete': { id: string }
   'boss:spawned': { name: string }
   'boss:killed': { name: string }

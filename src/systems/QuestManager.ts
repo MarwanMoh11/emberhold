@@ -61,8 +61,8 @@ export class QuestManager {
         if (p.key === 'cinderRegent') this.finalBossHp = 0
       }
     })
-    bus.on('camp:destroyed', () => { this.campsCleared++ })
-    bus.on('zone:unlocked', () => { this.zonesClaimed++ })
+    bus.on('camp:burned', () => { this.campsCleared++ })
+    bus.on('region:claimed', () => { this.zonesClaimed++ })
   }
 
   get current(): QuestDef | null {
@@ -98,9 +98,9 @@ export class QuestManager {
    * you cannot reach instead of the purchase that would let you reach it.
    */
   private throughZone(x: number, y: number): Guidance {
-    const locked = this.scene.zones.lockedZoneAt(x, y)
+    const locked = this.scene.regions.unclaimedAt(x, y)
     if (!locked) return { x, y }
-    const c = this.scene.zones.claimPoint(locked.id)
+    const c = this.scene.regions.claimPoint(locked.id)
     return c ? { x: c.x, y: c.y, hint: `Claim ${locked.name} first` } : { x, y }
   }
 
@@ -140,25 +140,25 @@ export class QuestManager {
     }
     if (g.type === 'upgrade') {
       const pads = s.buildings.buildings.filter(b => b.key === g.building && b.level < g.level)
-      const open = pads.find(b => s.zones.isUnlocked(b.region))
+      const open = pads.find(b => s.regions.claimed(b.region))
       if (open) return { x: open.x, y: open.y }
       if (pads.length) return this.gatedTarget(pads[0])
     }
     if (g.type === 'workers') {
       const pad = s.buildings.buildings.find(b =>
-        b.level > 0 && (b.stats.workers ?? 0) > b.workers.length && s.zones.isUnlocked(b.region))
+        b.level > 0 && (b.stats.workers ?? 0) > b.workers.length && s.regions.claimed(b.region))
       if (pad) return { x: pad.x, y: pad.y }
     }
     if (g.type === 'recruit') {
       const pad = s.buildings.buildings.find(b =>
-        b.level > 0 && (b.key === 'barracks' || b.key === 'archeryRange') && s.zones.isUnlocked(b.region))
+        b.level > 0 && (b.key === 'barracks' || b.key === 'archeryRange') && s.regions.claimed(b.region))
       if (pad) return { x: pad.x, y: pad.y }
     }
     if (g.type === 'collect') {
       if (g.resource === 'coins') {
         // enemies inside a locked zone are behind the barrier: ignore them
         const e = s.enemies.grid.nearest(s.player.x, s.player.y, 1400, en =>
-          en.alive && !en.def.structure && !s.zones.lockedZoneAt(en.x, en.y))
+          en.alive && !en.def.structure && !s.regions.unclaimedAt(en.x, en.y))
         if (e) return { x: e.x, y: e.y }
       }
       const node = s.nodes.findFor(g.resource as ResourceType, s.player.x, s.player.y, 1600, 0)
@@ -167,7 +167,7 @@ export class QuestManager {
     if (g.type === 'camp') {
       const live = s.camps.camps.filter(c => !c.destroyed)
       // prefer one you can walk to; fall back to naming the border in the way
-      const c = this.nearestCamp(live.filter(x => s.zones.isUnlocked(x.spec.region)))
+      const c = this.nearestCamp(live.filter(x => s.regions.claimed(x.spec.region)))
         ?? this.nearestCamp(live)
       if (c) return this.throughZone(c.spec.x, c.spec.y)
     }
@@ -295,7 +295,7 @@ export class QuestManager {
     this.kills = Math.max(count(d.kills), count(this.scene.combat.kills))
     this.bossKills = Math.max(count(d.bossKills), count(this.scene.combat.bossKills))
     this.campsCleared = Math.max(count(d.campsCleared), this.scene.camps.destroyedCount)
-    this.zonesClaimed = Math.max(count(d.zonesClaimed), this.scene.zones.unlockedCount - 1)
+    this.zonesClaimed = Math.max(count(d.zonesClaimed), this.scene.regions.claimedCount - 1)
     // Saves written before the campaign had an ending carry none of these.
     this.victoryAt = d.victoryAt ?? 0
     this.victoryWave = d.victoryWave ?? 0

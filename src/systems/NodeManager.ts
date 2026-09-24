@@ -139,7 +139,7 @@ export class NodeManager {
     return this.grid.nearest(x, y, radius, n =>
       n.alive && n.resource === resource &&
       (n.claimedBy === 0 || n.claimedBy === claimer) &&
-      this.scene.zones.isUnlocked(n.region))
+      this.scene.regions.claimed(n.region))
   }
 
   /**
@@ -151,13 +151,13 @@ export class NodeManager {
     const out = this.grid.query(x, y, radius, []).filter(n =>
       n.resource === resource &&
       (claimer === null || n.claimedBy === 0 || n.claimedBy === claimer) &&
-      this.scene.zones.isUnlocked(n.region))
+      this.scene.regions.claimed(n.region))
     return out.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))
   }
 
   /** Hero auto-harvest: anything the player brushes against. */
   nearestInRange(x: number, y: number, radius: number): ResourceNode | null {
-    return this.grid.nearest(x, y, radius, n => n.alive && this.scene.zones.isUnlocked(n.region))
+    return this.grid.nearest(x, y, radius, n => n.alive && this.scene.regions.claimed(n.region))
   }
 
   countAlive(type: ResourceNode['type']) {

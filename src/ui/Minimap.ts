@@ -160,14 +160,14 @@ export class Minimap {
     // the minimap after a reload as well.
     this.reveal(HALL.x, HALL.y, SEED)
     this.restoreWorldExploration()
-    for (const z of REGIONS) if (game.zones.isUnlocked(z.id)) this.revealZone(z)
+    for (const z of REGIONS) if (game.regions.claimed(z.id)) this.revealZone(z)
 
-    game.bus.on('zone:unlocked', () => {
-      for (const z of REGIONS) if (game.zones.isUnlocked(z.id)) this.revealZone(z)
+    game.bus.on('region:claimed', () => {
+      for (const z of REGIONS) if (game.regions.claimed(z.id)) this.revealZone(z)
       this.coldDirty = true
     })
     game.bus.on('building:built', () => { this.coldDirty = true })
-    game.bus.on('camp:destroyed', () => { this.coldDirty = true })
+    game.bus.on('camp:burned', () => { this.coldDirty = true })
 
     this.layout()
     ui.scale.on('resize', () => this.layout())
@@ -212,7 +212,7 @@ export class Minimap {
   }
 
   private restoreWorldExploration() {
-    this.game.zones.forEachExplored((x, y) => this.reveal(x, y, REVEAL))
+    this.game.regions.forEachExplored((x, y) => this.reveal(x, y, REVEAL))
   }
 
   private revealZone(z: RegionDef) {
@@ -311,7 +311,7 @@ export class Minimap {
 
     for (const z of REGIONS) {
       const pts = z.poly.map(([x, y]) => new Phaser.Math.Vector2(x / T, y / T))
-      if (gs.zones.isUnlocked(z.id)) {
+      if (gs.regions.claimed(z.id)) {
         g.fillStyle(CHART.held, 1)
         g.fillPoints(pts, true)
         g.lineStyle(1, CHART.lapis, 0.55)
@@ -334,7 +334,7 @@ export class Minimap {
     // structures — claimed territory only, and only where you have actually been
     for (const b of gs.buildings.buildings) {
       if (b.key === 'wall' || b.key === 'gate') continue
-      if (!gs.zones.isUnlocked(b.region)) continue
+      if (!gs.regions.claimed(b.region)) continue
       if (!this.exploredAt(b.x, b.y)) continue
       const x = b.x / T, y = b.y / T
       if (b.level > 0) {
@@ -415,11 +415,11 @@ export class Minimap {
     // It is `claimPoint`, never the raw banner anchor: those two differ now, and
     // the anchor is not somewhere a hero can stand.
     for (const z of REGIONS) {
-      if (gs.zones.isUnlocked(z.id)) continue
+      if (gs.regions.claimed(z.id)) continue
       if (gs.buildings.townHallLevel < z.hall) continue
-      const c = gs.zones.claimPoint(z.id)
+      const c = gs.regions.claimPoint(z.id)
       if (!c) continue
-      const ready = gs.zones.canUnlockId(z.id)
+      const ready = gs.regions.canClaim(z.id).ok
       const colour = ready ? CHART.moss : CHART.gilt
       g.lineStyle(1.5, colour, ready ? 1 : 0.75)
       g.strokeEllipse(c.x * sx, c.y * sy, 9, 9, 10)
@@ -531,7 +531,7 @@ export class Minimap {
       // silent unlocks a load or the debug panel performs, which never reach
       // the bus. Cells already set are skipped, so after the first pass this is
       // a read-only sweep.
-      for (const z of REGIONS) if (this.game.zones.isUnlocked(z.id)) this.revealZone(z)
+      for (const z of REGIONS) if (this.game.regions.claimed(z.id)) this.revealZone(z)
       this.coldDirty = true
     }
     this.coldT -= dt

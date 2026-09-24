@@ -172,7 +172,8 @@ export class LightingManager {
       // the horde's own fires
       for (const c of s.camps.camps) {
         if (c.destroyed) continue
-        put(c.spec.x, c.spec.y - 20, 300, 0xff7a3a, 0.9 * lamp * flicker(c.spec.x))
+        // a sleeping camp's fires are banked low
+        put(c.spec.x, c.spec.y - 20, 300, 0xff7a3a, (c.state === 'asleep' ? 0.35 : 0.9) * lamp * flicker(c.spec.x))
       }
       // crystal seams glow faintly
       for (const n of s.nodes.nodes) {

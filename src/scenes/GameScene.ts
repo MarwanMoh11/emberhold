@@ -27,7 +27,7 @@ import { BuildingManager } from '../systems/BuildingManager'
 import { ArmyManager } from '../systems/ArmyManager'
 import { WorkerManager } from '../systems/WorkerManager'
 import { WaveManager } from '../systems/WaveManager'
-import { ZoneManager } from '../systems/ZoneManager'
+import { RegionManager } from '../systems/RegionManager'
 import { CampManager } from '../systems/CampManager'
 import { AbilitySystem } from '../systems/AbilitySystem'
 import { LevelSystem } from '../systems/LevelSystem'
@@ -71,7 +71,9 @@ export class GameScene extends Phaser.Scene {
   army!: ArmyManager
   workers!: WorkerManager
   waves!: WaveManager
-  zones!: ZoneManager
+  regions!: RegionManager
+  /** S04's name for `regions`, kept for S08 only: S09 removes it. */
+  get zones(): RegionManager { return this.regions }
   camps!: CampManager
   abilities!: AbilitySystem
   levels!: LevelSystem
@@ -152,7 +154,7 @@ export class GameScene extends Phaser.Scene {
     this.buildings = new BuildingManager(this)
     this.army = new ArmyManager(this)
     this.workers = new WorkerManager(this)
-    this.zones = new ZoneManager(this, DEPTH.fog)
+    this.regions = new RegionManager(this, DEPTH.fog)
     this.camps = new CampManager(this)
     this.waves = new WaveManager(this)
     this.levels = new LevelSystem(this)
@@ -161,7 +163,7 @@ export class GameScene extends Phaser.Scene {
     this.lighting = new LightingManager(this, DEPTH.light)
     this.lighting.quality = this.settings.quality
     this.fx.lights = this.lighting
-    this.bus.on('camp:destroyed', ({ id }) => {
+    this.bus.on('camp:burned', ({ id }) => {
       if (id === 'campAshgate') this.scheduleFinalBoss()
     })
 
@@ -200,7 +202,7 @@ export class GameScene extends Phaser.Scene {
     cam.centerOn(this.player.x, this.player.y)
     // everything on screen at spawn is baked before the first frame; the rest streams in
     this.terrain.prime(cam)
-    this.zones.update(0)
+    this.regions.update(0)
     if (this.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)) {
       this.scheduleFinalBoss()
     }
@@ -424,14 +426,17 @@ export class GameScene extends Phaser.Scene {
     let unaffordable: { x: number; y: number; hint?: string } | null = null
     let gatedHall = 0
     for (const z of REGIONS) {
-      if (z.id === 'hold' || this.zones.isUnlocked(z.id)) continue
-      if (this.buildings.townHallLevel < z.hall) {
+      if (this.regions.claimed(z.id)) continue
+      const check = this.regions.canClaim(z.id)
+      if (check.reason === 'hall') {
         if (!gatedHall || z.hall < gatedHall) gatedHall = z.hall
         continue
       }
-      const c = this.zones.claimPoint(z.id)
+      // a stone you cannot reach yet, or one a standing camp still bars
+      if (check.reason === 'adjacent' || check.reason === 'camps') continue
+      const c = this.regions.claimPoint(z.id)
       if (!c) continue
-      if (this.zones.canUnlockId(z.id)) return { x: c.x, y: c.y, hint: `Claim ${z.name}` }
+      if (check.ok) return { x: c.x, y: c.y, hint: `Claim ${z.name}` }
       if (!unaffordable) {
         const price = RESOURCE_ORDER.filter(k => z.cost[k])
           .map(k => `${short(z.cost[k] ?? 0)} ${k}`).join(', ')
@@ -625,7 +630,7 @@ export class GameScene extends Phaser.Scene {
     this.pickups.update(dt)
     this.abilities.update(dt)
     this.waves.update(dt)
-    this.zones.update(dt)
+    this.regions.update(dt)
     this.quests.update()
     this.res.tickRates(dt)
     this.fx.update(dt)

@@ -2,6 +2,7 @@ import { Overlay } from './Overlay'
 import type { Tone } from './skin'
 import { PAL } from '../config/palette'
 import { SaveManager } from '../systems/SaveManager'
+import { REGIONS } from '../config/world'
 import type { GameScene } from '../scenes/GameScene'
 import type Phaser from 'phaser'
 
@@ -38,7 +39,7 @@ export class DebugPanel extends Overlay {
     b('LEVEL +1', () => this.game.debugLevel(1))
     b('LEVEL +5', () => this.game.debugLevel(5))
     b('BUILD EVERYTHING', () => this.game.buildings.unlockAll())
-    b('UNLOCK MAP', () => { this.game.zones.revealAll(); for (const z of ['whisperwood', 'greyfall', 'hollow', 'deepvein', 'ashgate'] as const) this.game.zones.unlock(z, true) })
+    b('UNLOCK MAP', () => { this.game.regions.revealAll(); for (const r of REGIONS) this.game.regions.claim(r.id, true) })
     b('TOGGLE GODMODE', () => { this.game.player.invincible = !this.game.player.invincible })
     b('TOGGLE NAV OVERLAY', () => this.game.navDebug.toggle())
     b('TOGGLE ROAD TINT', () => this.game.navDebug.toggleRoads())
