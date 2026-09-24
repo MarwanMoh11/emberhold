@@ -3,8 +3,10 @@
 Emberhold's 3400×2800 map is being replaced by a 10240×9216 frontier (9.9× the
 area) with 17 regions, rivers and cliffs that only open at named crossings,
 fifteen warcamps, approaches the horde marches along, outposts and waystones,
-and about 60 points of interest. The work is split into **22 sessions**. They run
-**one after another**, and each has a context window of **200k tokens**.
+and about 60 points of interest. The work is split into **25 sessions**: the 22
+numbered cards, plus S09b, S13b and S13c, which were inserted after a playtest
+on 2026-09-24. They run **one after another**, and each has a context window of
+**200k tokens**.
 
 Nobody reads everything. This page says what to read and how to stay inside the budget.
 
@@ -25,7 +27,7 @@ A paste-ready kickoff for any session:
 An orchestrator is a parent session that runs the cards as subagents, one at a time. Its own context is 200k as well, so it has to stay thin:
 
 - Loop: read the STATUS.md header, then spawn one subagent with the kickoff above, **in the foreground**. When it returns, read its final report (keep it to 25 lines or fewer) and check that STATUS.md moved on. Then start the next card.
-- Never read code or cards yourself. The subagent does. With 22 cards at about 3k tokens of report each, the orchestrator uses about 70k in total.
+- Never read code or cards yourself. The subagent does. With 25 cards at about 3k tokens of report each, the orchestrator uses about 75k in total.
 - If a subagent stops at a checkpoint (STATUS says `SXX partial: done through C2`), spawn the **same card** again. The new subagent resumes after the last completed checkpoint.
 - Stop and ask the human when:
   - a card's acceptance fails twice;
@@ -113,7 +115,7 @@ The design files:
 | [02-regions.md](design/02-regions.md) | Every region: what it is for and what is in it |
 | [03-nights-and-camps.md](design/03-nights-and-camps.md) | Approaches, spawning, the forced march, warnings, Camps 2.0, fortification lines |
 | [04-systems.md](design/04-systems.md) | Chunked terrain, fog, culling, NavGrid, pathing, regions and claims, outposts, waystones, roads, minimap and atlas, performance budgets |
-| [05-content.md](design/05-content.md) | New buildings, fish and trade, POIs, relics, new enemies and bosses |
+| [05-content.md](design/05-content.md) | New buildings, fish and trade, a settled country (village buildings, regional styles, pad targets), POIs, relics, new enemies and bosses |
 | [06-campaign.md](design/06-campaign.md) | Campaign 2.0: five acts and 46 quests |
 | [07-save.md](design/07-save.md) | Save v2: schema, limits, and v1 migration (open decision) |
 
@@ -130,10 +132,13 @@ The design files:
 | S07 | [Paint the frontier](sessions/S07-paint-the-frontier.md) | real art for coast, river, lake, cliffs, lava, crossings, roads and biomes |
 | S08 | [Regions and claims](sessions/S08-regions-and-claims.md) | border stones, hall and tier gating, claimed ground, sleeping camps |
 | S09 | [Nights 2.0](sessions/S09-nights.md) | approaches, spawn clamp, forced march, route warnings, raids, maws |
+| S09b | [Walls and panels](sessions/S09b-walls-and-panels.md) | wall lines with no gaps (art, NavGrid, collision); a compact docked panel and its skin |
 | S10 | [Camps 2.0 and fortification lines](sessions/S10-camps-and-lines.md) | leash, tiers, sealed causeway, walls at crossings |
 | S11 | [Outposts and waystones](sessions/S11-outposts-and-waystones.md) | drop-off, respawn, fast travel |
 | S12 | [Minimap and atlas](sessions/S12-minimap-and-atlas.md) | local minimap, full atlas, travel from the atlas |
 | S13 | [Fish and trade](sessions/S13-fish-and-trade.md) | fishery, fish nodes on water, trading post |
+| S13b | [Village buildings](sessions/S13b-village-buildings.md) | cottage, granary, mill, market, chapel, watch post, docks; regional styles and per-instance variation |
+| S13c | [A settled country](sessions/S13c-settled-country.md) | pads from 94 to ~238: a village and outlying ground in every region |
 | S14 | [Points of interest I](sessions/S14-poi-one.md) | POI framework, caches, lore, shrines, landmarks, survivors |
 | S15 | [Points of interest II](sessions/S15-poi-two.md) | barrows, relics, relic UI |
 | S16 | [New walkers](sessions/S16-new-walkers.md) | bog wretch, thornling, ash priest, cinder hound |
@@ -144,4 +149,4 @@ The design files:
 | S21 | [Performance and mobile](sessions/S21-performance.md) | budgets met on a phone |
 | S22 | [Playthrough and cutover](sessions/S22-cutover.md) | full run to the Regent, then merge to `main` |
 
-Dependencies are strictly linear, so run the cards in order. The one exception: S16 (walkers) does not depend on S11–S15, so it can move earlier if a card is blocked.
+Dependencies are strictly linear, so run the cards in order (S09b after S09, S13b and S13c after S13). The one exception: S16 (walkers) does not depend on S11–S15, so it can move earlier if a card is blocked.

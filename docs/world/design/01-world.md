@@ -14,7 +14,7 @@
 |---|---|---|
 | World | 3400 × 2800 (9.5M px²) | 10240 × 9216 (94.4M px², **9.9×**) |
 | Regions | 6 rectangular zones | 17 polygon regions, 2 of them optional |
-| Build pads | 27 | 94 (plus about 45 wall pads) |
+| Build pads | 27 | 94, rising to about 238 in S13c ([05 §A settled country](05-content.md#a-settled-country-s13b-s13c)), plus about 45 wall pads |
 | Camps | 5 | 15: 9 warcamps, 5 strongholds (4 with bosses), 1 fortress. The Regent waits on her throne |
 | Resource fields | 16 | 68 (fish is new) |
 | Points of interest | 0 | 63: 6 shrines, 6 barrows, 3 survivor groups, 24 caches, 12 lore stones, 6 landmarks, 2 standalone waystones, 4 boss relics |
@@ -90,12 +90,41 @@ Command Hall levels already run from 1 to 5 (Ember Tent to Citadel), and each re
 
 What a first playthrough should feel like. S20 tunes towards these, and S22 checks them.
 
-| Act | Waves (about) | Claimed by the end | What the player learns |
-|---|---|---|---|
-| I · The Rise | 1–5 | hold, downs, whisperwood | the loop: gather, build, hold the bridge; claims; the first camp burned |
-| II · The River | 6–12 | + hollow, greyfall, ferrow | three fronts; the bridgehead; outposts; waystones |
-| III · The Frontier | 13–22 | + four of the six tier-3 regions | shrines, barrows, relics, the first stronghold boss |
-| IV · The Scar | 23–30 | + deepvein, rim, ashgate | fortifying crossings, the Stairwarden, Ashgate's fall |
-| V · The Crown | 31+ | + crown | the causeway opens, then the Regent |
+**Slowed on 2026-09-24 (human).** The macro pace (claims, acts, the Regent) runs at about **1.5×** the first-pass targets. The micro loop stays tight. The slower pace comes from costs and camp strength, never from dead time between rewards.
 
-A first run should take about **4–6 hours**. The old game's campaign was about 45–60 minutes.
+### The macro pace
+
+| Act | Waves, old → new | Game clock at the act's end, old → new | Claimed by the end | What the player learns |
+|---|---|---|---|---|
+| I · The Rise | 1–5 → **1–8** | ~10 → **~16 min** | hold, downs, whisperwood | the loop: gather, build, hold the bridge; claims; the first camp burned |
+| II · The River | 6–12 → **9–18** | ~27 → **~42 min** | + hollow, greyfall, ferrow | three fronts; the bridgehead; outposts; waystones |
+| III · The Frontier | 13–22 → **19–33** | ~58 → **~90 min** | + four of the six tier-3 regions | shrines, barrows, relics, the first stronghold boss |
+| IV · The Scar | 23–30 → **34–45** | ~87 → **~130 min** | + deepvein, rim, ashgate | fortifying crossings, the Stairwarden, Ashgate's fall |
+| V · The Crown | 31+ → **46+** | the Regent ~105 → **~160 min** | + crown | the causeway opens, then the Regent |
+
+**Claims, by wave (old → new):**
+- downs 2 → 3, whisperwood 4 → 6;
+- hollow 6 → 9, greyfall 8 → 12, ferrow 11 → 16;
+- the four tier-3 claims about 14, 17, 19, 22 → 21, 25, 29, 33;
+- deepvein 25 → 37, rim 27 → 41, ashgate 30 → 45, crown 32 → 48;
+- the Regent falls around wave 33 → **50**.
+
+The game clock is day plus night at today's constants: `dayLength` (60 + 10 × claimed, at most 180 s) plus about 50 s of march and fight. The old line said a first run takes "about 4–6 hours", but it was never reconciled with that clock, which reaches wave 31 in under 2 hours. The binding targets are now the waves and the game-clock minutes above: about **2.5–3 hours of game clock** to the Regent. S20 reports real play time next to them.
+
+**Levers** (S20, in this order):
+- region and hall costs (roughly 1.6×, so each claim takes 1.5× as long to afford at the same income);
+- camp hp and rewards;
+- the wave budget's growth per wave (÷1.5, so wave 45 threatens like the old wave 30);
+- the wave-gated approach openings (5, 8, 11 → 8, 12, 17);
+- the night reward's slope.
+
+### The micro loop (kept tight)
+
+- **Every 30–60 s** there is something visible to earn or build: a build or upgrade finishing, a hire, a recruit, a level-up.
+  - Measure it as the gap between reward events: `building:built`, `worker:hired`, `soldier:recruited`, `player:levelup`, `quest:complete`, `region:claimed`, `camp:burned`, `poi:done`, `achievement` and `wave:cleared`.
+  - Target: p50 ≤ 45 s and p90 ≤ 60 s of game clock, in every act.
+- **Every 3–5 min** comes a quest or a milestone: a quest done, a claim, a camp burned, a shrine, a relic or a deed. No gap is longer than 6 min.
+- **Every night** is a clear win with a reward: "NIGHT *n* HELD", coins (today `40 + 25 × wave`, which S20 retunes for the longer run) and the pickups swept in.
+  - The reward buys at least one build or upgrade at that stage.
+  - Chapels raise it (05).
+- Villages that keep growing with each hall level ([05 §A settled country](05-content.md#a-settled-country-s13b-s13c)) keep the builds coming between claims.

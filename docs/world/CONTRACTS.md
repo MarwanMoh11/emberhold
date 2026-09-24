@@ -160,13 +160,26 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - Event `night:warning { approaches: string[], routes: Pt[][] }` at the warning. `CampManager.stateOf(id)`, `burn(id)` (reward and `camp:burned`). Harness: `H.burn`, `H.night(wave?)`, `H.march(s)`.
 - No new save fields: the plan, queue and marches are transient (an interrupted night restarts at its warning).
 
+## S09b: walls and panels
+
+*Status: planned.*
+
+- `src/world/wallLine.ts` (pure): `layWallLine(line: WallLineBP) → WallPiece[] { id, key: 'wall' | 'gate', part: 'run' | 'post', dir: 'h' | 'v', x, y, len }`. Pieces sit at most `step` apart, with posts at the vertices and gate jambs. Ids are `${line}.${k}`; gates keep their blueprint ids.
+- Wall pieces register a NavGrid capsule (discs every 16 px, radius 28). `Building` swaps its footprint for `dir: 'v'`. Gates stay out of the grid. `maxLevelForPad` accepts `${line}.${k}`, and old `wall\d+` saves remap to the nearest piece.
+- Textures: `bld_wall_v_${lvl}`, `bld_wallpost_${lvl}` and `bld_gate_v_${lvl}`, next to the existing `bld_wall_${lvl}` and `bld_gate_${lvl}`.
+- UI (`ui/skin.ts` or `ui/dock.ts`), for every panel from here on:
+  - `DOCK` tokens (`gutter`, `pad`, `touch` 44, `rowH`, `collapsedH`, `sideW`, `phoneMaxFrac` 0.30, `deskMaxFrac` 0.20, `titleSize`, `bodySize`);
+  - `DockSheet` (a bottom sheet in portrait, a right dock otherwise; `collapsed`; publishes `uiBands.dock`);
+  - `CostChips`, `StatLine`, and `PlateButton({ size: 'compact' })`.
+- Harness: `H.wallGaps(lineId?) → { pieces, built, navLeaks, bodyLeaks }`, `H.buildLine(id, lvl)`, `H.panel() → { rect, frac, collapsed, overlapsBuilding, overlapsHero, targets, minFont }`.
+
 ## S10: camps and lines
 
 *Status: planned.*
 
 - `CampSpec.tier` (`'warcamp' | 'stronghold' | 'fortress'`), plus `leash` and `wakeRadius`.
 - `nav.setSealed(crossingId, sealed)`. The Regent's Causeway is sealed until `campAshgate` burns.
-- Every blueprint `WALLS` line becomes pads with ids `${lineId}.${k}`, and its gates. Each line is buildable from `hall`.
+- Every blueprint `WALLS` line becomes pieces through S09b's `layWallLine` (ids `${lineId}.${k}`), and its gates. Each line is buildable from `hall`.
 
 ## S11: outposts and waystones
 
@@ -190,6 +203,16 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 - `NodeType` gains `'fish'`. Fish nodes are placed on **water** cells inside their field.
 - `BuildingKey` gains `'fishery'` (fish becomes food) and `'tradingPost'` (passive coins per level).
+
+## S13b and S13c: a settled country
+
+*Status: planned.*
+
+- `BuildingKey` and `PadKey` gain `'cottage' | 'granary' | 'mill' | 'market' | 'chapel' | 'watchPost' | 'docks'` ([05 §A settled country](design/05-content.md#a-settled-country-s13b-s13c)).
+- `buildings.dropoffFor(x, y, res?)`: with `res` of food or fish, the nearest standing granary within 900 px comes first.
+- `buildings.localBonus(key, x, y) → number`: 1 plus the best in-range mill bonus (docks use the same shape for the trading post).
+- Art: `STYLE_BY_BIOME` (`'timber' | 'woodland' | 'fen' | 'stone' | 'ash'`) and `ensureBuildingTexture(key, lvl, style, variant) → string`, baked lazily; the variant is seeded from the pad id.
+- S13c adds pads only (about 238 in all). Pad ids are new; no existing id or position changes.
 
 ## S14: points of interest
 
@@ -228,7 +251,8 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `{ type: 'relic', amount }`
   - `{ type: 'reach', poi }`
   - `{ type: 'travel' }`
-- `{ type: 'line', line }`
+  - `{ type: 'line', line }`
+  - `{ type: 'settle', region, count }` (buildings standing in a region)
 
 ## Save fields
 

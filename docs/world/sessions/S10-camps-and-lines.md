@@ -41,8 +41,8 @@
    - show the banner "The fire on the causeway dies."
 
 **C3 · Wall lines**
-1. Generalise `generateWalls` from a rectangle to any `WALLS` polyline: pads every `step` along the line, with ids `${line}.${k}`, and gates at the listed points.
-2. The palisade still produces today's ring.
+1. Lay every `WALLS` line with S09b's `layWallLine`, which already handles any polyline: pieces at most `step` apart, posts at the vertices and gate jambs, and ids `${line}.${k}`. Don't write a second layout.
+2. The palisade keeps S09b's layout and ids.
 3. A line appears when its region is claimed and the hall is at its level.
 4. Add `buildings.lineComplete(lineId)` for quests.
 5. Built wall pads register NavGrid blockers (via S05's hook).
@@ -58,6 +58,7 @@
   - Ashgate takes no damage until its 3 braziers fall;
   - the causeway is impassable until Ashgate burns, then passable. Check with `nav.passableAt` at the causeway midpoint.
 - The bridgehead, Millford, gorge, stair and pass lines appear at the right hall levels. Completing the bridgehead reroutes the south night through its gate.
+- S09b's gap check holds for every line: `tests/wall-line.test.mjs` passes, and `H.wallGaps(id)` returns no leaks for each built line, including the diagonal runs.
 - Tests and typecheck are green.
 
 ## Verify

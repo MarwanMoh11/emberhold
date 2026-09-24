@@ -6,6 +6,8 @@ One entry per region: what it is for, what is in it, and what it asks of the pla
 node docs/world/tools/render.mjs --region <id>
 ```
 
+From S13c, every region below also gets a village near its claim point and outlying farmsteads, mills and watch posts. The pad counts and the flavour of each village are in [05 §A settled country](05-content.md#a-settled-country-s13b-s13c). Pad counts given here (such as Hollow's three houses) are the originals.
+
 ## Emberhold `hold` · tier 0
 
 **Layout.** The Ember Rise, above the Old King's Bridge. The palisade is today's rampart ring, the same 1280 × 1120 shape with four gates. Inside it, today's pads keep their relative places: the hall at the top of the rise, the depot on the south road just below it, the muster yards (barracks, archery range) facing the South Gate and the bridge.

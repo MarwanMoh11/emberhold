@@ -9,7 +9,10 @@
 - wave budget and fronts;
 - day length;
 - boss hp;
-- quest rewards.
+- quest rewards;
+- the costs and effects of S13b's village buildings (cottage, granary, mill, market, chapel, watch post, docks).
+
+**Pacing.** Honour STATUS 2026-09-24: slow the macro pace to the new targets in 01 (about 1.5×: acts end near waves 8, 18, 33 and 45, and the Regent falls near wave 50). Keep the micro loop tight. Use the levers listed in 01, in order, and stretch the wave-gated openings in `Approaches.OPENS` (5, 8, 11 → 8, 12, 17). Never slow the game with dead time.
 
 **Depends on.** S18 (the whole campaign). Read the balance notes left in STATUS by S13, S16, S17 and S18.
 
@@ -34,7 +37,9 @@
    - the stockpile;
    - income per minute;
    - claimed regions;
-   - the losses of the night.
+   - the losses of the night;
+   - the game clock (s);
+   - the reward events since the last wave, with their timestamps (the event list is in 01 §The micro loop).
 3. It returns compact JSON. Never paste long logs.
 
 **C2 · Tune**
@@ -46,9 +51,13 @@
 Settle a formula. Record it in STATUS §Decisions as *proposed*, for the human to confirm.
 
 ## Done when
-- The probe reaches each act's end within ±25% of the target waves.
+- **Macro:** the probe reaches each act's end within ±25% of the new target waves **and** game-clock minutes in 01, and each claim within ±25% of its target wave.
+- **Micro, in every act:**
+  - the gap between reward events has p50 ≤ 45 s and p90 ≤ 60 s;
+  - no gap between quests or milestones is longer than 6 min;
+  - every night ends with its reward, and that reward covers at least one build or upgrade the probe can buy next.
 - No night kills the probe's hold before wave 25 with a reasonable defence.
 - Tests and typecheck are green.
 
 ## Handoff
-The before-and-after table (15 rows or fewer), the proposed day-length formula, and known outliers.
+The before-and-after table (15 rows or fewer), the macro and micro measurements against 01, the proposed day-length formula, and known outliers.

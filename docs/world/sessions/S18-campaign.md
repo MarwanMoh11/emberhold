@@ -6,6 +6,10 @@
 - act banners;
 - seven new deeds.
 
+**Pacing.** Honour STATUS 2026-09-24: the macro pace is 1.5× slower ([01 §Pacing targets](../design/01-world.md#pacing-targets)), but a quest or milestone still lands every 3–5 min of game clock, with no gap over 6 min. Spread the 46 quests over the new act waves. If an act runs dry, add a short village quest rather than leave a gap.
+
+**New buildings.** Use S13b's village types in the chain. At least one quest per act builds one of them (for example a granary in Ferrow, the market in Saltmere, a watch post over a crossing, docks on the lake). Add a `settle` goal, `{ type: 'settle', region, count }`: that many buildings standing in a region.
+
 **Depends on.** Everything the quests reference: claims (S08), camps (S10), outposts and travel (S11), atlas routes (S12), shrines (S14), relics (S15) and bosses (S17).
 
 **Size.** Medium to large. `quests.ts` is 5.5k tokens: it gets rewritten, so read it once. `QuestManager` is 3.6k.
@@ -19,7 +23,7 @@
 ## Do
 
 **C1 · Goal types**
-1. Add `claim`, `burn`, `restore`, `relic`, `reach`, `travel` and `line` to `QuestGoal`.
+1. Add `claim`, `burn`, `restore`, `relic`, `reach`, `travel`, `line` and `settle` to `QuestGoal`.
 2. Evaluate each in `QuestManager` from the events. `zone` counts claimed regions.
 3. `targetFor` returns a world point for each goal type:
    - the claim point;
@@ -27,7 +31,8 @@
    - the nearest unrestored shrine;
    - the POI;
    - the nearest active waystone;
-   - the first unbuilt pad of the line.
+   - the first unbuilt pad of the line;
+   - the region's nearest unbuilt pad (for `settle`).
 
 **C2 · The chain**
 1. Write all 46 quests, with titles and hints as in 06.

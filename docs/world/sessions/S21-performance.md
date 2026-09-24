@@ -4,6 +4,10 @@
 
 **Depends on.** S20 (final content and numbers).
 
+**Already done.** S09b built the compact docked panel (`DockSheet`). Here you only verify it on a phone: 375×812, 44 px targets, and no overlap with the joystick, the hero or the selected building.
+
+**Density.** S13c raised the pads about 2.5× (94 → ~238). The fixture must have every pad built, so it measures the extra buildings, workers (the save caps them at 500), drop-off paths, yard props and lazily baked `bld_` textures (160 at most). Add rows for them to the budget table.
+
 **Size.** Medium. This is measure-first work, so don't pre-read code. Profile, then read only the hot function.
 
 ## Read first
@@ -31,7 +35,7 @@
 
 **C3 · The mobile profile**
 1. Run the bench with the mobile preset viewport and 4× CPU throttling if available (otherwise a reduced `stepMs` budget).
-2. Check touch travel, the atlas, and the joystick.
+2. Check touch travel, the atlas, the joystick, and S09b's docked panel (`H.panel()`).
 3. Reset the viewport afterwards.
 
 ## Done when

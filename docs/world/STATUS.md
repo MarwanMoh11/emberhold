@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S10** ([card](sessions/S10-camps-and-lines.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S09b** ([card](sessions/S09b-walls-and-panels.md)), then S10 · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -12,6 +12,8 @@ These bind every session. Add a line when one is made, with the date and who dec
 - 2026-09-23 (design): enemies never use roads. Roads give +20% speed to the hero, soldiers and workers only.
 - 2026-09-23 (design): night spawns clamp to 2400 px of path from claimed ground. Enemies force-march at 2.4× until they reach claimed ground.
 - 2026-09-23 (design): development happens on `world-v2`. `main` stays the live v1 game until S22.
+- 2026-09-24 (human): slow the macro pace to about 1.5× (acts end near waves 8, 18, 33 and 45; the Regent near wave 50, about 2.5–3 h of game clock), but keep the micro loop tight: a reward every 30–60 s, a quest or milestone every 3–5 min, and every night a clear win with a reward. Targets are in [01 §Pacing](design/01-world.md#pacing-targets); S18 and S20 honour them.
+- 2026-09-24 (human): by the endgame every region, the hold included, is dense with buildings and reads as one settled country. Seven village building types, regional styles, and pads from 94 to ~238 ([05 §A settled country](design/05-content.md#a-settled-country-s13b-s13c)); S13c may add pads, and `world:lint` must stay clean.
 
 ## Open decisions
 
@@ -22,6 +24,9 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s (landed in S09 as `dayLength` in `config/balance.ts`). Tuned in S20.
 
 ## Log
+
+### Plan amended after the playtest (2026-09-24)
+- Inserted S09b (wall gaps; compact docked panel), and S13b and S13c (village buildings; a settled country). Pacing was slowed in 01, and S10, S14, S18, S20 and S21 were updated to match. No code changed.
 
 ### S09 · Nights 2.0: done (2026-09-24)
 - `src/systems/Approaches.ts` (pure, tested on the real raster): musters along chains (camp → maw → closed), routes down each via field then the hall's, the 2400 px clamp, `live`/`tonight` (opens rules, fronts per night, one raid), `splitBudget`. Gates, `GateId` and the gate posts are gone; `WaveDef.approaches` is an optional preferred-fronts list. API in CONTRACTS §S09.

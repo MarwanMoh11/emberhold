@@ -26,7 +26,7 @@
    - atlas icons through the S12 hook.
 2. Add `Modifiers`: `add`, and `value(stat, base)` with the stat list from 05.
 3. Wire the stats the shrines touch:
-   - `food.yield` and `trade.income` (in S13's code);
+   - `food.yield` and `trade.income` (in S13's code). S13b's local bonuses (mill, granary, docks) multiply first: `mods.value(stat, base × localBonus)`;
    - `wall.hp`;
    - `hero.xp`;
    - `hero.regen`;
@@ -47,7 +47,7 @@
    - "Pilgrim" for all 6.
 2. Survivors:
    - locked until their condition is met (the table in 05);
-   - walking in grants population and free workers at the nearest matching building.
+   - walking in grants population and free workers at the nearest matching building. A cottage counts as a dwelling, like a house.
 
 ## Out of scope
 Barrows and relics (S15).
