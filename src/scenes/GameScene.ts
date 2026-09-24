@@ -37,6 +37,7 @@ import { QuestManager } from '../systems/QuestManager'
 import { SaveManager, type Settings } from '../systems/SaveManager'
 import { LightingManager } from '../systems/LightingManager'
 import { DPR } from '../core/device'
+import type { DockBands } from '../ui/dock'
 
 export const DEPTH = {
   terrain: -100_000,
@@ -100,7 +101,9 @@ export class GameScene extends Phaser.Scene {
    * banners) keep out of them, which is what stops the portrait layout from
    * stacking three panels on the same pixels.
    */
-  uiBands = { top: 104, bottom: 104 }
+  uiBands: DockBands = { top: 104, bottom: 104, dock: null }
+  /** The camera's eased shift toward the clear area beside an open dock (world px). */
+  private dockShift = { x: 0, y: 0 }
   private keys!: Record<string, Phaser.Input.Keyboard.Key>
   private objectiveArrow!: Phaser.GameObjects.Image
   private edgeMarkers: Phaser.GameObjects.Image[] = []
@@ -525,9 +528,29 @@ export class GameScene extends Phaser.Scene {
 
     // look ahead in the direction of travel
     const p = this.player
+    // While a docked sheet is open, frame what it is about (the hero and the
+    // building, or the border stone) in the middle of the ground it leaves
+    // clear, and ease back when it closes.
+    let sx = 0, sy = 0
+    const d = this.uiBands.dock
+    if (d) {
+      const k = DPR / cam.zoom
+      const W = cam.width / DPR, H = cam.height / DPR
+      const clearX = d.side === 'right' ? d.x / 2 : W / 2
+      const clearY = d.side === 'right'
+        ? (this.uiBands.top + H - this.uiBands.bottom) / 2
+        : (this.uiBands.top + d.y) / 2
+      const f = d.focus ?? { x: p.x, y: p.y }
+      // the camera's centre that puts f at (clearX, clearY); the offset is hero − centre
+      sx = p.x - (f.x + (W / 2 - clearX) * k)
+      sy = p.y - (f.y + (H / 2 - clearY) * k)
+    }
+    const ease = Math.min(1, dt * 5)
+    this.dockShift.x += (sx - this.dockShift.x) * ease
+    this.dockShift.y += (sy - this.dockShift.y) * ease
     cam.setFollowOffset(
-      -clamp(p.vx * CAMERA.lookAhead, -110, 110),
-      -clamp(p.vy * CAMERA.lookAhead, -110, 110),
+      -clamp(p.vx * CAMERA.lookAhead, -110, 110) + this.dockShift.x,
+      -clamp(p.vy * CAMERA.lookAhead, -110, 110) + this.dockShift.y,
     )
   }
 

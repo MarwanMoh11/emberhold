@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
 import { PAL } from '../config/palette'
 import { applyGrain, css, glow, lightOf, mix, Rng, shade, shadowOf, type Ctx } from '../art/ink'
-import { textStyle } from './theme'
-import { DPR } from '../core/device'
+import { screen, textStyle } from './theme'
+import { DPR, wantsTouchTargets } from '../core/device'
 
 /**
  * The interface's chrome, painted rather than drawn.
@@ -639,8 +639,8 @@ export interface ButtonOpts {
   label: string
   onClick: () => void
   tone?: Tone
-  /** label size in px */
-  size?: number
+  /** label size in px, or `compact`: a docked sheet's button, 44 px tall on touch and 36 with a mouse */
+  size?: number | 'compact'
   /** a second, smaller line under the label */
   sub?: string
   /** an icon texture drawn left of the label */
@@ -677,10 +677,12 @@ export class PlateButton {
   private tone: Tone
   private size: number
   private hasIcon: boolean
+  readonly compact: boolean
 
   constructor(private scene: Phaser.Scene, private o: ButtonOpts) {
     this.tone = o.tone ?? 'plain'
-    this.size = o.size ?? 15
+    this.compact = o.size === 'compact'
+    this.size = o.size === 'compact' ? 14 : o.size ?? 15
     this.textColour = o.textColour
     this.plate = new SkinPanel(scene, 'plate')
     this.label = scene.add.text(0, 0, o.label, textStyle({ voice: 'caps', size: this.size, weight: '800', colour: TONES[this.tone].text }))
@@ -734,7 +736,10 @@ export class PlateButton {
 
   private placed = ''
 
-  place(x: number, y: number, w = 140, h = 40) {
+  /** A compact button's height at the current viewport. */
+  get compactH() { return wantsTouchTargets(screen(this.scene).w) ? 44 : 36 }
+
+  place(x: number, y: number, w = 140, h = this.compact ? this.compactH : 40) {
     // Called every frame by world cards: a repeat of the last placement is free.
     const sig = `${x}|${y}|${w}|${h}|${this.label.text}`
     if (sig === this.placed) return this
@@ -994,3 +999,6 @@ export function stickRingTexture(scene: Phaser.Scene, r: number): string {
   tex.refresh()
   return key
 }
+
+// ---- the dock (S09b) -------------------------------------------------------------
+export * from './dock'
