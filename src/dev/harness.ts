@@ -1,5 +1,5 @@
 import type Phaser from 'phaser'
-import { REGIONS, WORLD } from '../config/world'
+import { REGIONS, WALL_LINES, WORLD } from '../config/world'
 
 /**
  * Dev-only scripted-play harness, stripped from production builds.
@@ -24,6 +24,9 @@ import { REGIONS, WORLD } from '../config/world'
  *   H.nav()              NavGrid version and rebuild timings; walkers standing off the ground
  *   H.watch(120)         pump while watching allies: deliveries, off-ground frames, soldiers stuck, path cost
  *   H.run(0, 1, 3)       hold a move direction for 3 s: the hero's speed and time on a road
+ *   H.buildLine('palisade', 3)  raise (or drop) every piece and gate of a wall line to a level
+ *   H.wallGaps('palisade')      walk the line every 4 px: cells the horde could path through, points a body slips past
+ *   H.assault('grunt', 5120, 2300, 40)  send one walker at the ring: what it hit, whether it got in unbroken
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -206,6 +209,91 @@ export function installHarness(game: Phaser.Game) {
     }
   }
 
+  /** A wall line's pieces and gates, as built in the game. */
+  const linePads = (lineId: string) => {
+    const line = WALL_LINES.find(l => l.id === lineId)
+    if (!line) return null
+    const bs = [...gs().buildings.byPad.values()] as any[]
+    return { line, pads: bs.filter(b => b.padId.startsWith(`${lineId}.`) || line.gates.some(q => q.id === b.padId)) }
+  }
+
+  /** Raise (or drop) every piece and gate of a wall line to `lvl`, through the save loader. */
+  const buildLine = (lineId = 'palisade', lvl = 1) => {
+    const lp = linePads(lineId)
+    if (!lp) return `no line "${lineId}"`
+    gs().buildings.load(lp.pads.map(b => ({ padId: b.padId, level: lvl, hp: 1e9, progress: {}, peakWorkers: 0 })))
+    pump(0.1)
+    return `${lineId}: ${lp.pads.length} pads at ${lvl}`
+  }
+
+  /**
+   * Walk a wall line every 4 px. A nav leak is a point whose cell is ground,
+   * not walled and not under a standing gate; a body leak is a point where no
+   * standing wall or gate box stops the smallest walker (radius 8).
+   */
+  const wallGaps = (lineId = 'palisade') => {
+    const lp = linePads(lineId)
+    if (!lp) return `no line "${lineId}"`
+    const g = gs(); const n = g.nav
+    const gates = lp.pads.filter(b => b.key === 'gate' && b.level > 0 && b.alive)
+    const underGate = (i: number) => {
+      const [cx, cy] = n.r.xy(i)
+      return gates.some(q => {
+        const dx = cx - q.x, dy = cy - q.y, ux = q.piece?.ux ?? 1, uy = q.piece?.uy ?? 0
+        return Math.abs(dx * ux + dy * uy) <= 32 && Math.abs(-dx * uy + dy * ux) <= 24
+      })
+    }
+    const pts = lp.line.ring ? [...lp.line.pts, lp.line.pts[0]] : lp.line.pts
+    const navLeaks: number[][] = [], bodyLeaks: number[][] = []
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[i + 1]
+      const k = Math.ceil(Math.hypot(bx - ax, by - ay) / 4)
+      for (let j = 0; j <= k; j++) {
+        const x = ax + ((bx - ax) * j) / k, y = ay + ((by - ay) * j) / k
+        const c = n.r.cell(x, y)
+        if (!n.passable(c)) continue
+        if (!n.blocked(c) && !underGate(c)) navLeaks.push([Math.round(x), Math.round(y)])
+        if (!g.buildings.blockerAt(x, y, 8)) bodyLeaks.push([Math.round(x), Math.round(y)])
+      }
+    }
+    return {
+      pieces: lp.pads.length, built: lp.pads.filter(b => b.level > 0 && b.alive).length,
+      navLeaks: navLeaks.slice(0, 24), bodyLeaks: bodyLeaks.slice(0, 24),
+      ...(navLeaks.length > 24 || bodyLeaks.length > 24 ? { counts: [navLeaks.length, bodyLeaks.length] } : {}),
+    }
+  }
+
+  /**
+   * Send one walker at a wall line from (x, y) and pump: which pads it struck,
+   * and whether it ever stood inside the line's bounding box while every
+   * piece and gate still stood.
+   */
+  const assault = (key = 'grunt', x = 5120, y = 2300, seconds = 40, lineId = 'palisade') => {
+    const lp = linePads(lineId)
+    if (!lp) return `no line "${lineId}"`
+    const g = gs()
+    const e = g.enemies.spawn(key, x, y)
+    if (!e) return `could not spawn ${key}`
+    const xs = lp.line.pts.map(p => p[0]), ys = lp.line.pts.map(p => p[1])
+    const box = [Math.min(...xs) + 24, Math.min(...ys) + 24, Math.max(...xs) - 24, Math.max(...ys) - 24]
+    const hp0 = new Map(lp.pads.map(b => [b.padId, b.hp]))
+    const struck: Record<string, number> = {}
+    let insideUnbroken = false, inside = false, firstBroken: string | null = null, t = 0
+    for (; t < seconds && e.alive && e.active; t += 0.25) {
+      pump(0.25)
+      for (const b of lp.pads) {
+        if (b.hp < (hp0.get(b.padId) ?? 0)) struck[b.padId] = Math.round((hp0.get(b.padId) ?? 0) - b.hp)
+        if (!firstBroken && (!b.alive || b.level === 0) && (hp0.get(b.padId) ?? 0) > 0) firstBroken = b.padId
+      }
+      const inBox = e.x > box[0] && e.x < box[2] && e.y > box[1] && e.y < box[3]
+      if (inBox) { inside = true; if (!firstBroken) insideUnbroken = true }
+    }
+    const out = { key, t, alive: e.alive, at: [Math.round(e.x), Math.round(e.y)], target: e.target?.padId ?? e.target?.kind ?? null,
+      struck, firstBroken, inside, insideUnbroken }
+    if (e.active) g.enemies.despawn(e)
+    return out
+  }
+
   const reveal = () => { gs().regions.revealAll(); return 'fog cleared' }
 
   const where = () => {
@@ -304,5 +392,5 @@ export function installHarness(game: Phaser.Game) {
     return { pxPerSec: Math.round(Math.hypot(p.x - x0, p.y - y0) / seconds), onRoad: +(road / steps).toFixed(2), at: where() }
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run }
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault }
 }

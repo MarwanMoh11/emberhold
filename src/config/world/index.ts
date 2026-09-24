@@ -12,6 +12,7 @@ import type { ResourceBag } from '../../core/types'
 import { rasterise, type WorldRaster } from '../../world/raster'
 import * as BP from './blueprint'
 import type { RegionBP, RegionId, WallLineBP } from './blueprint'
+import type { WallPiece } from '../../world/wallLine'
 
 export type { RegionId, Biome } from './blueprint'
 
@@ -59,6 +60,8 @@ export interface PadSpec {
   region: RegionId
   /** hidden until this many town hall levels */
   requiresTownHall?: number
+  /** a wall line's piece (S09b): its part, run direction, length along the line, and NavGrid capsule */
+  piece?: Pick<WallPiece, 'part' | 'dir' | 'len' | 'ux' | 'uy' | 'cap'>
 }
 
 /** Pads whose buildings arrive later: outposts (S11), fisheries and trading posts (S13). */

@@ -202,23 +202,35 @@ export class NavGrid {
 
   /** Mark (or clear) the cells whose centre lies within `radius` of (x, y) as a wall. */
   setBlocker(id: string, x: number, y: number, radius: number, on: boolean): void {
+    this.setBlockerDiscs(id, [x, y], radius, on)
+  }
+
+  /**
+   * One blocker made of several discs (flat x, y pairs): a wall piece's
+   * capsule (S09b). A cell under two of its discs counts once.
+   */
+  setBlockerDiscs(id: string, discs: ArrayLike<number>, radius: number, on: boolean): void {
     const had = this.blockers.get(id)
     if (had) {
       for (const i of had) this.blockN[i]--
       this.blockers.delete(id)
     }
     if (on) {
-      const r = this.r, cells: number[] = []
+      const r = this.r, cells = new Set<number>()
       const k = Math.ceil(radius / r.C) + 1
-      const gx = Math.floor(x / r.C), gy = Math.floor(y / r.C)
-      for (let yy = gy - k; yy <= gy + k; yy++) for (let xx = gx - k; xx <= gx + k; xx++) {
-        if (xx < 0 || yy < 0 || xx >= r.GW || yy >= r.GH) continue
-        const cx = xx * r.C + r.C / 2, cy = yy * r.C + r.C / 2
-        if ((cx - x) ** 2 + (cy - y) ** 2 > radius * radius) continue
-        const i = yy * r.GW + xx
-        if (this.blockN[i] < 255) { this.blockN[i]++; cells.push(i) }
+      for (let d = 0; d + 1 < discs.length; d += 2) {
+        const x = discs[d], y = discs[d + 1]
+        const gx = Math.floor(x / r.C), gy = Math.floor(y / r.C)
+        for (let yy = gy - k; yy <= gy + k; yy++) for (let xx = gx - k; xx <= gx + k; xx++) {
+          if (xx < 0 || yy < 0 || xx >= r.GW || yy >= r.GH) continue
+          const cx = xx * r.C + r.C / 2, cy = yy * r.C + r.C / 2
+          if ((cx - x) ** 2 + (cy - y) ** 2 > radius * radius) continue
+          cells.add(yy * r.GW + xx)
+        }
       }
-      this.blockers.set(id, cells)
+      const list: number[] = []
+      for (const i of cells) if (this.blockN[i] < 255) { this.blockN[i]++; list.push(i) }
+      this.blockers.set(id, list)
     }
     if (had || on) this.version++
   }

@@ -1013,6 +1013,23 @@ function texSize(key: BuildingKey, lvl: number) {
 
 export function buildingTextureKey(key: BuildingKey, lvl: number) { return `bld_${key}_${lvl}` }
 
+/**
+ * A wall piece's own art (S09b): `bld_wall_v_${lvl}` for a run seen end-on,
+ * `bld_wallpost_${lvl}` for a corner or jamb, `bld_gate_v_${lvl}` for a
+ * gatehouse turned side-on; level 0 is the staked-out site. Null when the
+ * piece wears the plain texture (a horizontal run or gate).
+ */
+export function pieceTextureKey(key: BuildingKey, lvl: number, piece: { part: 'run' | 'post'; dir: 'h' | 'v' }): string | null {
+  const name = key === 'wall' && piece.part === 'post' ? 'wallpost'
+    : piece.dir === 'v' && (key === 'wall' || key === 'gate') ? `${key}_v` : null
+  if (!name) return null
+  return lvl > 0 ? `bld_${name}_${lvl}` : `blueprint_${name}`
+}
+
+/** How far above a texture's bottom edge its pad point sits: 16 px, more for art that reaches toward the viewer. */
+const FOOT = new Map<string, number>()
+export function textureFoot(texKey: string): number { return FOOT.get(texKey) ?? 16 }
+
 function paintBuilding(key: BuildingKey, lvl: number, w: number, h: number) {
   const cx = w / 2, by = h - 16
   const def = BUILDINGS[key]

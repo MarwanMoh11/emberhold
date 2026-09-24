@@ -3,7 +3,7 @@ import { DEFAULT_QUALITY } from '../core/device'
 import { RESOURCE_ORDER } from '../core/types'
 import { DAYNIGHT, XP } from '../config/balance'
 import { BUILDINGS } from '../config/buildings'
-import { CAMPS, PADS, REGION_BY_ID, WALL_RING, WORLD } from '../config/world'
+import { CAMPS, PADS, REGION_BY_ID, WALL_LINES, WORLD } from '../config/world'
 import { SOLDIERS, WORKERS } from '../config/units'
 import { UPGRADE_BY_ID } from '../config/upgrades'
 import { QUESTS } from '../config/quests'
@@ -21,9 +21,12 @@ const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFi
 const resourceBag = (v: unknown) => record(v) && RESOURCE_ORDER.every(k =>
   finite(v[k]) && v[k] >= 0)
 const padMax = new Map(PADS.map(p => [p.id, BUILDINGS[p.key].levels.length]))
+/** Wall pieces are `${line}.${k}` (S09b); `wall${i}` is the old palisade, remapped on load. */
+const wallLineIds = new Set(WALL_LINES.map(l => l.id))
+const gateIds = new Set(WALL_LINES.flatMap(l => l.gates.map(g => g.id)))
 const maxLevelForPad = (id: string) => padMax.get(id)
-  ?? (/^wall\d+$/.test(id) ? BUILDINGS.wall.levels.length
-    : WALL_RING.gates.some(g => g.id === id) ? BUILDINGS.gate.levels.length : 0)
+  ?? (/^wall\d+$/.test(id) || wallLineIds.has(id.split('.')[0]) && /^[A-Za-z]+\.\d+$/.test(id) ? BUILDINGS.wall.levels.length
+    : gateIds.has(id) ? BUILDINGS.gate.levels.length : 0)
 
 /** Reject a torn or incompatible save before any manager mutates live state. */
 function validSave(v: unknown): v is SaveBlob {

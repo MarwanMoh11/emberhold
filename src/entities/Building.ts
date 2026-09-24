@@ -3,7 +3,8 @@ import { BUILDINGS, type BuildingDef, type BuildingKey } from '../config/buildin
 import type { PadSpec, RegionId } from '../config/world'
 import { RESOURCE_ORDER, type ResourceBag, type ResourceType, type Targetable } from '../core/types'
 import { nextId } from '../core/ids'
-import { buildingTextureKey } from '../art/buildings'
+import { buildingTextureKey, pieceTextureKey, textureFoot } from '../art/buildings'
+import { POST_LEN } from '../world/wallLine'
 
 export type BuildState = 'empty' | 'raising' | 'done'
 
@@ -22,6 +23,12 @@ export class Building implements Targetable {
   halfW: number
   halfH: number
   radius: number
+  /** the solid box enemies steer round and allies are pushed out of: centred `boxDy` below y */
+  boxDy: number
+  boxHW: number
+  boxHH: number
+  /** a wall line's piece (S09b): its footprint follows the line, its art its direction */
+  piece?: PadSpec['piece']
 
   level = 0
   hp = 0
@@ -70,18 +77,66 @@ export class Building implements Targetable {
     this.requiresTownHall = spec.requiresTownHall ?? 0
     this.x = spec.x
     this.y = spec.y
+    this.piece = spec.piece
     this.halfW = this.def.w / 2
     this.halfH = this.def.h / 2
+    this.boxDy = -this.halfH * 0.35
+    this.boxHW = this.halfW
+    this.boxHH = this.halfH * 0.7
+    const pc = spec.piece
+    if (pc) {
+      // The box lies along the line and covers the piece's whole share of it,
+      // 2 px over each end, so neighbours overlap. On a slant it is the
+      // axis-aligned box round the turned rectangle.
+      const along = pc.part === 'post' ? POST_LEN / 2 + 2 : spec.key === 'gate' ? pc.len / 2 : pc.len / 2 + 2
+      const across = spec.key === 'gate' ? 12 : pc.part === 'post' ? POST_LEN / 2 + 2 : 10
+      const ax = Math.abs(pc.ux), ay = Math.abs(pc.uy)
+      this.halfW = ax * along + ay * across
+      this.halfH = ay * along + ax * across
+      this.boxDy = 0
+      this.boxHW = this.halfW
+      this.boxHH = this.halfH
+    }
     this.radius = Math.max(this.halfW, this.halfH) * 0.82
 
-    this.sprite = scene.add.image(spec.x, spec.y, `blueprint_${spec.key}`)
-    this.sprite.setOrigin(0.5, 1 - 16 / this.sprite.height)
-    this.sprite.setDepth(spec.y)
+    this.sprite = scene.add.image(spec.x, spec.y, this.blueprintKey(scene))
+    this.sprite.setDepth(this.depth)
+    this.seat(this.sprite)
 
-    this.ghost = scene.add.image(spec.x, spec.y, buildingTextureKey(spec.key, 1))
-    this.ghost.setOrigin(0.5, 1 - 16 / this.ghost.height)
-    this.ghost.setDepth(spec.y - 0.5)
+    this.ghost = scene.add.image(spec.x, spec.y, this.texKey(scene, 1))
+    this.seat(this.ghost)
+    this.ghost.setDepth(this.depth - 0.5)
     this.ghost.setTint(0x8fd0ff).setAlpha(0.3)
+  }
+
+  /**
+   * Draw order. Runs sort by y, a horizontal run's right neighbour over it
+   * (its end face is hidden). Posts sit over the run ends on either side, so
+   * a corner reads as one turned wall; a gate on a vertical line sits over
+   * its upper jamb post.
+   */
+  get depth(): number {
+    const pc = this.piece
+    if (!pc) return this.y
+    if (pc.part === 'post') return this.y + 33
+    if (this.key === 'gate') return this.y + (pc.dir === 'v' ? 34 : 0)
+    return pc.dir === 'h' ? this.y + this.x * 1e-4 : this.y
+  }
+
+  /** The built art for a level: a wall piece's turned or post variant when there is one. */
+  texKey(scene: Phaser.Scene, lvl: number): string {
+    const k = this.piece ? pieceTextureKey(this.key, lvl, this.piece) : null
+    return k && scene.textures.exists(k) ? k : buildingTextureKey(this.key, lvl)
+  }
+
+  private blueprintKey(scene: Phaser.Scene): string {
+    const k = this.piece ? pieceTextureKey(this.key, 0, this.piece) : null
+    return k && scene.textures.exists(k) ? k : `blueprint_${this.key}`
+  }
+
+  /** Stand the image on the pad: its texture's foot line at y. */
+  private seat(img: Phaser.GameObjects.Image) {
+    img.setOrigin(0.5, 1 - textureFoot(img.texture.key) / img.height)
   }
 
   get maxLevel() { return this.def.levels.length }
@@ -118,17 +173,19 @@ export class Building implements Targetable {
 
   applyTexture() {
     const built = this.level > 0
-    const key = built ? buildingTextureKey(this.key, this.level) : `blueprint_${this.key}`
+    const key = built ? this.texKey(this.sprite.scene, this.level) : this.blueprintKey(this.sprite.scene)
     this.sprite.setTexture(key)
-    this.sprite.setOrigin(0.5, 1 - 16 / this.sprite.height)
-    this.sprite.setDepth(this.y)
+    this.seat(this.sprite)
+    this.sprite.setDepth(this.depth)
     this.sprite.clearTint().setAlpha(1)
     this.ghost.setVisible(!built)
   }
 
   setFrameTexture() {
-    this.sprite.setTexture(`frame_${this.key}`)
-    this.sprite.setOrigin(0.5, 1 - 16 / this.sprite.height)
+    // a turned wall piece has no frame of its own: it rises as its first level
+    const turned = this.piece && this.texKey(this.sprite.scene, 1) !== buildingTextureKey(this.key, 1)
+    this.sprite.setTexture(turned ? this.texKey(this.sprite.scene, Math.max(1, this.level + 1)) : `frame_${this.key}`)
+    this.seat(this.sprite)
     this.ghost.setVisible(false)
   }
 

@@ -1,11 +1,17 @@
 import Phaser from 'phaser'
 import { Building } from '../entities/Building'
 import type { BuildingKey } from '../config/buildings'
-import { PADS, WALL_RING, type PadSpec } from '../config/world'
+import { PADS, WALL_LINES, type PadSpec } from '../config/world'
 import { walkRadius } from '../world/NavGrid'
+import { capDiscs, layWallLine, legacyRingPads, WALL_CAP_R } from '../world/wallLine'
 
-/** Cells whose centre is this close to a built wall pad are walled: pads 62 px apart make one unbroken band. */
-const WALL_BLOCK_RADIUS = 40
+/**
+ * An old save's `wall${i}` lends its level to every new piece this close to
+ * where it stood: a step and a bit, or further beside a gate, where the old
+ * layout left no pad within 96 px.
+ */
+const LEGACY_WALL_REACH = 72
+const LEGACY_GATE_REACH = 128
 import { PAL } from '../config/palette'
 import { POP, PERF } from '../config/balance'
 import { Grid } from '../core/Grid'
@@ -140,27 +146,19 @@ export class BuildingManager {
     return b
   }
 
+  /**
+   * Lay the active wall lines piece by piece (S09b): posts on the corners and
+   * gate jambs, runs spaced evenly between them. Only the palisade is active
+   * until S10 lays the rest.
+   */
   private generateWalls() {
-    const { left, right, top, bottom, step, gates } = WALL_RING
-    const specs: PadSpec[] = []
-    const gapNear = (x: number, y: number) => gates.some(g => Math.hypot(g.x - x, g.y - y) < 96)
-    let i = 0
-    for (let x = left; x <= right; x += step) {
-      for (const y of [top, bottom]) {
-        if (gapNear(x, y)) continue
-        specs.push({ id: `wall${i++}`, key: 'wall', x, y, region: 'hold' })
+    for (const line of WALL_LINES) {
+      if (!line.active) continue
+      for (const p of layWallLine(line)) {
+        this.addPad({ id: p.id, key: p.key, x: p.x, y: p.y, region: line.region,
+          piece: { part: p.part, dir: p.dir, len: p.len, ux: p.ux, uy: p.uy, ...(p.cap ? { cap: p.cap } : {}) } })
       }
     }
-    for (let y = top + step; y < bottom; y += step) {
-      for (const x of [left, right]) {
-        if (gapNear(x, y)) continue
-        specs.push({ id: `wall${i++}`, key: 'wall', x, y, region: 'hold' })
-      }
-    }
-    for (const g of gates) {
-      specs.push({ id: g.id, key: 'gate', x: g.x, y: g.y, region: 'hold' })
-    }
-    for (const s of specs) this.addPad(s)
   }
 
   // ---- queries ---------------------------------------------------------
@@ -446,9 +444,9 @@ export class BuildingManager {
       if (b.level === 0 || !b.def.blocking) continue
       if (b.key === 'wall' || b.key === 'gate') continue // allies pass their own ramparts
       const dx = e.x - b.x
-      const dy = e.y - (b.y - b.halfH * 0.35)
-      const ox = b.halfW + e.radius - Math.abs(dx)
-      const oy = b.halfH * 0.7 + e.radius - Math.abs(dy)
+      const dy = e.y - (b.y + b.boxDy)
+      const ox = b.boxHW + e.radius - Math.abs(dx)
+      const oy = b.boxHH + e.radius - Math.abs(dy)
       if (ox > 0 && oy > 0) {
         // pushed through the NavGrid, so a building by the shore never shoves anyone into the water
         const p = ox < oy
@@ -465,8 +463,8 @@ export class BuildingManager {
     for (const b of list) {
       if (b.level === 0 || !b.def.blocking || !b.alive) continue
       const dx = Math.abs(x - b.x)
-      const dy = Math.abs(y - (b.y - b.halfH * 0.35))
-      if (dx < b.halfW + radius && dy < b.halfH * 0.7 + radius) return b
+      const dy = Math.abs(y - (b.y + b.boxDy))
+      if (dx < b.boxHW + radius && dy < b.boxHH + radius) return b
     }
     return null
   }
@@ -515,11 +513,15 @@ export class BuildingManager {
   /**
    * A standing wall costs the horde WALL_COST to path through (S05), so the
    * flow field goes by the gates, or through the cheapest wall when the ring
-   * is shut. Gates and other buildings never enter the NavGrid.
+   * is shut. Each piece walls a capsule along its share of the line (S09b),
+   * held clear of the gates. Gates and other buildings never enter the NavGrid.
    */
   private syncNav(b: Building) {
     if (b.key !== 'wall') return
-    this.scene.nav.setBlocker(b.padId, b.x, b.y, WALL_BLOCK_RADIUS, b.level > 0 && b.alive)
+    const on = b.level > 0 && b.alive
+    const cap = b.piece?.cap
+    if (cap) this.scene.nav.setBlockerDiscs(b.padId, capDiscs(cap), WALL_CAP_R, on)
+    else if (!b.piece) this.scene.nav.setBlocker(b.padId, b.x, b.y, WALL_CAP_R, on)
   }
 
   // ---- main loop -------------------------------------------------------
@@ -1002,6 +1004,7 @@ export class BuildingManager {
   }
 
   load(data: ReturnType<BuildingManager['toJSON']>) {
+    data = this.remapLegacyWalls(data)
     for (const d of data) {
       const b = this.byPad.get(d.padId)
       if (!b) continue
@@ -1035,6 +1038,36 @@ export class BuildingManager {
     }
     for (const b of this.buildings) this.syncNav(b)
     this.recomputeBonuses()
+  }
+
+  /**
+   * Saves from before S09b name the palisade's pads `wall${i}`, laid round
+   * its bounding box with gaps by the gates. Each new piece the save does not
+   * name takes the level and hp of the nearest old pad that stood within
+   * LEGACY_WALL_REACH (LEGACY_GATE_REACH within 130 px of a gate), so a ring
+   * built under the old layout loads whole, the pieces beside the gates included.
+   */
+  private remapLegacyWalls(data: ReturnType<BuildingManager['toJSON']>) {
+    const legacy = data.filter(d => /^wall\d+$/.test(d.padId) && !this.byPad.has(d.padId) && d.level > 0)
+    if (!legacy.length) return data
+    const palisade = WALL_LINES.find(l => l.id === 'palisade')
+    if (!palisade) return data
+    const where = new Map(legacyRingPads(palisade).map(p => [p.id, p]))
+    const named = new Set(data.map(d => d.padId))
+    const out = data.filter(d => !legacy.includes(d))
+    for (const b of this.buildings) {
+      if (b.key !== 'wall' || named.has(b.padId) || !b.padId.startsWith('palisade.')) continue
+      const byGate = palisade.gates.some(g => Math.hypot(g.x - b.x, g.y - b.y) < 130)
+      let best: (typeof data)[number] | null = null, bd = byGate ? LEGACY_GATE_REACH : LEGACY_WALL_REACH
+      for (const d of legacy) {
+        const o = where.get(d.padId)
+        if (!o) continue
+        const dd = Math.hypot(o.x - b.x, o.y - b.y)
+        if (dd <= bd) { bd = dd; best = d }
+      }
+      if (best) out.push({ padId: b.padId, level: best.level, hp: best.hp, progress: {}, peakWorkers: 0, trains: undefined })
+    }
+    return out
   }
 
   /** Debug helper. */
