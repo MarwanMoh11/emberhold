@@ -97,7 +97,7 @@ export const OUTPOST = {
   safeRadius: 600,
   /** where the stone stands, from the outpost's pad point (the painted stone) */
   stoneDx: 44,
-  stoneDy: 26,
+  stoneDy: 8,
 }
 
 export const WAYSTONE = {

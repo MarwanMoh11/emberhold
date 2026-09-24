@@ -8,6 +8,7 @@ import { QuestLog } from '../ui/QuestLog'
 import { AchievementsPanel } from '../ui/AchievementsPanel'
 import { RunSummary } from '../ui/RunSummary'
 import { RespecOverlay } from '../ui/RespecOverlay'
+import { TravelList } from '../ui/TravelList'
 import { DebugPanel } from '../ui/DebugPanel'
 import { Overlay } from '../ui/Overlay'
 import { PAL } from '../config/palette'
@@ -62,6 +63,8 @@ export class UIScene extends Phaser.Scene {
   private deeds!: AchievementsPanel
   private summary!: RunSummary
   private respec!: RespecOverlay
+  /** the waystone list (S11); S12's atlas replaces it */
+  travel!: TravelList
   private pendingUpgrades = 0
   private stickWasActive = false
   private padWasActive = false
@@ -92,6 +95,7 @@ export class UIScene extends Phaser.Scene {
     this.deeds = new AchievementsPanel(this, this.gs)
     this.summary = new RunSummary(this, this.gs)
     this.respec = new RespecOverlay(this, this.gs)
+    this.travel = new TravelList(this, this.gs)
 
     const ge = this.gs.events
     ge.on('offerUpgrades', () => { this.pendingUpgrades++ })
@@ -320,6 +324,8 @@ export class UIScene extends Phaser.Scene {
 
     this.hud.update(dt)
     this.minimap.update(dt)
+    if (modal) this.travel.hide()
+    else this.travel.update()
     this.debug.update()
 
     if (this.pendingUpgrades > 0 && !this.anyModalOpen()) {

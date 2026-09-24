@@ -14,7 +14,7 @@ import { capDiscs, layWallLine, legacyRingPads, WALL_CAP_R } from '../world/wall
 const LEGACY_WALL_REACH = 72
 const LEGACY_GATE_REACH = 128
 import { PAL } from '../config/palette'
-import { POP, PERF } from '../config/balance'
+import { POP, PERF, OUTPOST } from '../config/balance'
 import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type ResourceBag, type ResourceType } from '../core/types'
 import { clamp, dist, rr, short } from '../core/math'
@@ -79,6 +79,7 @@ export class BuildingManager {
   private dropCache = new Map<number, Building | null>()
   private dropSig = ''
   private dropCacheSig = ''
+  private outpostHealT = 1
 
   /** aggregated settlement bonuses, recomputed whenever something is built */
   bonus = {
@@ -355,8 +356,18 @@ export class BuildingManager {
       this.fielded.add(b.padId)
       this.scene.nodes.addField(b.x, b.y + 40, b.region, 5)
     }
+    if (b.key === 'outpost') this.lightOutpost(b)
     this.syncNav(b)
     this.recomputeBonuses()
+  }
+
+  /**
+   * An outpost's lantern clears the fog round it (S11). The fog brush is
+   * ~480 px across its soft edge, so discs out to `light - 400` clear about
+   * `light` px of ground.
+   */
+  private lightOutpost(b: Building) {
+    this.scene.regions?.revealArea(b.x, b.y, Math.max(0, OUTPOST.light - 400))
   }
 
   /** Drip resources from the hero into whatever pad they are standing in. */
@@ -716,8 +727,25 @@ export class BuildingManager {
       }
     }
 
+    this.tickOutpostAura(dt)
     this.tickRaze(nearest, dt)
     this.updatePanel(nearest)
+  }
+
+  /**
+   * A Lv.2 outpost mends allies (the hero included) within OUTPOST.healRadius
+   * once a second, while no enemy is within OUTPOST.calmRadius of it (S11).
+   * `OUTPOST.heal` is the base S14's Kettle Springs raises.
+   */
+  private tickOutpostAura(dt: number) {
+    this.outpostHealT -= dt
+    if (this.outpostHealT > 0) return
+    this.outpostHealT = 1
+    for (const b of this.dropSites) {
+      if (b.key !== 'outpost' || b.level < 2 || !b.alive) continue
+      if (this.scene.enemies.grid.nearest(b.x, b.y, OUTPOST.calmRadius, e => e.alive)) continue
+      this.scene.combat.healAllies(b.x, b.y, OUTPOST.healRadius, OUTPOST.heal)
+    }
   }
 
   /**
@@ -1103,6 +1131,7 @@ export class BuildingManager {
         this.fielded.add(b.padId)
         this.scene.nodes.addField(b.x, b.y + 40, b.region, 5)
       }
+      if (b.key === 'outpost' && b.level > 0) this.lightOutpost(b)
     }
     for (const b of this.buildings) this.syncNav(b)
     this.recomputeBonuses()

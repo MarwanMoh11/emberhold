@@ -123,4 +123,6 @@ test('a save naming an unknown region or camp is refused', () => {
   assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, campAwake: 'campFerrow' })), null)
   assert.ok(SaveManager.inspectImport(JSON.stringify({ ...ok, campGuards: ['campAshgate.brazier1'] })))
   assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, campGuards: ['campNowhere.boss'] })), null)
+  assert.ok(SaveManager.inspectImport(JSON.stringify({ ...ok, waystones: ['wsHall', 'outDowns', 'wsIsle'] })))
+  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...ok, waystones: ['farm2'] })), null)
 })

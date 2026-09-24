@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { CAMERA, PLAYER, PICKUP } from '../config/balance'
+import { CAMERA, PLAYER, PICKUP, OUTPOST } from '../config/balance'
 import { PAL } from '../config/palette'
 import { HALL, REGIONS, WORLD, raster } from '../config/world'
 import { ABILITY_KEYS } from '../config/abilities'
@@ -32,6 +32,7 @@ import { Approaches, APPROACH_IDS } from '../systems/Approaches'
 import { RouteMarks } from '../world/RouteMarks'
 import { CampManager } from '../systems/CampManager'
 import { CausewayFire } from '../world/CausewayFire'
+import { Waystones } from '../systems/Waystones'
 import { AbilitySystem } from '../systems/AbilitySystem'
 import { LevelSystem } from '../systems/LevelSystem'
 import { QuestManager } from '../systems/QuestManager'
@@ -82,6 +83,8 @@ export class GameScene extends Phaser.Scene {
   camps!: CampManager
   /** the fire on the Regent's Causeway (S10) */
   causeway!: CausewayFire
+  /** outpost and lone waystones, fast travel (S11) */
+  waystones!: Waystones
   abilities!: AbilitySystem
   levels!: LevelSystem
   quests!: QuestManager
@@ -190,6 +193,7 @@ export class GameScene extends Phaser.Scene {
     this.buildings.build()
     this.camps.build()
     this.causeway = new CausewayFire(this)
+    this.waystones = new Waystones(this)
     addScatter(this)
 
     this.player = new Player(this)
@@ -623,6 +627,28 @@ export class GameScene extends Phaser.Scene {
     for (; i < this.edgeMarkers.length; i++) this.edgeMarkers[i].setVisible(false)
   }
 
+  /**
+   * Where the hero wakes after a fall (S11): the standing outpost nearest to
+   * where they fell, if no enemy is within OUTPOST.safeRadius of it and it is
+   * not burning (struck in the last 6 s), and it is nearer than the hall.
+   * Otherwise the hall. Reads the hero's position, which a fall leaves put.
+   */
+  respawnPoint(): { x: number; y: number; padId: string } {
+    const hall = this.buildings.townHall
+    const fx = this.player.x, fy = this.player.y
+    let best = { x: hall.x, y: hall.y + 90, padId: 'hall' }
+    let bestD = dist(fx, fy, hall.x, hall.y)
+    for (const b of this.buildings.outposts()) {
+      if (b.damageT > 0) continue
+      const d = dist(fx, fy, b.x, b.y)
+      if (d >= bestD) continue
+      if (this.enemies.grid.nearest(b.x, b.y, OUTPOST.safeRadius, e => e.alive)) continue
+      best = { x: b.x, y: b.y + 56, padId: b.padId }
+      bestD = d
+    }
+    return best
+  }
+
   // ---- main loop --------------------------------------------------------
   update(time: number, delta: number) {
     this.now = time
@@ -648,17 +674,21 @@ export class GameScene extends Phaser.Scene {
       this.tryAttack()
       this.tryHarvest(dt)
     } else if (this.player.deadTimer <= 0) {
-      const hall = this.buildings.townHall
-      this.player.respawn(hall.x, hall.y + 90)
+      const at = this.respawnPoint()
+      this.player.respawn(at.x, at.y)
+      if (at.padId !== 'hall') this.fx.popup(at.x, at.y - 70, 'THE OUTPOST HOLDS', PAL.gold, 16)
       // small penalty: drop part of what you were carrying
       for (const k of RESOURCE_ORDER) {
         const lost = Math.floor(this.res.carried[k] * 0.35)
         if (lost > 0) {
           this.res.carried[k] -= lost
-          this.pickups.drop(k, lost, hall.x + rr(-60, 60), hall.y + rr(60, 110))
+          this.pickups.drop(k, lost, at.x + rr(-60, 60), at.y + rr(-30, 20))
         }
       }
       this.res.bumpChanged()
+      // a far wake-up cuts rather than pans the length of the map
+      this.cameras.main.centerOn(at.x, at.y)
+      this.terrain.prime(this.cameras.main)
     }
 
     this.nodes.update(dt)
@@ -674,6 +704,7 @@ export class GameScene extends Phaser.Scene {
     this.waves.update(dt)
     this.routeMarks.update()
     this.regions.update(dt)
+    this.waystones.update(dt)
     this.quests.update()
     this.res.tickRates(dt)
     this.fx.update(dt)

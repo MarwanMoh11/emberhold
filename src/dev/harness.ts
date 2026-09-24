@@ -521,5 +521,38 @@ export function installHarness(game: Phaser.Game) {
     pump(0.05)
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege }
+  /** S11: every standing waystone (`*` lit), the stone the hero is on, and what the travel list offers. */
+  const stones = () => {
+    const w = gs().waystones
+    return {
+      here: w.here,
+      channel: w.channel,
+      list: w.list().map((s: any) => `${s.id}${s.active ? '*' : ''}@${Math.round(s.x)},${Math.round(s.y)}`),
+      offers: ui()?.travel?.isShown ? ui().travel.entries() : null,
+    }
+  }
+
+  /**
+   * S11: step onto stone `from` (lighting it), ask to travel to `to`, pump
+   * `seconds`, and report where the hero and the soldiers who were within
+   * the escort radius ended up.
+   */
+  const travel = (from: string, to: string, seconds = 1.6) => {
+    const g = gs(); const w = g.waystones; const p = g.player
+    const st = w.stone(from)
+    if (!st) return `no stone "${from}"`
+    tp(st.x, st.y + 10)
+    const near = g.army.soldiers.filter((u: any) => u.alive && Math.hypot(u.x - p.x, u.y - p.y) <= 500)
+    const ok = w.travel(to)
+    pump(seconds)
+    const dest = w.stone(to)
+    return {
+      ok, why: w.lastWhy, here: w.here, hero: [Math.round(p.x), Math.round(p.y)],
+      dest: dest ? [Math.round(dest.x), Math.round(dest.y)] : null,
+      escort: near.length,
+      escortAtDest: dest ? near.filter((u: any) => Math.hypot(u.x - dest.x, u.y - dest.y) < 300).length : 0,
+    }
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel }
 }

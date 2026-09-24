@@ -22,6 +22,9 @@ export interface GameEvents {
   'camp:burned': { id: string; tier?: 'warcamp' | 'stronghold' | 'fortress'; boss?: string }
   /** A sealed crossing opened (S10: the Regent's Causeway, when Ashgate burns). */
   'crossing:opened': { id: string }
+  /** S11: a waystone lit by the hero's touch; the hero (and escort) arrived by waystone */
+  'waystone:lit': { id: string }
+  'waystone:travelled': { from: string; to: string; escort: number }
   /** A sleeping camp woke: its region was claimed or the hero came within `WAKE_RADIUS` (S08). */
   'camp:woke': { id: string }
   'region:claimed': { id: RegionId }

@@ -3,7 +3,7 @@ import { DEFAULT_QUALITY } from '../core/device'
 import { RESOURCE_ORDER } from '../core/types'
 import { DAYNIGHT, XP } from '../config/balance'
 import { BUILDINGS } from '../config/buildings'
-import { CAMPS, PADS, REGION_BY_ID, WALL_LINES, WORLD } from '../config/world'
+import { CAMPS, PADS, POIS, REGION_BY_ID, WALL_LINES, WORLD } from '../config/world'
 import { SOLDIERS, WORKERS } from '../config/units'
 import { UPGRADE_BY_ID } from '../config/upgrades'
 import { QUESTS } from '../config/quests'
@@ -24,6 +24,9 @@ const padMax = new Map(PADS.map(p => [p.id, BUILDINGS[p.key].levels.length]))
 /** Wall pieces are `${line}.${k}` (S09b); `wall${i}` is the old palisade, remapped on load. */
 const wallLineIds = new Set(WALL_LINES.map(l => l.id))
 const gateIds = new Set(WALL_LINES.flatMap(l => l.gates.map(g => g.id)))
+/** Waystone ids (S11): an outpost's pad id, or a lone stone's POI id. */
+const stoneIds = new Set([...PADS.filter(p => p.key === 'outpost').map(p => p.id),
+  ...POIS.filter(p => p.kind === 'waystone').map(p => p.id)])
 const maxLevelForPad = (id: string) => padMax.get(id)
   ?? (/^wall\d+$/.test(id) || wallLineIds.has(id.split('.')[0]) && /^[A-Za-z]+\.\d+$/.test(id) ? BUILDINGS.wall.levels.length
     : gateIds.has(id) ? BUILDINGS.gate.levels.length : 0)
@@ -100,6 +103,8 @@ function validSave(v: unknown): v is SaveBlob {
     || !v.campAwake.every(id => typeof id === 'string' && CAMPS.some(c => c.id === id)))) return false
   if (v.campGuards !== undefined && (!Array.isArray(v.campGuards) || v.campGuards.length > 64
     || !v.campGuards.every(g => typeof g === 'string' && CAMPS.some(c => g.startsWith(`${c.id}.`))))) return false
+  if (v.waystones !== undefined && (!Array.isArray(v.waystones) || v.waystones.length > 64
+    || !v.waystones.every(id => typeof id === 'string' && stoneIds.has(id)))) return false
   if (v.campHealth !== undefined && (!record(v.campHealth)
     || !Object.entries(v.campHealth).every(([id, hp]) => CAMPS.some(c => c.id === id)
       && finite(hp) && hp > 0 && hp <= 100000))) return false
@@ -160,6 +165,8 @@ export interface SaveBlob {
   campHealth?: Record<string, number>
   /** Camp guards fallen (S10): `${campId}.boss` or `${campId}.brazier${k}`. */
   campGuards?: string[]
+  /** Waystones lit (S11): outpost pad ids, `wsHall`, `wsIsle`. */
+  waystones?: string[]
   abilities: ReturnType<GameScene['abilities']['toJSON']>
   combat: { kills: number; bossKills: number }
   coreLost?: boolean
@@ -254,6 +261,7 @@ export class SaveManager {
       campAwake: s.camps.awakeJSON(),
       campHealth: s.camps.healthJSON(),
       campGuards: s.camps.guardsJSON(),
+      waystones: s.waystones.toJSON(),
       abilities: s.abilities.toJSON(),
       combat: { kills: s.combat.kills, bossKills: s.combat.bossKills },
       coreLost: s.coreLost,
@@ -322,6 +330,7 @@ export class SaveManager {
     // a damaged camp was awake, whether or not the save says so
     s.camps.load(blob.camps, [...blob.campAwake ?? [], ...Object.keys(blob.campHealth ?? {})], blob.campGuards)
     if (blob.campHealth) s.camps.loadHealth(blob.campHealth)
+    s.waystones.load(blob.waystones)
     s.coreLost = coreLost
     s.combat.kills = blob.combat?.kills ?? 0
     s.combat.bossKills = blob.combat?.bossKills ?? 0
