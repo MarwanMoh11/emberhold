@@ -26,7 +26,7 @@ A paste-ready kickoff for any session:
 
 An orchestrator is a parent session that runs the cards as subagents, one at a time. Its own context is 200k as well, so it has to stay thin:
 
-- Loop: read the STATUS.md header, then spawn one subagent with the kickoff above, **in the foreground**. When it returns, read its final report (keep it to 25 lines or fewer) and check that STATUS.md moved on. Then start the next card.
+- Loop: read the STATUS.md header, then spawn one subagent with the kickoff above, **in the foreground**. When it returns, read its final report (keep it to 25 lines or fewer) and check that STATUS.md moved on. Then refresh the preview so the human can play it (`git push origin world-v2`, then `gh workflow run deploy.yml --ref main`; it serves at https://marwanmoh11.github.io/emberhold/v2/, beside the live game, and never pushes to `main`). Then start the next card.
 - Never read code or cards yourself. The subagent does. With 25 cards at about 3k tokens of report each, the orchestrator uses about 75k in total.
 - If a subagent stops at a checkpoint (STATUS says `SXX partial: done through C2`), spawn the **same card** again. The new subagent resumes after the last completed checkpoint.
 - Stop and ask the human when:
