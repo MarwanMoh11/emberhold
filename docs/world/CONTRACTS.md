@@ -197,12 +197,15 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S11: outposts and waystones
 
-*Status: planned.*
+*Status: landed (S11). [src/systems/Waystones.ts](../../src/systems/Waystones.ts), the list at [src/ui/TravelList.ts](../../src/ui/TravelList.ts), `respawnPoint` in `GameScene`, `dropoffFor` / `outposts` in `BuildingManager`.*
 
-- `BuildingKey` gains `'outpost'`.
-- `buildings.dropoffFor(x, y)` (landed in S06) extends to return the depot or the nearest outpost by path.
-- `scene.respawnPoint()` returns the hall or the nearest safe outpost.
-- `waystones.list() → { id, x, y, active }[]`, `waystones.travel(id)` (daytime only) and `waystones.activate(id)`.
+- `BuildingKey` gains `'outpost'` (2 levels; Lv.2 stat `aura: 1`). `FUTURE_PADS` now holds only fishery and tradingPost pads. Constants `OUTPOST { heal 5, healRadius 220, calmRadius 420, light 600, safeRadius 600, stoneDx 44, stoneDy 8 }` and `WAYSTONE { touch 56, channel 1.2, escort 500, hallStone 'wsHall' }` in `config/balance.ts`; **S14** raises `OUTPOST.heal` (Kettle Springs).
+- `buildings.outposts() → Building[]`: built, standing outposts. `buildings.dropoffFor(x, y)`: the depot (hall door while it is down) or the standing outpost nearest by path (`nav.findPath` + `pathLength`), cached per 256 px block until a drop site rises or falls or `nav.version` moves. The hero banks the pack at an outpost as at the depot (not while committed to its upgrade).
+- `scene.respawnPoint() → { x, y, padId }`: the standing outpost nearest the hero's fall with no enemy within `safeRadius` and `damageT <= 0` (not struck in 6 s), if nearer than the hall; else the hall (`padId: 'hall'`). A built outpost reveals ~600 px of fog on build and on load; Lv.2 heals allies within `healRadius` each second while no enemy is within `calmRadius`.
+- `scene.waystones: Waystones`: stone ids are outpost pad ids plus the POIs `wsHall`, `wsIsle` (`LONE_STONES`, drawn with `ws_stone`). `stones() → Stone { id, name, x, y, region, lone }[]` (standing now), `stone(id)`, `list() → StoneInfo (Stone + active)[]`, `isActive(id)`, `activate(id, silent?)` (also on touch within `touch`; `wsHall` starts lit), `here` (the lit stone the hero stands on), `canTravel(to) → { ok, why }`, `travel(to) → boolean` (starts the channel; `lastWhy` on refusal), `channel: { from, to, t } | null`, `progress`, `cancel(why)`, `toJSON()`, `load(ids)`. Night: only `wsHall`. The channel breaks on any hp loss, stepping off the stone, a fall, or nightfall. Soldiers within `escort` arrive in rings of 10 round (stone.x, stone.y + 40).
+- Events: `waystone:lit { id }`, `waystone:travelled { from, to, escort }`.
+- **S12 swap point:** `ui/TravelList.ts` (mounted in `UIScene.create` / `update`, field `travel`) is the stopgap list; replace it with the atlas and call `canTravel` / `travel`. `DockBands.card?: number | null` (the list's bottom edge when it reaches the middle of the view): `GameScene.updateCamera` frames the hero between it and the dock.
+- Harness: `H.stones() → { here, channel, list: ['id*@x,y'], offers }`, `H.travel(from, to, s = 1.6) → { ok, why, here, hero, dest, escort, escortAtDest }`.
 
 ## S12: minimap and atlas
 
@@ -281,4 +284,5 @@ Each session that adds persistent state lists its field here: the owner, then a 
 | `campAwake` | S08 | `string[]` of camp ids awake and standing (optional; every id in `CAMPS`). Load also wakes any camp with a `campHealth` entry |
 | `buildings[].padId` | S09b | wall pieces are `${line}.${k}` (`palisade.0`–`palisade.87`), gates their blueprint ids. Old `wall\d+` still validates; on load each new palisade piece the save does not name takes the level and hp of the nearest old pad within 72 px (128 px within 130 px of a gate). The next save writes the new ids |
 | `campGuards` | S10 | `string[]` of fallen camp guards, `${campId}.boss` or `${campId}.brazier${k}` (optional; ≤ 64; camp ids from `CAMPS`). Guards not listed respawn at full hp on an awake camp |
+| `waystones` | S11 | `string[]` of lit waystone ids: outpost pad ids, `wsHall`, `wsIsle` (optional; ≤ 64; unknown ids refuse the save). `wsHall` is lit whether listed or not |
 | _(add rows as they land)_ | | |

@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S11** ([card](sessions/S11-outposts-and-waystones.md)), then S12 · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S12** ([card](sessions/S12-minimap-and-atlas.md)), then S13 · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -20,10 +20,19 @@ These bind every session. Add a line when one is made, with the date and who dec
 These need the human. Don't guess them. Use the default and flag it in your handoff.
 
 - **v1 saves** ([07-save.md §Migration](design/07-save.md#migration)): the options are the Veteran's charter (default), a clean slate, or keeping v1 playable. Blocks S19 only. Until then, S04's guard keeps v1 saves untouched and starts v2 fresh.
-- **Worker drop-off** (raised by S06): v1 crews stocked their own camp ("the short loop makes the settlement look busy"); design 04 §S06, the blueprint's depot and S06's card send every haul to the depot. Default (landed): the depot, via `buildings.dropoffFor`. Hold crews now walk ~500 px each way; Ferrow farmers ~1,550 px over the bridge until S11 outposts. Returning to v1 is a one-line change in `dropoffFor` (take the worker's camp). Tune in S20 either way.
+- **Worker drop-off** (raised by S06): v1 crews stocked their own camp ("the short loop makes the settlement look busy"); design 04 §S06, the blueprint's depot and S06's card send every haul to the depot. Default (landed): the depot, via `buildings.dropoffFor`. Hold crews now walk ~500 px each way; Ferrow farmers ~1,550 px over the bridge until `outFerrow` stands (S11: `dropoffFor` takes the nearest outpost by path). Returning to v1 is a one-line change in `dropoffFor` (take the worker's camp). Tune in S20 either way.
 - **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s (landed in S09 as `dayLength` in `config/balance.ts`). Tuned in S20.
 
 ## Log
+
+### S11 · Outposts and waystones: done (2026-09-24)
+- C1: `outpost` building (150c 100w; Lv.2 300c 150 stone, 800 → 1200 hp): log blockhouse, lantern pole, standing stone; `ws_stone` for the lone stones. The 17 outpost pads left `FUTURE_PADS`. `dropoffFor` = depot or nearest standing outpost by path (cached per 256 px block). The hero banks the pack at an outpost.
+- C2: `scene.respawnPoint()`; outposts clear ~600 px of fog; Lv.2 heals 5/s within 220 px while no enemy is within 420 (`OUTPOST.heal`, for S14).
+- C3: `Waystones` (`scene.waystones`, save `waystones`), travel list `ui/TravelList.ts` in `UIScene` (**S12 replaces it**; see CONTRACTS §S11). Harness `H.stones()`, `H.travel()`.
+- Verify (harness, one run, 294×714 pane): lumber2's crew dropped at the depot (5120, 3344) before `outDowns`, at `outDowns` (5000, 1514) after, 8 deliveries in 60 s. Night: outDowns → wsIsle refused ("Night: only the Hall Stone"), → wsHall ok. Day: outDowns → wsHall with 4 of 4 soldiers in 500 px (a 5th at 900 px stayed). Died by outDowns: woke there; with a grunt pinned 220 px from it: woke at the hall. Save → `H.start(true)` kept `[wsHall, outDowns, wsIsle]`. User saves restored byte-identical. 3 screenshots (one over budget: the first two had the list covering the outpost, which led to the fix below).
+- Deviations: the Hall Stone starts lit (the night rush home must work before you walk past it). Respawn picks the nearest *safe* outpost, and only if nearer than the hall. "Burning" = struck in the last 6 s (`damageT`) or down. Outpost stones are named after their region. Warning (dusk) still counts as day for travel. The channel also breaks on stepping off the stone. On a narrow screen the list sets `uiBands.card` and the camera frames the hero below it, keeping 150 px, so a 714 px tall pane shows 1 row and "+k more".
+- Trips: `dropoffFor` runs a sync `findPath` on each cache miss (only once an outpost stands); cost with many crews far out is S21's. The pickup sweep (`PickupManager`) still only pulls toward the depot. Not measured: the Lv.2 art and aura in play, landscape list placement, travel with a big army.
+- No blueprint moves, no new open decisions.
 
 ### S10 · Camps 2.0 and fortification lines: done (2026-09-24)
 - C1: `CampSpec.tier/leash/wakeRadius/siegeRadius/boss`; patrols (`Enemy.home`) capped at 2 × `spawns.count`, fight only inside the leash, stroll, walk home past it, path round obstacles (never the hall field). Melee patrols besiege structures within 600 px. Strongholds raise a stand-in boss (scaled `elite`, "GALLOWS KNIGHT" etc.) at camp + (0, 90) in `CampManager.spawnGuard` (**S17 swaps it there**); Ashgate rings itself with 3 braziers (`enm_brazier`, 2000 hp, 260 px). The camp is `shielded` (WARDED) until its guards fall. Save `campGuards`; `camp:burned { id, tier, boss }`.
@@ -48,11 +57,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - Inserted S09b (wall gaps; compact docked panel), and S13b and S13c (village buildings; a settled country). Pacing was slowed in 01, and S10, S14, S18, S20 and S21 were updated to match. No code changed.
 
 ### S09 · Nights 2.0: done (2026-09-24)
-- `src/systems/Approaches.ts` (pure, tested on the real raster): musters along chains (camp → maw → closed), routes down each via field then the hall's, the 2400 px clamp, `live`/`tonight` (opens rules, fronts per night, one raid), `splitBudget`. Gates, `GateId` and the gate posts are gone; `WaveDef.approaches` is an optional preferred-fronts list. API in CONTRACTS §S09.
-- Spawns scatter 120 px around `spawnPoint` and march at 2.4× down their legs, deaf until hit, until the first claimed cell. Muster-tier scaling; 30% of each approach is its camp's walker; a raid takes 30%. Fight window from the first arrival or 25 s; `day = 60 + 10 × claimed` (≤ 180). Warning: `night:warning`, "Tonight: …" banner, ember dotted routes (ground within 1200 px, above the lightmap; minimap).
-- **Arrivals** (first on claimed ground, s after dusk, harness): wave 1 south 8.6–9.0 (three fresh runs); wave 5 + hollow: south 7.5–8.5, west 10.1–12.8 over Millford (barrowmoor › hollow › hold); wave 12, hold only: south 9.5, east 12.5 (Gorge Bridge), west 14.0 (Millford). 0 enemies off the ground in every run. Grunts walk 76 px/s on and off roads. `H.burn('campFerrow')` → south musters at Stairwarden (5904, 6288). Save → `H.start(true)` keeps wave and day; user saves restored byte-identical. 5 screenshots (one over budget: two were stale frames).
-- Deviations: raids don't count against fronts per night. A hit ends the march (normal speed) but the walker keeps its via legs until claimed ground. Legs also switch on the crossing itself (NavGrid via fields target every crossing cell). Saved `phaseT` clamps at 0 (a long night went below the validator's −1). The terrain-chunk budget test now retries with backoff: it flaked ~1 run in 4 before S09 and 3 in 4 with the new test file.
-- Trips: via fields build at scene create (~36 ms each, 3 of them), so every NavGrid version bump now rebuilds 4 fields in slices. Claiming a region with an awake raid camp inside it (downs → campDiggers) spawns that raid on claimed ground, so the fight starts at dusk. Ferrow is tier 2: wave 1 grunts have ×1.5 hp, ×1.3 damage (S20). Camp patrols still don't march or cap (S10). `H.claim` used S04 names and silently failed; fixed. Marching bosses skip their abilities until they arrive. No routes looked wrong in play. No blueprint moves, no new open decisions.
+- `systems/Approaches.ts` (musters, via legs, 2400 px clamp, `tonight`), forced march 2.4× to claimed ground, `night:warning` routes, `dayLength` (CONTRACTS §S09); first arrivals ~8–14 s after dusk.
 
 ### S08 · Regions and claims: done (2026-09-24)
 - `RegionManager` (`claimed/claimAt/claimMask/canClaim/claim`, events `region:claimed`, `camp:burned`, `camp:woke`), border stones, `world/claimTint.ts`; camps start asleep and wake on claim or hero ≤ 900 px (save `campAwake`); CONTRACTS §S08.
