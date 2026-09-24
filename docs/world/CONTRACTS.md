@@ -101,7 +101,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `field(target: 'hall' | \`via:${crossingId}\`) → FlowField`: the first call builds synchronously (~36 ms); a stale one keeps serving while `tick(budgetMs?)` rebuilds it in slices. `building`, `flush()`, `sources(target)`, `stats() → { version, fields, building, frameMs, worstFrameMs, rebuilds, lastBuildMs }` (F2, `H.nav()`).
   - `FlowField`: `nextCell(i) → j | -1`, `dir(x, y) → { dx, dy }` (unit, toward the next cell's centre), `dist(x, y)`, raw `d: Float32Array` and `step: Int8Array` (NB8 index, -1 at the target or unreachable), `version`.
 - `EnemyManager` checks `lineClear` to its target on each retarget (`Enemy.los`); without it, it steps along `field('hall')`. A walled next cell latches that wall as the target. S09: an enemy with a `route` steps along its current leg's field instead.
-- `BuildingManager.syncNav` registers built `wall` pads (radius 40) on build, destroy, demolish and load. Gates and other buildings stay out of the grid.
+- `BuildingManager.syncNav` registers built `wall` pads on build, destroy, demolish and load (S09b: each piece's capsule, see §S09b). Gates and other buildings stay out of the grid.
 - The hero, enemies, soldiers and workers move through `slide` (building push-out too). Projectiles ignore terrain.
 
 ## S06: ally pathing and roads
@@ -162,16 +162,21 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S09b: walls and panels
 
-*Status: planned.*
+*Status: C1–C2 landed (S09b, partial); C3–C4 (the dock) planned. `layWallLine` at [src/world/wallLine.ts](../../src/world/wallLine.ts).*
 
-- `src/world/wallLine.ts` (pure): `layWallLine(line: WallLineBP) → WallPiece[] { id, key: 'wall' | 'gate', part: 'run' | 'post', dir: 'h' | 'v', x, y, len }`. Pieces sit at most `step` apart, with posts at the vertices and gate jambs. Ids are `${line}.${k}`; gates keep their blueprint ids.
-- Wall pieces register a NavGrid capsule (discs every 16 px, radius 28). `Building` swaps its footprint for `dir: 'v'`. Gates stay out of the grid. `maxLevelForPad` accepts `${line}.${k}`, and old `wall\d+` saves remap to the nearest piece.
-- Textures: `bld_wall_v_${lvl}`, `bld_wallpost_${lvl}` and `bld_gate_v_${lvl}`, next to the existing `bld_wall_${lvl}` and `bld_gate_${lvl}`.
-- UI (`ui/skin.ts` or `ui/dock.ts`), for every panel from here on:
+- `src/world/wallLine.ts` (pure): `layWallLine(line: WallLineBP) → WallPiece[] { id, key: 'wall' | 'gate', part: 'run' | 'post', dir: 'h' | 'v', x, y, len, ux, uy, cap? }` in order along the line. Posts on every vertex (not one a gate swallows) and on both jambs of every gate; `ceil(run / step)` runs spaced evenly between stops. Ids `${line}.${k}`; gates keep their blueprint ids. `ux, uy`: unit vector along the line. `cap`: the NavGrid capsule `[ax, ay, bx, by]`, kept `GATE_W / 2 + GATE_CLEAR` (48) px straight-line from every gate centre; absent when that swallows it.
+  - Constants: `GATE_W` 64, `POST_LEN` 20, `WALL_CAP_R` 28, `WALL_CAP_STEP` 16, `GATE_CLEAR` 16. `capDiscs(cap) → number[]` (flat x, y pairs, ≤ 16 px apart). `legacyRingPads(line)`: the pre-S09b `wall${i}` layout.
+- `NavGrid.setBlockerDiscs(id, discs: ArrayLike<number>, radius, on)`: one blocker from many discs (a cell counts once); `setBlocker` now calls it. `BuildingManager.syncNav` registers each built wall piece's `cap` at `WALL_CAP_R`. Gates stay out of the grid.
+- `PadSpec.piece?: { part, dir, len, ux, uy, cap? }` on wall and gate pads. `BuildingManager.generateWalls` lays every `WALL_LINES` entry with `active` (only the palisade until S10).
+- `Building.boxDy / boxHW / boxHH`: the solid box `blockerAt` and `resolveCollision` use (a wall piece's is centred on the line and covers its share + 2 px; turned for slants). `Building.depth` (posts y + 33, a `v` gate y + 34, `h` runs y + x·1e-4), `Building.texKey(scene, lvl)`.
+- Art: `pieceTextureKey(key, lvl, piece) → string | null` (`bld_wall_v_${lvl}`, `bld_wallpost_${lvl}`, `bld_gate_v_${lvl}`; lvl 0 → `blueprint_wall_v` / `blueprint_wallpost` / `blueprint_gate_v`); `textureFoot(texKey)` (px from a texture's bottom to its pad point; 16 unless registered). Horizontal `bld_wall_${lvl}` is 72 px wide.
+- Saves: `maxLevelForPad` accepts `${line}.${k}` for any `WALL_LINES` id, every `WALL_LINES` gate id, and still `wall\d+`; `BuildingManager.load` remaps old `wall\d+` entries (Save fields).
+- Harness: `H.buildLine(id = 'palisade', lvl)` (through the loader; also lowers), `H.wallGaps(lineId = 'palisade') → { pieces, built, navLeaks, bodyLeaks }` (samples every 4 px; a nav leak is ground neither walled nor under a standing gate's box, a body leak is `blockerAt(x, y, 8)` null), `H.assault(key, x, y, seconds, lineId) → { struck, firstBroken, inside, insideUnbroken, target }`.
+- Planned (C3–C4), for every panel from here on:
   - `DOCK` tokens (`gutter`, `pad`, `touch` 44, `rowH`, `collapsedH`, `sideW`, `phoneMaxFrac` 0.30, `deskMaxFrac` 0.20, `titleSize`, `bodySize`);
   - `DockSheet` (a bottom sheet in portrait, a right dock otherwise; `collapsed`; publishes `uiBands.dock`);
-  - `CostChips`, `StatLine`, and `PlateButton({ size: 'compact' })`.
-- Harness: `H.wallGaps(lineId?) → { pieces, built, navLeaks, bodyLeaks }`, `H.buildLine(id, lvl)`, `H.panel() → { rect, frac, collapsed, overlapsBuilding, overlapsHero, targets, minFont }`.
+  - `CostChips`, `StatLine`, and `PlateButton({ size: 'compact' })`;
+  - `H.panel() → { rect, frac, collapsed, overlapsBuilding, overlapsHero, targets, minFont }`.
 
 ## S10: camps and lines
 
@@ -265,4 +270,5 @@ Each session that adds persistent state lists its field here: the owner, then a 
 | `exploredFog` | S03 | `FogMemory.toJSON()`: `r:` runs or `b:` bitset (v1 bare base64 still read), length ≤ `FogMemory.maxEncodedLength(WORLD.width, WORLD.height)` |
 | `regions` | S04, S08 | unchanged shape; S08 owns the rules (`RegionManager.toJSON`, in `REGIONS` order) |
 | `campAwake` | S08 | `string[]` of camp ids awake and standing (optional; every id in `CAMPS`). Load also wakes any camp with a `campHealth` entry |
+| `buildings[].padId` | S09b | wall pieces are `${line}.${k}` (`palisade.0`–`palisade.87`), gates their blueprint ids. Old `wall\d+` still validates; on load each new palisade piece the save does not name takes the level and hp of the nearest old pad within 72 px (128 px within 130 px of a gate). The next save writes the new ids |
 | _(add rows as they land)_ | | |

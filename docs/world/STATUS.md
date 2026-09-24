@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S09b** ([card](sessions/S09b-walls-and-panels.md)), then S10 · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S09b, resume at C3** ([card](sessions/S09b-walls-and-panels.md); S09b partial: done through C2), then S10 · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -25,6 +25,14 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S09b · Walls and panels: partial, done through C2 (2026-09-24)
+- C1: `src/world/wallLine.ts` (pure): `layWallLine`, `capDiscs`, `legacyRingPads`. The palisade is 92 pads: `palisade.0`–`palisade.87` (76 runs, 12 posts on the corners and jambs) plus gateN/E/S/W. `generateWalls` lays every active `WALL_LINES` entry; `PadSpec.piece`; `NavGrid.setBlockerDiscs` (capsules, discs every 16 px, r 28); `Building.boxDy/boxHW/boxHH` centred on the line for `blockerAt`/`resolveCollision`. API in CONTRACTS §S09b.
+- C2: horizontal runs 72 px wide; `bld_wall_v_*`, `bld_wallpost_*`, `bld_gate_v_*`, chalk `blueprint_wall_v/_wallpost/_gate_v`; `textureFoot` seats every building image; posts draw over run ends (depth y + 33).
+- Verify: `tests/wall-line.test.mjs` (every `WALLS` line) green. `H.wallGaps('palisade')`: 0 nav and 0 body leaks at L1 and L3, and after loading a save with 66 old `wall\d+` ids at L1 and at L3 (92/92 built). `H.assault` grunts from N, E, W and NE, 45 s each through wave 1: each struck a gate or piece, none got in, none broke one. Saves restored byte-identical; viewport untouched.
+- Deviations: capsules keep 48 px straight-line from a gate's centre (discs on the jambs walled every gate shut, and gatePass sits on a V bend). The remap is piece-centric: each new piece takes the nearest old pad within 72 px, 128 px beside a gate (the old layout left none within 96 px). Enemies still have no hard wall collision (steering and the field only), as before.
+- Trips: screenshot 1 (1×, NW corner at L1) read as one turned wall; two more after `H.tp` came back with the canvas at quarter size, so the L2/L3 turned art and the gateW join are **unchecked by eye**: look first on resume. The minimap still draws the ring from `WALL_RING`.
+- Stopped at the README's context rule. C3 (DOCK, DockSheet, CostChips, StatLine, compact PlateButton) and C4 (panels on the dock, camera offset, stone card, `H.panel`) remain. No blueprint moves, no new open decisions.
+
 ### Plan amended after the playtest (2026-09-24)
 - Inserted S09b (wall gaps; compact docked panel), and S13b and S13c (village buildings; a settled country). Pacing was slowed in 01, and S10, S14, S18, S20 and S21 were updated to match. No code changed.
 
@@ -45,12 +53,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - Trips: a woken camp spawns uncapped patrols (every `spawns.every`) even in unclaimed ground: S10 owns the 2× cap and leash. `H.tp` near a camp wakes it for good. Upgrading the hall in the harness: `H.tp` to the hall and `buildings.commitUpgrade(hall)` each pump (`H.build` doesn't commit upgrades). `zonesNextTarget` skips regions failing `adjacent`/`camps`. No blueprint moves, no new open decisions.
 
 ### S07 · Paint the frontier: done (2026-09-23)
-- Painters: `Terrain.ts` holds the wash (`BIOME` recipes blended per cell and warped, ~96 px borders; water, ice, banks, cliff face and cast shadow, lava core, crust and glow, per 8 px sample) and the decals (`paintDecals`, batched). `TerrainFeatures.ts` holds feature lines (flow, ripples, cracks, cliff hatching, rubble, shore, crest and lava ink, foam), `paintRoads` and `paintCrossings`. `terrainField.ts` holds the signed distance fields, `cliffS` and contours built from `under`. Props: `world/scatter.ts` (placement) and `art/scatter.ts` (20 `sc_` textures). Map in CONTRACTS §S07.
-- Bake cost: steady 5.3 ms per 1024 px chunk (median), p95 6.4, slices ≤ 4.6 ms. Over 528 in-game bakes (two full pans), 3 were over 12 ms: 21.9 on the first chunk after a map-wide jump, plus 12.3 and 12.4. Different chunks spike on each run (GC). A cold boot prime reaches ~15 ms, and `warmTerrain` takes ~140 ms once at scene create. Direct painter passes: max 8.3 ms. The old flat painter took 13–28 ms per chunk.
-- 1,019 props (cap 1,500), placed deterministically per chunk, ≥ 100 px from pads and clear of fields, camps (240), POIs and claim stones (90), roads (40) and crossings (96). Highland pines are snow-dusted so nobody tries to chop them.
-- For S14's landmarks: use the `bake()` ink style with a 1.6–2 px outline, `groundShadow`, feet 8 px up, depth y, and `culler.add`. Pick tones from the region's `BIOME` recipe. Props leave 90 px around every POI.
-- Deviations: roads are Chaikin-smoothed, so they run ≤ ~10 px off the raster's road cells at bends. Drawn shores can sit ≤ 16 px from the nav edge (blurred signed distance fields). The wash is sampled every 8 px (was 4). Any bridge over lava draws as obsidian. `TerrainChunks.stats` gained `chunkMs` and `worstChunkMs` (F2). Verify used 4 screenshots, all composites: 2 of the painter alone, and 2 in-game covering all six card locations. No seams.
-- Trips: the TEMP spawn-gate posts still stand by the bridges (S09). HMR reloads sometimes throw S04's `glTexture` null error; a clean load plus a full pan throws none. The claim tint goes after `paintCrossings` and before the set pieces. Saves restored byte-identical. No blueprint moves, no new open decisions.
+- Painters `Terrain.ts` (wash, decals) and `TerrainFeatures.ts` (feature lines, `paintRoads`, `paintCrossings`); props via `world/scatter.ts` + `art/scatter.ts`; bake ~5.3 ms per chunk (CONTRACTS §S07).
 
 ### S06 · Ally pathing and roads: done (2026-09-23)
 - `PathFind` (A*, LRU, queue) + `PathFollower`; `nav.findPath/requestPath/onRoad/allySpeedAt`, `ROAD_SPEED`; `buildings.dropoffFor` (depot) per CONTRACTS §S06; harness `H.watch`, `H.run`.
