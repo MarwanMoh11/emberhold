@@ -42,9 +42,15 @@ Assume about 35k is gone before you start (system prompt and tools). Plan the re
 |---|---|---|
 | Orientation | ≤ 20k | README, STATUS, your card, the listed design sections and CONTRACTS entries |
 | Reading code | ≤ 50k | only the files and symbols your card names |
-| Doing | ≤ 60k | edits, new files, test output |
-| Verifying | ≤ 20k | tests, typecheck, harness, 2–4 screenshots at most |
+| Doing | ≤ 70k | edits, new files, test output |
+| Verifying | ≤ 10k | tests, typecheck, lint, one harness smoke check, 0–2 screenshots |
 | Reserve | ~15k | handoff and surprises |
+
+**Testing is big-picture only** (decided by the human on 2026-09-24). Testing is where earlier sessions burned the most tokens, so spend as little on it as you can:
+- At each checkpoint, run `npm test`, `npm run typecheck` and `npm run world:lint` once, piped short. That is the gate.
+- Add new tests only for the card's headline behaviour: a few assertions, not exhaustive coverage.
+- In the browser, do **one** smoke check per card: the game boots, and the headline feature visibly works. Take no more than **two** screenshots, and only when the card changes what the player sees.
+- No soak runs across several nights, no timing sweeps, no pixel measurements, and no repeated re-runs to polish a number. If an acceptance line asks for a detailed measurement, satisfy it with one representative check. Write down what you didn't measure; S20 and S22 cover it.
 
 **Stop rule.** Stop when either of these is true:
 - you think more than about 70% of your context is used;
@@ -72,7 +78,7 @@ In either case, stop at the **next checkpoint**: get tests and typecheck green, 
 - **Pipe long output.** Use `npm test 2>&1 | tail -25`, `npm run typecheck 2>&1 | head -30` and `npm run world:lint`. Its output is already terse.
 - **Don't re-read a file you just edited.** Don't paste code into STATUS.md.
 - If you spawn a helper agent to search, ask for an answer of 300 words or fewer with `file:line` references, not dumps.
-- **Browser checks.** Drive the dev harness through `javascript_tool` and return small JSON. Take screenshots at `scale: 0.5`, and no more than four per session. Back up the real save first (see the repo memory note about browser testing).
+- **Browser checks.** Drive the dev harness through `javascript_tool` and return small JSON. Take screenshots at `scale: 0.5`, and no more than two per session. Back up the real save first (see the repo memory note about browser testing).
 
 ## Handoff (end of every session, including partial ones)
 
