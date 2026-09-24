@@ -31,6 +31,7 @@ import { RegionManager } from '../systems/RegionManager'
 import { Approaches, APPROACH_IDS } from '../systems/Approaches'
 import { RouteMarks } from '../world/RouteMarks'
 import { CampManager } from '../systems/CampManager'
+import { CausewayFire } from '../world/CausewayFire'
 import { AbilitySystem } from '../systems/AbilitySystem'
 import { LevelSystem } from '../systems/LevelSystem'
 import { QuestManager } from '../systems/QuestManager'
@@ -79,6 +80,8 @@ export class GameScene extends Phaser.Scene {
   routeMarks!: RouteMarks
   regions!: RegionManager
   camps!: CampManager
+  /** the fire on the Regent's Causeway (S10) */
+  causeway!: CausewayFire
   abilities!: AbilitySystem
   levels!: LevelSystem
   quests!: QuestManager
@@ -186,6 +189,7 @@ export class GameScene extends Phaser.Scene {
     this.nodes.build()
     this.buildings.build()
     this.camps.build()
+    this.causeway = new CausewayFire(this)
     addScatter(this)
 
     this.player = new Player(this)
@@ -218,6 +222,7 @@ export class GameScene extends Phaser.Scene {
     cam.centerOn(this.player.x, this.player.y)
     // everything on screen at spawn is baked before the first frame; the rest streams in
     this.terrain.prime(cam)
+    this.causeway.sync()
     this.regions.update(0)
     if (this.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)) {
       this.scheduleFinalBoss()
@@ -662,6 +667,7 @@ export class GameScene extends Phaser.Scene {
     this.army.update(dt)
     this.enemies.update(dt)
     this.camps.update(dt)
+    this.causeway.update(dt)
     this.projectiles.update(dt)
     this.pickups.update(dt)
     this.abilities.update(dt)

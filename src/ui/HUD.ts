@@ -220,6 +220,9 @@ export class HUD {
       const r = REGION_BY_ID.get(id)
       if (r) this.toast(r.name, r.blurb, 4.6)
     })
+    this.game.bus.on('crossing:opened', ({ id }) => {
+      if (id === 'calderaCauseway') this.toast('The fire on the causeway dies.', '', 4.6)
+    })
 
     this.layout()
     ui.scale.on('resize', () => this.layout())

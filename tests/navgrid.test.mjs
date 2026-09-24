@@ -133,3 +133,13 @@ test('fords slow, and lines stop at water and walls', () => {
   nav.setBlocker('w', 5120, 4000, 40, true)
   assert.ok(!nav.lineClear(5120, 4450, 5120, 3900), 'not through a wall')
 })
+
+test('the Regent\'s Causeway is fire-sealed until it is opened (S10)', () => {
+  const nav = new NavGrid(R, { hall: W.HALL })
+  const v0 = nav.version
+  assert.equal(nav.isSealed('calderaCauseway'), true)
+  assert.equal(nav.passableAt(6500, 7655), false)
+  nav.setSealed('calderaCauseway', false)
+  assert.equal(nav.passableAt(6500, 7655), true)
+  assert.ok(nav.version > v0)
+})
