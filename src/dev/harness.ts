@@ -30,6 +30,8 @@ import { DPR } from '../core/device'
  *   H.assault('grunt', 5120, 2300, 40)  send one walker at the ring: what it hit, whether it got in unbroken
  *   H.panel()            the docked sheet: rect, share of the viewport, overlap with the building and hero, targets, smallest font
  *   H.tap(x, y, holdS)   press the canvas at a CSS-pixel point (a real DOM mouse event), hold for holdS s of game time
+ *   H.atlas(open?)       the atlas (S12): open or close it; view, explored regions, stones on screen, open ms, bake stats
+ *   H.mini()             the minimap (S12): panel rect, window radius, marks draw ms
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -528,7 +530,7 @@ export function installHarness(game: Phaser.Game) {
       here: w.here,
       channel: w.channel,
       list: w.list().map((s: any) => `${s.id}${s.active ? '*' : ''}@${Math.round(s.x)},${Math.round(s.y)}`),
-      offers: ui()?.travel?.isShown ? ui().travel.entries() : null,
+      offers: w.here ? w.list().filter((s: any) => s.active && s.id !== w.here).map((s: any) => ({ id: s.id, ...w.canTravel(s.id) })) : null,
     }
   }
 
@@ -554,5 +556,14 @@ export function installHarness(game: Phaser.Game) {
     }
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel }
+  /** S12: open (true) or close (false) the atlas, then report it and the bake. */
+  const atlas = (open?: boolean) => {
+    const u = ui()
+    if (open === true && !u.atlas.open) u.openAtlas()
+    if (open === false && u.atlas.open) u.atlas.close()
+    return { ...u.atlas.inspect(), bake: gs().atlasBake.stats() }
+  }
+  const mini = () => ui().minimap.inspect()
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini }
 }

@@ -225,15 +225,17 @@ function washAt(F: TerrainFields, px: number, py: number) {
   }
 }
 
-let scratch: [HTMLCanvasElement, Ctx] | null = null
+/** one scratch field per sample step, so the chunk streamer and the atlas bake never resize each other's */
+const scratches = new Map<number, [HTMLCanvasElement, Ctx]>()
 
 /** 1. The wash, sampled on a grid pinned to the world's origin and smoothed up. */
-function paintWash(x: Ctx, wx: number, wy: number, size: number) {
+function paintWash(x: Ctx, wx: number, wy: number, size: number, step = WASH_STEP) {
   const F = terrainFields()
-  const f = 1 / WASH_STEP
+  const f = 1 / step
   const i0 = Math.floor(wx * f) - 1, j0 = Math.floor(wy * f) - 1
   const cols = Math.ceil((wx + size) * f) + 2 - i0, rows = Math.ceil((wy + size) * f) + 2 - j0
-  scratch ??= makeCanvas(cols, rows)
+  let scratch = scratches.get(step)
+  if (!scratch) { scratch = makeCanvas(cols, rows); scratches.set(step, scratch) }
   const [field, fx] = scratch
   if (field.width !== cols || field.height !== rows) { field.width = cols; field.height = rows }
   const img = fx.createImageData(cols, rows)
@@ -505,6 +507,25 @@ export function paintTerrainRect(x: Ctx, wx: number, wy: number, size: number, _
   const g = x.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75)
   g.addColorStop(0, css(0x000000, 0)); g.addColorStop(1, css(0x3a2414, 0.35))
   x.fillStyle = g; x.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0)
+  x.restore()
+}
+
+/**
+ * The painter in low detail, for the atlas (S12): world rect
+ * [wx, wx+size) × [wy, wy+size) at about 1/16 scale. The wash is sampled once
+ * per `ATLAS_STEP` world px (one sample per atlas texel), then the shores and
+ * rivers, the roads, the crossings and the claim tint; decals, set pieces and
+ * grain are below a texel at this scale and are skipped.
+ */
+export const ATLAS_STEP = 16
+export function paintAtlasRect(x: Ctx, wx: number, wy: number, size: number) {
+  const rect: Rect = { x0: wx, y0: wy, x1: wx + size, y1: wy + size }
+  x.save()
+  paintWash(x, wx, wy, size, ATLAS_STEP)
+  paintFeatureLines(x, rect)
+  paintRoads(x, rect)
+  paintCrossings(x, rect)
+  paintClaimTint(x, rect)
   x.restore()
 }
 

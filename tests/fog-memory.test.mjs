@@ -4,7 +4,7 @@ import { loadTs } from './load-ts.mjs'
 
 const { FogMemory } = await loadTs('src/core/FogMemory.ts')
 const { RegionManager, FOG_SCALE } = await loadTs('src/systems/RegionManager.ts')
-const { Minimap } = await loadTs('src/ui/Minimap.ts')
+const { ChartMemory } = await loadTs('src/ui/chart.ts')
 const { WORLD } = await loadTs('src/config/world/index.ts')
 
 test('explored cells round trip in a compact save field', () => {
@@ -122,20 +122,16 @@ test('loading exploration restores the fog brush marks', () => {
   assert.equal(second.marks.length, 2) // the remembered mark survives bad data
 })
 
-test('the minimap rebuilds travel outside the hold from saved world fog', () => {
+test('the charts rebuild travel outside the hold from saved world fog', () => {
   const saved = new FogMemory(WORLD.width, WORLD.height)
   saved.mark(3100, 2400)
   const restored = new FogMemory(WORLD.width, WORLD.height)
   restored.load(saved.toJSON())
 
-  const minimap = Object.create(Minimap.prototype)
-  minimap.explored = new Uint8Array(34 * 28)
-  minimap.coldDirty = false
-  minimap.game = {
-    regions: { forEachExplored: fn => restored.forEachMarked(fn) },
-  }
-  minimap.restoreWorldExploration()
-  assert.equal(minimap.exploredAt(3100, 2400), true)
-  assert.equal(minimap.exploredAt(100, 100), false)
-  assert.equal(minimap.coldDirty, true)
+  // what Minimap's constructor does with the world's restored marks (S12: the seen grid is shared with the atlas)
+  const memory = new ChartMemory(WORLD.width, WORLD.height)
+  restored.forEachMarked((x, y) => memory.reveal(x, y))
+  assert.equal(memory.seenAt(3100, 2400), true)
+  assert.equal(memory.seenAt(100, 100), false)
+  assert.ok(memory.version > 0)
 })

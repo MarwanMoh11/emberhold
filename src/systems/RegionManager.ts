@@ -18,6 +18,8 @@ import { DPR } from '../core/device'
 
 /** World px per fog texel: the fog RenderTexture is the world at 1/8. */
 export const FOG_SCALE = 8
+/** The live fog page's texture key (S12): world px / FOG_SCALE per texel. */
+export const FOG_KEY = 'fog_live'
 /** Banner frame width in world units; also its wrap width. */
 const BANNER_W = 248
 /** Standing this close to a stone opens its card on the dock (S09b): the name alone floats over the stone. */
@@ -128,6 +130,16 @@ export class RegionManager {
     const h = Math.ceil(WORLD.height / FOG_SCALE)
     this.fog = this.scene.add.renderTexture(0, 0, w, h)
       .setOrigin(0, 0).setScale(FOG_SCALE).setDepth(depth).setAlpha(0.9)
+    // Shared under FOG_KEY: the minimap and the atlas (S12) crop this same page,
+    // so the chart never knows more, or less, than the world does.
+    // A restart keeps the last run's page one generation longer under another
+    // key, so a UI image still pointing at it never draws a freed texture.
+    const tm = this.scene.textures
+    if (tm.exists(FOG_KEY)) {
+      if (tm.exists(`${FOG_KEY}_prev`)) tm.remove(`${FOG_KEY}_prev`)
+      tm.renameTexture(FOG_KEY, `${FOG_KEY}_prev`)
+    }
+    this.fog.saveTexture(FOG_KEY)
     // Unwalked ground is the blank page with the surveyor's sketch on it,
     // not a black void: see buildVellumTexture.
     if (!this.scene.textures.exists('fog_vellum')) buildVellumTexture(this.scene, FOG_SCALE)
@@ -399,6 +411,7 @@ export class RegionManager {
     this.claimMask()
     setClaimed(this.owned)
     this.scene.terrain?.invalidate(claimRect(spec.index))
+    this.scene.atlasBake?.invalidate(claimRect(spec.index))
     this.lastClaimMs = performance.now() - t0
     v.dwell = 0
     v.marker.clear()

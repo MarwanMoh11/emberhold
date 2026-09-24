@@ -9,9 +9,11 @@ import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type Targetable } from '../core/types'
 import { paintTerrainRect, warmTerrain } from '../world/Terrain'
 import { TerrainChunks } from '../world/TerrainChunks'
+import { AtlasBake } from '../world/AtlasBake'
 import { addScatter } from '../world/scatter'
 import { Culler } from '../systems/Culler'
 import { NavGrid } from '../world/NavGrid'
+import type { PathTicket, Pt } from '../world/PathFind'
 import { NavDebug } from '../world/NavDebug'
 
 import { Player } from '../entities/Player'
@@ -60,6 +62,8 @@ export class GameScene extends Phaser.Scene {
   bus!: Bus
   audio!: AudioManager
   terrain!: TerrainChunks
+  /** the world at 1/16 for the atlas and the minimap (S12) */
+  atlasBake!: AtlasBake
   /** Hides static world objects far outside the view; see Culler. */
   culler!: Culler
   /** what walkers may stand on, and the horde's flow fields (S05) */
@@ -112,6 +116,14 @@ export class GameScene extends Phaser.Scene {
   private dockShift = { x: 0, y: 0 }
   private keys!: Record<string, Phaser.Input.Keyboard.Key>
   private objectiveArrow!: Phaser.GameObjects.Image
+  /**
+   * The walk to an off-screen quest target (S12): the arrow follows it round
+   * rivers and cliffs, and the atlas draws it. Null when the target is on
+   * screen, or when no path was found (the arrow then points straight).
+   */
+  questRoute: Pt[] | null = null
+  private questTicket: PathTicket | null = null
+  private questAsk = { x: NaN, y: NaN, tx: NaN, ty: NaN, t: 0 }
   private edgeMarkers: Phaser.GameObjects.Image[] = []
   private zoomTarget = CAMERA.baseZoom
   private harvestCd = 0
@@ -148,6 +160,7 @@ export class GameScene extends Phaser.Scene {
 
     warmTerrain()
     this.terrain = new TerrainChunks(this, paintTerrainRect, { width: WORLD.width, height: WORLD.height, depth: DEPTH.terrain })
+    this.atlasBake = new AtlasBake(this)
     this.culler = new Culler()
     this.nav = new NavGrid(raster(), { hall: HALL })
     this.nav.field('hall')
@@ -572,7 +585,8 @@ export class GameScene extends Phaser.Scene {
     }
     const d = dist(p.x, p.y, v.targetX, v.targetY)
     if (d < 120) { this.objectiveArrow.setVisible(false); return }
-    const ang = Math.atan2(v.targetY - p.y, v.targetX - p.x)
+    const [ax, ay] = this.questAim(v.targetX, v.targetY)
+    const ang = Math.atan2(ay - p.y, ax - p.x)
     const r = 72 + Math.sin(this.now * 0.005) * 6
     this.objectiveArrow
       .setVisible(true)
@@ -581,6 +595,44 @@ export class GameScene extends Phaser.Scene {
       // it already points at +90°. Adding another 90° sent it the opposite way.
       .setRotation(ang - Math.PI / 2)
       .setAlpha(0.9)
+  }
+
+  /**
+   * Where the quest arrow points: straight at a target on screen; otherwise
+   * along the walk to it (`questRoute`), at the first bend 260 px or more
+   * ahead. The path is asked for again when the target moves, the hero strays
+   * 400 px from where it was asked, or every 4 s.
+   */
+  private questAim(tx: number, ty: number): [number, number] {
+    const p = this.player
+    if (this.cameras.main.worldView.contains(tx, ty)) {
+      this.questRoute = null
+      this.questTicket = null
+      return [tx, ty]
+    }
+    const a = this.questAsk
+    if (this.questTicket?.done) {
+      this.questRoute = this.questTicket.path
+      this.questTicket = null
+    }
+    const stale = a.tx !== tx || a.ty !== ty || dist(p.x, p.y, a.x, a.y) > 400 || this.now - a.t > 4000
+    if (stale && !this.questTicket) {
+      if (a.tx !== tx || a.ty !== ty) this.questRoute = null
+      this.questTicket = this.nav.requestPath(p.x, p.y, tx, ty)
+      Object.assign(a, { x: p.x, y: p.y, tx, ty, t: this.now })
+    }
+    const r = this.questRoute
+    if (!r || r.length < 2) return [tx, ty]
+    // the nearest route point to the hero, then the first one far enough past it
+    let near = 0, best = Infinity
+    for (let i = 0; i < r.length; i++) {
+      const d = dist(p.x, p.y, r[i][0], r[i][1])
+      if (d < best) { best = d; near = i }
+    }
+    for (let i = near; i < r.length; i++) {
+      if (dist(p.x, p.y, r[i][0], r[i][1]) >= 260) return r[i]
+    }
+    return [tx, ty]
   }
 
   /** Edge markers for threats you cannot see. */
@@ -653,6 +705,7 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.now = time
     this.terrain.update(this.cameras.main)
+    this.atlasBake.update(delta / 1000)
     this.culler.update(this.cameras.main)
     this.navDebug.update(this.cameras.main)
     if (this.paused) return
@@ -784,6 +837,7 @@ export class GameScene extends Phaser.Scene {
       pickups: this.pickups.activeCount,
       projectiles: this.projectiles.activeCount,
       chunks: this.terrain.stats(),
+      atlas: this.atlasBake.stats(),
       cull: this.culler.stats(),
       nav: this.nav.stats(),
       maxPickups: PICKUP.maxActive,

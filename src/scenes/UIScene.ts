@@ -8,7 +8,7 @@ import { QuestLog } from '../ui/QuestLog'
 import { AchievementsPanel } from '../ui/AchievementsPanel'
 import { RunSummary } from '../ui/RunSummary'
 import { RespecOverlay } from '../ui/RespecOverlay'
-import { TravelList } from '../ui/TravelList'
+import { Atlas, TravelChip } from '../ui/Atlas'
 import { DebugPanel } from '../ui/DebugPanel'
 import { Overlay } from '../ui/Overlay'
 import { PAL } from '../config/palette'
@@ -63,8 +63,10 @@ export class UIScene extends Phaser.Scene {
   private deeds!: AchievementsPanel
   private summary!: RunSummary
   private respec!: RespecOverlay
-  /** the waystone list (S11); S12's atlas replaces it */
-  travel!: TravelList
+  /** the full-screen map (S12): travel between waystones happens here */
+  atlas!: Atlas
+  /** the plate that offers the atlas while the hero stands on a lit stone (replaced S11's list) */
+  travel!: TravelChip
   private pendingUpgrades = 0
   private stickWasActive = false
   private padWasActive = false
@@ -85,7 +87,7 @@ export class UIScene extends Phaser.Scene {
     this.pendingUpgrades = Math.max(0, this.gs.player.level - 1 - this.gs.levels.pickCount)
     this.hud = new HUD(this, this.gs)
     // After the HUD: the minimap lays itself out from the bands the HUD writes.
-    this.minimap = new Minimap(this, this.gs)
+    this.minimap = new Minimap(this, this.gs, () => this.toggleAtlas())
     this.joystick = new Joystick(this)
     this.levelUp = new LevelUpOverlay(this, this.gs)
     this.pause = new PauseMenu(this, this.gs)
@@ -95,7 +97,8 @@ export class UIScene extends Phaser.Scene {
     this.deeds = new AchievementsPanel(this, this.gs)
     this.summary = new RunSummary(this, this.gs)
     this.respec = new RespecOverlay(this, this.gs)
-    this.travel = new TravelList(this, this.gs)
+    this.atlas = new Atlas(this, this.gs, this.minimap.memory, () => this.resumeGame())
+    this.travel = new TravelChip(this, this.gs, () => this.openAtlas())
 
     const ge = this.gs.events
     ge.on('offerUpgrades', () => { this.pendingUpgrades++ })
@@ -114,6 +117,8 @@ export class UIScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => this.togglePause())
     this.input.keyboard?.on('keydown-F2', () => this.toggleDebug())
     this.input.keyboard?.on('keydown-P', () => this.togglePause())
+    this.input.keyboard?.on('keydown-M', () => this.toggleAtlas())
+    this.input.keyboard?.on('keydown-ENTER', () => { if (this.atlas.open) this.atlas.confirm() })
     this.input.keyboard?.on('keydown', () => this.gs.audio.unlock())
 
     this.hud.hint(IS_TOUCH
@@ -135,7 +140,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private anyModalOpen() {
-    return this.levelUp.open || this.pause.open || this.coreLost.open
+    return this.levelUp.open || this.pause.open || this.coreLost.open || this.atlas.open
       || this.screens().some(s => s.open)
   }
 
@@ -204,8 +209,25 @@ export class UIScene extends Phaser.Scene {
     this.scene.resume('Game')
   }
 
+  /** Open the atlas over a paused game (no save: it is a look, not a stop). */
+  openAtlas() {
+    if (this.atlas.open || this.anyModalOpen()) return
+    if (this.debug.open) this.debug.hide()
+    this.atlas.show()
+    this.gs.audio.play('ui')
+    this.gs.paused = true
+    this.scene.pause('Game')
+  }
+
+  toggleAtlas() {
+    if (this.atlas.open) this.atlas.close()
+    else this.openAtlas()
+  }
+
   togglePause() {
     if (this.levelUp.open || this.coreLost.open) return
+    // ESC, P or Start over the atlas folds the map away first
+    if (this.atlas.open) { this.atlas.close(); return }
     // ESC out of a sub-screen backs up one step rather than resuming the fight
     // with a card still on the glass.
     if (this.screens().some(s => s.open)) { this.closeScreen(); return }
@@ -274,6 +296,14 @@ export class UIScene extends Phaser.Scene {
       if (b.has(1)) this.closeScreen()
       return
     }
+    if (this.atlas.open) {
+      // B or Back folds it; the d-pad walks the lit stones; A travels
+      if (b.has(1) || b.has(8)) this.atlas.close()
+      else if (b.has(0)) this.atlas.confirm()
+      else if (b.has(12) || b.has(14)) this.atlas.cycle(-1)
+      else if (b.has(13) || b.has(15)) this.atlas.cycle(1)
+      return
+    }
     if (this.pause.open) {
       if (b.has(12)) this.pause.navigate('up')
       if (b.has(13)) this.pause.navigate('down')
@@ -286,7 +316,7 @@ export class UIScene extends Phaser.Scene {
     for (let i = 0; i < 5; i++) if (b.has(i)) this.gs.abilities.castSlot(i)
     if (b.has(5)) this.gs.player.dodge(pad.x, pad.y)
     if (b.has(7)) this.gs.abilities.castUltimate()
-    if (b.has(8)) this.minimap.toggle()
+    if (b.has(8)) this.openAtlas()
     if (b.has(10)) this.gs.toggleHold()
   }
 
@@ -324,8 +354,8 @@ export class UIScene extends Phaser.Scene {
 
     this.hud.update(dt)
     this.minimap.update(dt)
-    if (modal) this.travel.hide()
-    else this.travel.update()
+    this.atlas.update(dt)
+    this.travel.update(modal)
     this.debug.update()
 
     if (this.pendingUpgrades > 0 && !this.anyModalOpen()) {

@@ -13,8 +13,8 @@ import type { GameScene } from '../scenes/GameScene'
  * WAYSTONE.escort arrive in a ring at the far stone. By day any lit stone;
  * at night only the Hall Stone, the rush home.
  *
- * The travel list the hero picks from is `ui/TravelList.ts` for now; S12
- * moves it into the atlas and keeps calling `list`, `canTravel` and `travel`.
+ * The hero picks a destination on the atlas (`ui/Atlas.ts`, S12), which
+ * calls `list`, `canTravel` and `travel`.
  */
 
 export interface Stone {
