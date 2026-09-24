@@ -910,24 +910,25 @@ const DRAW: Record<BuildingKey, Painter> = {
     if (lvl >= 3) banner(x, t.L - 2, by - h - 6, 16, 0x8a2438)
   },
 
+  // A run's art is 72 px wide, 5 px over its 62 px share at each end (S09b), so neighbours and posts overlap it.
   wall: ({ x, lvl, cx, by }) => {
     if (lvl <= 1) {
       // sharpened palisade stakes, lashed together
-      for (let i = 0; i < 9; i++) {
-        const px = cx - 30 + i * 7.2
+      for (let i = 0; i < 10; i++) {
+        const px = cx - 32.4 + i * 7.2
         const hh = 24 + (i % 3) * 2
         form(x, P.poly([[px - 3.4, by], [px - 3.4, by - hh], [px, by - hh - 6], [px + 3.4, by - hh], [px + 3.4, by]]), i % 2 ? WOOD : shade(WOOD, -0.08), { rim: 0.6, core: 1.6 })
         line(x, P.poly([[px - 3.4, by], [px - 3.4, by - hh], [px, by - hh - 6], [px + 3.4, by - hh], [px + 3.4, by]]), 0.9, INK, 0.7)
       }
-      fill(x, P.rect(cx - 33, by - 18, 66, 2), 0x8a7a5a)
-      fill(x, P.rect(cx - 33, by - 7, 66, 2), 0x8a7a5a)
+      fill(x, P.rect(cx - 36, by - 18, 72, 2), 0x8a7a5a)
+      fill(x, P.rect(cx - 36, by - 7, 72, 2), 0x8a7a5a)
       return
     }
     const h = 20 + lvl * 4
-    const s: BoxSpec = { L: cx - 32, B: by, w: 60, h, d: 10, mat: 'stone', c: STONE }
+    const s: BoxSpec = { L: cx - 36, B: by, w: 72, h, d: 10, mat: 'stone', c: STONE }
     box(x, s)
-    for (let i = 0; i < 5; i++) {
-      const m: BoxSpec = { L: s.L + i * 12.6, B: by - h, w: 8, h: 6, d: 6, mat: 'stone', c: STONE }
+    for (let i = 0; i < 6; i++) {
+      const m: BoxSpec = { L: s.L + 1 + i * 12, B: by - h, w: 8, h: 6, d: 6, mat: 'stone', c: STONE }
       box(x, m)
     }
     if (lvl >= 3) fill(x, P.rect(s.L, by - h - 1, s.w, 1.6), IRON)
@@ -1123,6 +1124,138 @@ export function buildBuildingTextures(scene: Phaser.Scene) {
       grain: 0.08,
     })
   }
+  buildWallPieceTextures(scene)
 }
 
 
+
+// ---- wall pieces (S09b) --------------------------------------------------------------
+// A line of wall is laid as runs, posts and gates (world/wallLine.ts). Horizontal
+// runs and gates wear the plain textures; these are the rest. A vertical run is
+// seen end-on and reaches toward the viewer, so its pad point (the run's middle)
+// sits V_HALF px above its near end: FOOT records that for Building's origin.
+
+/** Half a vertical run's ground length as drawn: 31 px of share, 4 px over at each end. */
+const V_HALF = 35
+const WALL_V = { w: 64, h: 136, foot: 16 + V_HALF }
+const POST = { w: 64, h: 92, foot: 28 }
+const GATE_V = { w: 96, h: 148, foot: 16 + 34 }
+
+function stake(x: Ctx, px: number, gy: number, hh: number, r: number, c: number) {
+  const path = P.poly([[px - r, gy], [px - r, gy - hh], [px, gy - hh - r * 1.7], [px + r, gy - hh], [px + r, gy]])
+  form(x, path, c, { rim: 0.6, core: 1.6 })
+  line(x, path, 0.9, INK, 0.7)
+}
+
+/** A run seen end-on, from its far end (g0) to its near end (g1): stakes receding up the screen, or the wall-walk. */
+function paintWallV(x: Ctx, lvl: number, cx: number, by: number) {
+  const g0 = by - V_HALF, g1 = by + V_HALF
+  if (lvl <= 1) {
+    // two files of stakes, far to near, each nearer one hiding the foot of the last
+    let i = 0
+    for (let gy = g0; gy <= g1 + 0.1; gy += 5, i++) stake(x, cx + (i % 2 ? 2.6 : -2.6), gy, 24 + (i % 3) * 2, 3.4, i % 2 ? WOOD : shade(WOOD, -0.08))
+    line(x, x2 => { x2.moveTo(cx + 6.4, g0 - 16); x2.lineTo(cx + 6.4, g1 - 16) }, 1.8, 0x8a7a5a, 1)
+    return
+  }
+  const h = 20 + lvl * 4, T = 16, L = cx - T / 2
+  // the east face in shadow, then the wall-walk, then the near end's face
+  form(x, P.rect(L + T, g0 - h + 4, 5, g1 - g0 + h - 4), shade(STONE, -0.3), { rim: 0.4, core: 1 })
+  const walk = P.rect(L, g0 - h, T, g1 - g0)
+  form(x, walk, shade(STONE, 0.08), { rim: 0.6, core: 1.4 })
+  for (let gy = g0 - h + 9; gy < g1 - h; gy += 9) line(x, x2 => { x2.moveTo(L + 1, gy); x2.lineTo(L + T - 1, gy) }, 0.7, INK, 0.3)
+  for (let gy = g0 - h + 2; gy < g1 - h - 4; gy += 12) {
+    for (const mx of [L - 1, L + T - 3]) box(x, { L: mx, B: gy + 6, w: 4, h: 6, d: 3, mat: 'stone', c: STONE })
+  }
+  box(x, { L, B: g1, w: T, h, d: 8, mat: 'stone', c: STONE })
+  if (lvl >= 3) for (const mx of [L, L + T - 1.6]) fill(x, P.rect(mx, g0 - h, 1.6, g1 - g0), IRON)
+}
+
+/** A corner or jamb: three stakes bound together, or a stone pier, standing a little proud of the runs it caps. */
+function paintWallPost(x: Ctx, lvl: number, cx: number, by: number) {
+  const B = by + 8
+  if (lvl <= 1) {
+    stake(x, cx - 4, B - 12, 31, 4.4, shade(WOOD, -0.12))
+    stake(x, cx + 5, B - 8, 33, 4.4, WOOD)
+    stake(x, cx - 1, B, 35, 4.8, shade(WOOD, 0.05))
+    for (const yy of [B - 26, B - 12]) fill(x, P.rect(cx - 7, yy, 14, 2.2), 0x8a7a5a)
+    return
+  }
+  const h = 30 + lvl * 4
+  box(x, { L: cx - 11, B, w: 22, h, d: 12, mat: 'stone', c: shade(STONE, 0.04) })
+  box(x, { L: cx - 13, B: B - h, w: 26, h: 4, d: 13, mat: 'stone', c: STONE })
+  for (const mx of [cx - 13, cx + 6]) box(x, { L: mx, B: B - h - 4, w: 7, h: 6, d: 6, mat: 'stone', c: STONE })
+  if (lvl >= 3) fill(x, P.rect(cx - 11, B - h + 6, 22, 1.8), IRON)
+}
+
+/** The gatehouse turned side-on: a far tower, the shut doors edge-on under the wall-walk, the near tower. */
+function paintGateV(x: Ctx, lvl: number, cx: number, by: number) {
+  const stone = lvl >= 2
+  const h = 30 + lvl * 5
+  const mat: Mat = stone ? 'stone' : 'log', c = stone ? STONE : WOOD
+  const far = by - 14, near = by + 34
+  const tower = (B: number) => {
+    box(x, { L: cx - 12, B, w: 24, h, d: 14, mat, c })
+    for (const mx of [cx - 12, cx + 5]) box(x, { L: mx, B: B - h, w: 7, h: 5, d: 5, mat: stone ? 'stone' : 'plank', c })
+  }
+  tower(far)
+  const dTop = far - h + 10
+  form(x, P.rect(cx - 5, dTop, 10, near - 10 - dTop), WOOD_D, { rim: 0.8, core: 2 })
+  for (let yy = dTop + 8; yy < near - 12; yy += 8) fill(x, P.rect(cx - 5, yy, 10, 1.8), IRON)
+  const bridge = P.rect(cx - 12, far - h, 24, near - far - h + 12)
+  form(x, bridge, stone ? shade(STONE, 0.06) : shade(WOOD, 0.1), { rim: 0.6, core: 1.4 })
+  line(x, bridge, 1, INK, 0.7)
+  tower(near)
+  if (stone) banner(x, cx + 12, near - h - 4, 14)
+  if (lvl >= 3) fill(x, P.rect(cx - 12, near - h + 4, 24, 1.8), IRON)
+}
+
+function vShadow(x: Ctx, cx: number, top: number, bottom: number, half: number) {
+  x.save()
+  x.fillStyle = css(0x1a1008, 0.16)
+  x.beginPath(); x.roundRect(cx - half + 3, top, half * 2 + 4, bottom - top, half)
+  x.fill()
+  x.restore()
+}
+
+/** Chalk and stakes round a turned piece's footprint: a dashed rectangle rx × ry about (cx, by). */
+function chalkSite(scene: Phaser.Scene, key: string, w: number, h: number, foot: number, rx: number, ry: number) {
+  const cx = w / 2, by = h - foot
+  FOOT.set(key, foot)
+  bake(scene, key, w, h, {
+    under: x => {
+      x.save(); x.setLineDash([5, 4]); x.strokeStyle = css(PAL.bone, 0.85); x.lineWidth = 1.6
+      x.strokeRect(cx - rx, by - ry, rx * 2, ry * 2); x.restore()
+    },
+    body: x => {
+      for (const [sx, sy] of [[cx - rx, by - ry], [cx + rx, by - ry], [cx - rx, by + ry], [cx + rx, by + ry]] as Pt[]) {
+        form(x, P.poly([[sx - 1.4, sy + 1], [sx - 1.4, sy - 8], [sx, sy - 10], [sx + 1.4, sy - 8], [sx + 1.4, sy + 1]]), WOOD, { rim: 0.3, core: 0.6 })
+        fill(x, P.rect(sx - 1.6, sy - 8, 3.2, 1.6), PAL.ember)
+      }
+      const fx = cx - rx, fy = by - ry
+      form(x, P.rect(fx - 0.9, fy - 22, 1.8, 22), WOOD_D, { rim: 0.2, core: 0.4 })
+      form(x, P.poly([[fx + 1, fy - 22], [fx + 11, fy - 19], [fx + 1, fy - 15]]), PAL.lapis, { rim: 0.6, core: 1 })
+    },
+    outline: 1.2,
+    grain: 0,
+  })
+}
+
+function buildWallPieceTextures(scene: Phaser.Scene) {
+  const levels = BUILDINGS.wall.levels.length
+  for (let lvl = 1; lvl <= levels; lvl++) {
+    const specs: [string, { w: number; h: number; foot: number }, (x: Ctx, cx: number, by: number) => void, (x: Ctx, cx: number, by: number) => void][] = [
+      [`bld_wall_v_${lvl}`, WALL_V, (x, cx, by) => paintWallV(x, lvl, cx, by), (x, cx, by) => vShadow(x, cx, by - V_HALF, by + V_HALF + 3, 8)],
+      [`bld_wallpost_${lvl}`, POST, (x, cx, by) => paintWallPost(x, lvl, cx, by), (x, cx, by) => contactShadow(x, cx, by + 8, 30)],
+      [`bld_gate_v_${lvl}`, GATE_V, (x, cx, by) => paintGateV(x, lvl, cx, by), (x, cx, by) => vShadow(x, cx, by - 32, by + 37, 13)],
+    ]
+    for (const [key, sz, body, under] of specs) {
+      FOOT.set(key, sz.foot)
+      rng = new Rng(key.length * 977 + lvl * 131)
+      const cx = sz.w / 2, by = sz.h - sz.foot
+      bake(scene, key, sz.w, sz.h, { under: x => under(x, cx, by), body: x => body(x, cx, by), outline: 1.6, grain: 0.1 })
+    }
+  }
+  chalkSite(scene, 'blueprint_wall_v', WALL_V.w, WALL_V.h, WALL_V.foot, 7, 30)
+  chalkSite(scene, 'blueprint_wallpost', POST.w, POST.h, POST.foot, 10, 10)
+  chalkSite(scene, 'blueprint_gate_v', GATE_V.w, GATE_V.h, GATE_V.foot, 12, 32)
+}
