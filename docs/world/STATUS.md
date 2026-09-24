@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S08** ([card](sessions/S08-regions-and-claims.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S09** ([card](sessions/S09-nights.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -23,6 +23,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S08 · Regions and claims: done (2026-09-24)
+- `RegionManager` (was ZoneManager; scene field `regions`, `zones` getter alias only for S09 to delete, no caller left): `claimed/claimedAt/claimMask/canClaim/claim`, reasons hall → adjacent → camps → cost with tooltip lines; `region:claimed`, `camp:burned` (renamed events), new `camp:woke`. API in CONTRACTS §S08.
+- Border stones (`claim_stone`, lit gold once claimed; the hold has none) replace the flag, dark overlay and rope fence. Claim = fanfare + HUD region banner (name + blurb) + repaint. `src/world/claimTint.ts`: one Path2D fill of unclaimed polygons (saturation blend 0.35, black 0.15) and dotted polygon borders, after the crossings. Measured on Downs ground: saturation ×0.61, lightness ×0.90 (after grain and vignette).
+- **Claim cost:** the claim's own work (flags, mask of 92k cells, `invalidate(claimRect)`) 0.1–0.3 ms, 1.8 ms on the first. Ferrow's box re-baked 12 wanted chunks in 39 frames (~1.3 s), frame ≤ 4.2 ms, chunk median 5.5 ms (tint cost is noise). Old chunk images stay until the new bake publishes, so colour arrives chunk by chunk.
+- Camps: all 15 start `asleep` (no Enemy, so untargetable; a dimmed `enm_camp` sprite, banked fire light). Wake on claim or hero ≤ 900 px, for good. Save `campAwake`; any camp with `campHealth` loads awake.
+- Verify (harness): ferrow `hall` at hall 1; claimed after the hall upgrade, 5 pads available; rim `camps` until campFerrow burns; Kettle asleep at 956 px, awake at 856 px; claims and awake camps survived save + `H.start(true)`. 4 screenshots (stone tooltip; hold–downs contrast + sleeping Rotwood as a composite). Saves restored byte-identical.
+- Deviations: node "fields" stay visible in unclaimed ground (unharvestable, as before); only the ground is tinted, not props or nodes. Unexplored borders draw too but sit under the fog.
+- Trips: a woken camp spawns uncapped patrols (every `spawns.every`) even in unclaimed ground: S10 owns the 2× cap and leash. `H.tp` near a camp wakes it for good. Upgrading the hall in the harness: `H.tp` to the hall and `buildings.commitUpgrade(hall)` each pump (`H.build` doesn't commit upgrades). `zonesNextTarget` skips regions failing `adjacent`/`camps`. No blueprint moves, no new open decisions.
+
 ### S07 · Paint the frontier: done (2026-09-23)
 - Painters: `Terrain.ts` holds the wash (`BIOME` recipes blended per cell and warped, ~96 px borders; water, ice, banks, cliff face and cast shadow, lava core, crust and glow, per 8 px sample) and the decals (`paintDecals`, batched). `TerrainFeatures.ts` holds feature lines (flow, ripples, cracks, cliff hatching, rubble, shore, crest and lava ink, foam), `paintRoads` and `paintCrossings`. `terrainField.ts` holds the signed distance fields, `cliffS` and contours built from `under`. Props: `world/scatter.ts` (placement) and `art/scatter.ts` (20 `sc_` textures). Map in CONTRACTS §S07.
 - Bake cost: steady 5.3 ms per 1024 px chunk (median), p95 6.4, slices ≤ 4.6 ms. Over 528 in-game bakes (two full pans), 3 were over 12 ms: 21.9 on the first chunk after a map-wide jump, plus 12.3 and 12.4. Different chunks spike on each run (GC). A cold boot prime reaches ~15 ms, and `warmTerrain` takes ~140 ms once at scene create. Direct painter passes: max 8.3 ms. The old flat painter took 13–28 ms per chunk.
@@ -40,14 +49,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - No blueprint moves. New open decision: worker drop-off (above).
 
 ### S05 · NavGrid: done (2026-09-23)
-- `src/world/NavGrid.ts` + `NavDebug.ts` per CONTRACTS §S05; `GameScene.nav` ticks after the pause check. Tests: Ferrow Muster → hall over `oldBridge`, a shut toy ring pays through a wall, sliced rebuilds, `slide` never ends off the ground, ford speed, sight lines.
-- **How enemies pick a leg** (for S09's `via`): on each retarget (0.35–0.65 s) `EnemyManager.sight` sets `Enemy.los` from `nav.lineClear` to the target, stopping short of its body. `los` → steer straight (today's code); else step to `hallField.nextCell(cell)`'s centre. One field, `'hall'`, is read once per frame at `const hallField` (EnemyManager ~:176); S09 swaps in the enemy's leg there. A walled next cell latches that wall (`latch`, held 1.5 s). The blocker probe still sends sappers/non-walls to attack and flips `los` off on a wall.
-- Walls: `BuildingManager.syncNav` (radius 40, pads 62 apart make one band; gates stay free). Built ring + gates: the south raid hit gates 217 and walls 95 samples, nothing stuck off-ground.
-- Cost: first hall field 36 ms (boot); a rebuild is 5 slices, worst 5.7 ms in the browser (6.0 in node), ~35–42 ms wall time. 70 walls built in one frame = one rebuild.
-- Verify (north gate moved to the Old Bridge through the module's `GATE_BY_ID`): three nights, 4,508 enemy samples at 1 s, **0 off-ground**, 127 on the bridge; hero stops at the river bank, crosses the bridge once Ferrow is claimed, ford speed 59 vs 98 px per 0.5 s (0.6). No console errors. v1/v2 saves and settings restored byte-identical.
-- Deviations: collision radius is `min(body/2, 12)` so bosses fit 1-cell passages. Walls stay non-solid for everyone (as before); enemies are held by steering, so separation or knockback can still leak one through a wall band.
-- Trips for S06: soldiers steer straight at the hero and snag on banks when he is across water (expected until A*); workers only slide + their old detour. No pad→field line in the data crosses water except quarry2→a greyfall tree field, so worker snags should be rare. The zone barrier (not the NavGrid) stops the hero at a locked region's crossing: claim it before testing a crossing. Early nights spawn at `north` (5000,1900), not the bridge.
-- `balance.WORLD` re-export removed. No new open decisions; no blueprint moves.
+- `NavGrid` + `NavDebug` (CONTRACTS §S05): walls via `BuildingManager.syncNav`, enemies steer on `los` else `hallField.nextCell` (EnemyManager ~:176, S09 swaps the leg there).
 
 ### S04 · Move in: done (2026-09-23)
 - The game runs on the 10240×9216 frontier from `src/config/world/index.ts` (`ZoneId` → `RegionId`, `zone` → `region`, `map.ts` gone); save v2 keys, v1 untouched; `SPAWN_GATES` TEMP until S09.

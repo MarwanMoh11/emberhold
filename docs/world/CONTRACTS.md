@@ -77,11 +77,11 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `APPROACHES`, `MAWS`, `CROSSINGS`, `ROADS`, `POIS`, `THRONE`, `FEATURES`, passed through from the blueprint.
   - `raster(): WorldRaster` (:44), built once and memoised.
 - `ZoneId` is now `RegionId`. `PadSpec`, `CampSpec`, `NodeCluster`, `Building` and `ResourceNode` carry `region` (was `zone`).
-- `ZoneManager` keeps its method names: `zoneAt(x, y)` reads `raster().region` (:280), `lockedZoneAt → RegionDef | null`, `isUnlocked(id)`, `claimPoint(id)` (the blueprint's `claim.{x,y}`), `unlock(id, silent?)`, `canUnlockId(id)`. Locked regions are one `Graphics` each (fill + fence), registered with the culler. The soft barrier (`exitToward`, :391) pushes toward the nearest border whose far side is claimed, else toward `HALL`.
+- `ZoneManager` (renamed in S08, see §S08) keeps its method names: `zoneAt(x, y)` reads `raster().region` (:280), `lockedZoneAt → RegionDef | null`, `isUnlocked(id)`, `claimPoint(id)` (the blueprint's `claim.{x,y}`), `unlock(id, silent?)`, `canUnlockId(id)`. Locked regions were one `Graphics` each (fill + fence) until S08 replaced them with the painter's claim tint and border stones. The soft barrier (`exitToward`, :391) pushes toward the nearest border whose far side is claimed, else toward `HALL`.
 - `src/world/Terrain.ts`: `biomeColour(b: Biome) → number` is the biome's base tone, used by the minimap. (`biomeAt` is internal since S07.)
 - Dev harness ([src/dev/harness.ts](../../src/dev/harness.ts)):
   - `H.tp(x, y)` teleports, centres the camera and primes the chunks.
-  - `H.claim(id)` calls `zones.unlock(id, true)` (silent: no event, no bonus recompute).
+  - `H.claim(id)` calls `regions.claim(id, true)` (silent: no event, no bonus recompute; since S08 it still repaints). `H.world()` gained `campsAwake` (S08).
   - `H.reveal()` clears the fog.
   - `H.where()` returns `{ x, y, region }`.
   - `H.world()` returns `{ size, regions, claimed[], pads, built, camps, campsLive, nodes, enemies, wave, phase, chunks, cull }`.
@@ -131,14 +131,17 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S08: regions and claims
 
-*Status: planned.*
+*Status: landed (S08). `RegionManager` at [src/systems/RegionManager.ts:268](../../src/systems/RegionManager.ts#L268) (`canClaim` :314, `claim` :336), `CampManager.wake` at [src/systems/CampManager.ts:66](../../src/systems/CampManager.ts#L66), the painter's claim state at [src/world/claimTint.ts:41](../../src/world/claimTint.ts#L41).*
 
-- `RegionManager` is `ZoneManager` renamed. `zones` is aliased as `regions` on the scene for one session and then removed.
-  - `claimed(id)` and `claimedAt(x, y)`.
-  - `claimMask(): Uint8Array` gives one byte per raster cell, 1 if claimed.
-  - `canClaim(id) → { ok, reason }`, where `reason` is one of `'hall' | 'camps' | 'cost' | 'adjacent'`.
-  - `claim(id)` emits `region:claimed` with `{ id }`.
-- Camps gain `state: 'asleep' | 'awake' | 'burned'`. `CampManager.wake(id)` exists, and a camp emits `camp:burned` with `{ id }`.
+- `RegionManager` is `ZoneManager` renamed; the scene field is `regions`. `scene.zones` is a getter alias for S08 only: **S09 removes it** (no caller in `src/` uses it any more).
+  - `claimed(id)` (unknown ids read as claimed) and `claimedAt(x, y)` (off the raster: false).
+  - `claimMask(): Uint8Array`: one byte per raster cell, 1 if claimed; rebuilt lazily after a claim. Read only.
+  - `canClaim(id) → { ok, reason, why }`: `reason` is `'hall' | 'adjacent' | 'camps' | 'cost' | null`, checked in that order; `why` is the stone's tooltip line ("Needs a Stone Hall", "Claim Hollow Village first", "Burn the Ferrow Muster first", "Not enough yet"). Already claimed: `{ ok: false, reason: null }`.
+  - `claim(id, silent?)` sets the flag, pushes it to the painter, invalidates the region's box (`claimRect`) and lights the stone; unless silent: fanfare, `region:claimed { id }`, `recomputeBonuses`. Paying stays in `update` (stand on the stone).
+  - Renamed from S04: `zoneAt → regionAt(x, y): RegionDef | null`, `lockedZoneAt → unclaimedAt`, `isUnlocked → claimed`, `unlock → claim`, `canUnlockId(id) → canClaim(id).ok`, `unlockedCount → claimedCount`. `claimPoint`, fog methods unchanged. `lastClaimMs` is the last claim's own cost.
+- `src/world/claimTint.ts`: `setClaimed(flags by REGIONS index)`, `claimRect(k)`, `paintClaimTint(ctx, rect)` (called by `paintTerrainRect` after the crossings), `CLAIM_DESAT` 0.35, `CLAIM_DARK` 0.15.
+- Camps: `CampRec.state: CampState = 'asleep' | 'awake' | 'burned'` (`destroyed` is now a getter for `burned`). `CampManager.wake(id, silent?) → boolean`, `isBurned(id)`, `awakeJSON()`, `load(burned, awake?)`, `WAKE_RADIUS = 900`. A sleeping camp has no `Enemy` (untargetable), only a dimmed sprite (`sleeper`). Events: `camp:woke { id }` (new, for S10's first-wake boss) and `camp:burned { id }` (was `camp:destroyed`).
+- Events renamed: `zone:unlocked → region:claimed`, `camp:destroyed → camp:burned`. The HUD plays the region banner (name + blurb) on `region:claimed`.
 
 ## S09: approaches
 
@@ -232,4 +235,6 @@ Each session that adds persistent state lists its field here: the owner, then a 
 | `v` | S04 | `2` (the blob field is `v`, not `version`) |
 | `regions` | S04 | `RegionId[]` claimed, `hold` included; replaces v1 `zones` |
 | `exploredFog` | S03 | `FogMemory.toJSON()`: `r:` runs or `b:` bitset (v1 bare base64 still read), length ≤ `FogMemory.maxEncodedLength(WORLD.width, WORLD.height)` |
+| `regions` | S04, S08 | unchanged shape; S08 owns the rules (`RegionManager.toJSON`, in `REGIONS` order) |
+| `campAwake` | S08 | `string[]` of camp ids awake and standing (optional; every id in `CAMPS`). Load also wakes any camp with a `campHealth` entry |
 | _(add rows as they land)_ | | |

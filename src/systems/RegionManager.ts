@@ -30,7 +30,7 @@ const BANNER_RANGE = 460
 /** Far-future claims should explain themselves when approached, not crowd the starting view. */
 const GATED_BANNER_RANGE = 230
 /** Height of the border stone standing in the claim ring; the frame clears it. */
-const POLE_H = 58
+const POLE_H = 78
 /**
  * The banner is something you read, so it sits above the lightmap with the
  * rest of the world's labels. Under it, night dimmed the words you most need.
@@ -107,7 +107,7 @@ export class RegionManager {
   private owned = new Uint8Array(REGIONS.length)
   private mask: Uint8Array | null = null
   claimedCount = 1
-  /** Wall time of the last claim's own work (flags, mask, chunk invalidation), for F2 and the handoff. */
+  /** Wall time of the last claim's own work (flags, mask, chunk invalidation); the repaint itself streams. */
   lastClaimMs = 0
 
   constructor(private scene: GameScene, depth: number) {
@@ -170,8 +170,9 @@ export class RegionManager {
     const { x: cx, y: cy } = spec.claim
     let stone: Phaser.GameObjects.Image | null = null
     if (spec.id !== 'hold') {
-      stone = this.scene.add.image(cx, cy, 'claim_stone').setOrigin(0.5, 1 - 8 / 72).setDepth(cy)
-      this.scene.culler.add(stone, cx, cy - 30, 48)
+      // a landmark, not a prop: it stands a head taller than the hero
+      stone = this.scene.add.image(cx, cy, 'claim_stone').setOrigin(0.5, 1 - 8 / 72).setScale(1.35).setDepth(cy)
+      this.scene.culler.add(stone, cx, cy - 40, 64)
     }
     // The ring is the actual affordance: a marked patch of ground you can walk
     // onto. The frame above it is only a label.
@@ -258,7 +259,7 @@ export class RegionManager {
     const drop = v.cy - v.banner.y
     if (Math.hypot(sideways, drop) > 8) {
       v.bg.lineStyle(2, PAL.gilt, 0.55)
-      v.bg.lineBetween(0, top + h, sideways, drop - 50)
+      v.bg.lineBetween(0, top + h, sideways, drop - 70)
     }
     v.frame.place(-BANNER_W / 2, top, BANNER_W, h)
   }
