@@ -256,6 +256,46 @@ export function buildPropTextures(scene: Phaser.Scene) {
     })
   }
 
+  // ---- a shoal (S13): rings on the water, one fish leaping or finning ------
+  {
+    const w = 46, h = 42, cx = w / 2, by = h - FOOT
+    const SILVER = 0xa9c0cc, RING = 0xe8f4f8
+    const rings = (x: Ctx, rx: number, n: number) => {
+      fill(x, P.ellipse(cx, by - 1, rx + 2, (rx + 2) * 0.3), 0x1c3a4a, 0.22)
+      for (let i = 0; i < n; i++) {
+        const k = 1 - i * 0.3
+        line(x, P.ellipse(cx, by - 1, rx * k, rx * k * 0.3), 1.1, RING, 0.75 - i * 0.15)
+      }
+    }
+    bake(scene, 'fish0', w, h, {
+      under: x => rings(x, 18, 3),
+      body: x => {
+        // leaping up and away from the bank: head up-left, tail by the ring
+        const fx = cx - 2, fy = by - 15, rot = 0.7, ax = Math.cos(rot), ay = Math.sin(rot)
+        const tx = fx + ax * 10, ty = fy + ay * 10
+        form(x, P.poly([[tx, ty], [tx + 7, ty - 1], [tx + 4, ty + 3], [tx + 3, ty + 8]]), 0x7a98a8, { rim: 0.5, core: 1 })
+        form(x, P.ellipse(fx, fy, 10.5, 4.2, rot), SILVER, { rim: 1, core: 2.4, light: 0xffffff, dark: 0x4e6a7a })
+        form(x, P.poly([[fx - 2, fy - 4], [fx + 3, fy - 8], [fx + 5, fy - 2]]), 0x7a98a8, { rim: 0.4, core: 0.8 })
+        line(x, x2 => { x2.moveTo(fx - ax * 7 + 1, fy - ay * 7 + 3); x2.quadraticCurveTo(fx + 1, fy + 4, fx + ax * 7, fy + ay * 7 + 1) }, 0.9, 0xf2f6f0, 0.8)
+        fill(x, P.circle(fx - ax * 7 + 1.2, fy - ay * 7 + 0.6, 1.1), INK)
+        for (const [dx, dy, r] of [[8, -4, 1.4], [12, -9, 1], [3, -2, 1.1], [-6, -3, 0.9]]) fill(x, P.circle(cx + dx, by + dy, r), RING)
+      },
+      outline: 1.2,
+      grain: 0.06,
+    })
+    bake(scene, 'fish1', w, h, {
+      under: x => rings(x, 15, 2),
+      body: x => {
+        // a back and a tail breaking the surface
+        form(x, P.poly([[cx - 8, by - 2], [cx - 3, by - 11], [cx + 1, by - 2]]), 0x6a8898, { rim: 0.5, core: 1.2, light: 0xdfeef4 })
+        form(x, P.poly([[cx + 6, by - 2], [cx + 7, by - 6], [cx + 4, by - 12], [cx + 9, by - 8], [cx + 13, by - 12], [cx + 11, by - 5], [cx + 11, by - 2]]), 0x7a98a8, { rim: 0.5, core: 1 })
+        for (const [dx, dy, r] of [[-11, -5, 1], [15, -6, 1.2], [2, -8, 0.9]]) fill(x, P.circle(cx + dx, by + dy, r), RING)
+      },
+      outline: 1.2,
+      grain: 0.06,
+    })
+  }
+
   // ---- resource pickups ----------------------------------------------------
   const pickup = (key: string, colour: number, shape: PickupShape) => {
     const S = 24, c = S / 2

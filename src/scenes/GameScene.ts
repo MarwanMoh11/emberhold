@@ -531,7 +531,8 @@ export class GameScene extends Phaser.Scene {
     const got = this.nodes.strike(node, Math.max(12, p.stats.damage * 0.6))
     const amount = Math.max(1, Math.round(got * p.stats.greed))
     for (let i = 0; i < Math.min(4, amount); i++) {
-      this.pickups.drop(node.resource, Math.ceil(amount / Math.min(4, amount)), node.x, node.y - 10, 0.8)
+      // at the gather point, so a shoal hooked from the bank lands on the bank
+      this.pickups.drop(node.resource, Math.ceil(amount / Math.min(4, amount)), node.gx, node.gy - 22, 0.8)
     }
     this.fx.slash(node.x, node.y - 16, rr(-0.4, 0.4), 0.7, 0xffffff)
     this.audio.playVaried(node.resource === 'wood' ? 'wood' : 'stone', 0.4)

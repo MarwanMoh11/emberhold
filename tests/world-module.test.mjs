@@ -6,7 +6,7 @@ const W = await loadTs('src/config/world/index.ts')
 const BP = await loadTs('src/config/world/blueprint.ts')
 const { ENEMIES } = await loadTs('src/config/enemies.ts')
 
-const FUTURE = new Set(['fishery', 'tradingPost'])
+const FUTURE = new Set(['tradingPost'])
 const regionIds = new Set(BP.REGIONS.map(r => r.id))
 
 test('the world is the blueprint size', () => {
@@ -22,7 +22,7 @@ test('counts match the blueprint', () => {
   assert.equal(W.FUTURE_PADS.length, BP.PADS.filter(p => FUTURE.has(p.key)).length)
   assert.ok(W.PADS.every(p => !FUTURE.has(p.key)))
   assert.equal(W.CAMPS.length, BP.CAMPS.length)
-  assert.equal(W.NODE_CLUSTERS.length, BP.NODES.filter(n => n.type !== 'fish').length)
+  assert.equal(W.NODE_CLUSTERS.length, BP.NODES.length) // fish fields joined in S13
   assert.equal(W.WALL_LINES.length, BP.WALLS.length)
   assert.ok(W.WALL_LINES.every(l => l.active), 'S10 lays every line')
   W.REGIONS.forEach((r, i) => assert.equal(r.index, i))

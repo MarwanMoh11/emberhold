@@ -5,7 +5,7 @@ export type BuildingKey =
   | 'barracks' | 'archeryRange' | 'stable' | 'house' | 'warehouse'
   | 'blacksmith' | 'workshop' | 'healingTent'
   | 'watchtower' | 'cannonTower' | 'wall' | 'gate'
-  | 'outpost'
+  | 'outpost' | 'fishery'
 
 export type BuildingCategory = 'core' | 'production' | 'military' | 'support' | 'defense'
 
@@ -73,6 +73,16 @@ export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
     { cost: { coins: 1200, wood: 800, stone: 320, metal: 80 }, hp: 1300, stats: { workers: 7, rate: 2.5 } },
   ], 'Farmers grow grain. Food recruits soldiers and sustains the hold.',
     { workerSlots: 2, gathers: 'food', requiresTownHall: 1, blocking: true }),
+
+  // A farm on the water (S13): the farm's crew, rates and hp, a cheaper
+  // first level (05 §New buildings). Not blocking: it is a jetty, and its
+  // fishers stand on the bank right beside it.
+  fishery: B('fishery', 'Fishery', 'FISHERY', 'production', 64, 50, [
+    { cost: { coins: 100, wood: 80 }, hp: 420, stats: { workers: 2, rate: 1 }, label: 'Fishing Jetty' },
+    { cost: { coins: 240, wood: 200 }, hp: 640, stats: { workers: 3, rate: 1.4 }, label: 'Net Shed' },
+    { cost: { coins: 560, wood: 420, stone: 140 }, hp: 900, stats: { workers: 5, rate: 1.9 }, label: 'Fish Market' },
+  ], 'Fishers net the shoals off the bank and carry the catch home as food.',
+    { workerSlots: 2, gathers: 'food' }),
 
   quarry: B('quarry', 'Stone Quarry', 'QUARRY', 'production', 68, 56, [
     { cost: { coins: 300, wood: 220 }, hp: 520, stats: { workers: 2, rate: 1 } },

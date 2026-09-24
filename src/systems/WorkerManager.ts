@@ -267,7 +267,7 @@ export class WorkerManager {
           case 'travel': {
             const node = w.node
             if (!node || !node.alive) { w.node = null; w.state = 'seek'; break }
-            tx = node.x; ty = node.y + 12
+            tx = node.gx; ty = node.gy
             if (Math.hypot(tx - w.x, ty - w.y) < 30) { w.state = 'gather'; w.gatherT = 0 }
             break
           }
@@ -425,7 +425,7 @@ export class WorkerManager {
   private pickNode(w: Worker, claimer: number | null): ResourceNode | null {
     const scene = this.scene
     let best: ResourceNode | null = null, bestLen = Infinity
-    for (const n of scene.nodes.candidates(w.carryType, w.homeX, w.homeY, SEARCH_RADIUS, claimer)) {
+    for (const n of scene.nodes.candidates(w.carryType, w.homeX, w.homeY, SEARCH_RADIUS, claimer, w.def.fishes === true)) {
       if (Math.hypot(n.x - w.homeX, n.y - w.homeY) >= bestLen) break
       const L = this.reachOf(w, n)
       if (L < bestLen) { bestLen = L; best = n }
@@ -440,7 +440,7 @@ export class WorkerManager {
     const k = `${w.homeId}:${n.id}`
     let L = this.reach.get(k)
     if (L === undefined) {
-      const p = nav.findPath(w.homeX, w.homeY + 24, n.x, n.y + 12, SEARCH_RADIUS)
+      const p = nav.findPath(w.homeX, w.homeY + 24, n.gx, n.gy, SEARCH_RADIUS)
       L = p ? pathLength(p) : Infinity
       if (L > SEARCH_RADIUS) L = Infinity
       this.reach.set(k, L)

@@ -64,8 +64,8 @@ export interface PadSpec {
   piece?: Pick<WallPiece, 'part' | 'dir' | 'len' | 'ux' | 'uy' | 'cap'>
 }
 
-/** Pads whose buildings arrive later: fisheries and trading posts (S13). Outposts landed in S11. */
-const FUTURE_KEYS = new Set<BP.PadKey>(['fishery', 'tradingPost'])
+/** Pads whose buildings arrive later: the trading post (S13 C3). Outposts landed in S11, fisheries in S13. */
+const FUTURE_KEYS = new Set<BP.PadKey>(['tradingPost'])
 
 const toPad = (p: BP.PadBP): PadSpec => ({
   id: p.id, key: p.key as BuildingKey, x: p.x, y: p.y, region: p.region,
@@ -138,7 +138,7 @@ export const CAMPS: CampSpec[] = BP.CAMPS.map(c => ({
 
 /** Harvestable clusters. Positions are generated from these descriptors. */
 export interface NodeCluster {
-  type: 'tree' | 'rock' | 'ore' | 'crystal'
+  type: 'tree' | 'rock' | 'ore' | 'crystal' | 'fish'
   x: number
   y: number
   radius: number
@@ -146,9 +146,12 @@ export interface NodeCluster {
   region: RegionId
 }
 
-/** Every field in the blueprint except fish, which S13 places on water. */
+/**
+ * Every field in the blueprint. Fish fields (S13) sit in water, often offshore
+ * of their region's polygon; NodeManager places their shoals on water cells
+ * (`world/fish.ts`), everything else scatters on the ground as before.
+ */
 export const NODE_CLUSTERS: NodeCluster[] = BP.NODES
-  .filter((n): n is BP.NodeFieldBP & { type: NodeCluster['type'] } => n.type !== 'fish')
   .map(n => ({ type: n.type, x: n.x, y: n.y, radius: n.r, count: n.n, region: n.region }))
 
 /**
@@ -160,6 +163,8 @@ export const NODE_DEFS = {
   rock: { resource: 'stone' as const, hp: 90, yield: 6, respawn: 9, radius: 20 },
   ore: { resource: 'metal' as const, hp: 120, yield: 5, respawn: 12, radius: 20 },
   crystal: { resource: 'crystal' as const, hp: 160, yield: 3, respawn: 20, radius: 18 },
+  /** a shoal (S13): the crop's numbers, a little slower to come back */
+  fish: { resource: 'food' as const, hp: 45, yield: 6, respawn: 8, radius: 18 },
 }
 
 // ---------------------------------------------------------------------------

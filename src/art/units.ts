@@ -892,6 +892,7 @@ function soldierLook(key: string, colour: number, accent: number, scale: number)
 const WORKER_LOOKS: Record<string, (colour: number, accent: number) => Look> = {
   lumberjack: c => ({ h: 26, body: 0xa8402c, apron: undefined, band: undefined, helm: 'cap', helmColour: 0x3a5a2e, weapon: 'axe', skin: SKINS[1], legs: 0x5a4632, belt: c }),
   farmer: () => ({ h: 26, body: 0x7f9a44, helm: 'straw', weapon: 'scythe', skin: SKINS[2], legs: 0x6a5a3e, apron: 0xd8c898 }),
+  fisher: () => ({ h: 26, body: 0x5a86a0, helm: 'hood', helmColour: 0x2e4a5a, weapon: 'spear', skin: SKINS[1], legs: 0x4a4436, apron: 0xc8b890 }),
   cutter: () => ({ h: 26, body: 0x8a8c8e, helm: 'cap', helmColour: 0x5a5e62, weapon: 'hammer', skin: SKINS[0], apron: 0x6e4a2e }),
   miner: () => ({ h: 26, body: 0x9a7248, helm: 'miner', weapon: 'pick', skin: SKINS[3], legs: 0x4a3a2a }),
   delver: () => ({ h: 26, body: 0x7a5aa8, helm: 'hood', helmColour: 0x4e3a78, weapon: 'chisel', skin: SKINS[1] }),

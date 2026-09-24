@@ -588,6 +588,48 @@ const DRAW: Record<BuildingKey, Painter> = {
     fence(x, cx - 38, by + 6, 30, 7)
   },
 
+  fishery: ({ x, lvl, cx, by }) => {
+    // the jetty first: a plank deck on piles, running out to the front right
+    const jL = cx - 2, jB = by + 10
+    for (const px of [jL + 6, jL + 22, jL + 38]) form(x, P.rect(px, jB - 3, 3, 9), WOOD_D, { rim: 0.4, core: 0.8 })
+    const deck = P.poly([[jL, jB], [jL + 44, jB], [jL + 54, jB - 9], [jL + 10, jB - 9]])
+    form(x, deck, 0xa87a4a, { rim: 1, core: 2 })
+    for (let i = 8; i < 44; i += 7) line(x, x2 => { x2.moveTo(jL + i, jB); x2.lineTo(jL + i + 10, jB - 9) }, 0.7, INK, 0.45)
+    line(x, deck, 1, INK, 0.8)
+    // the shed, planked, with a door on the jetty side
+    const s: BoxSpec = { L: cx - 38, B: by, w: 30, h: 18 + (lvl >= 3 ? 6 : 0), d: 16, mat: 'plank', c: shade(WOOD, 0.04), footing: lvl >= 3 ? 4 : 0 }
+    box(x, s)
+    roofSide(x, s, 12, 3, lvl >= 3 ? SLATE : THATCH, lvl >= 3 ? 'slate' : 'thatch')
+    doorAt(x, s.L + 20, by, 8, 12, WOOD_D)
+    if (lvl >= 2) windowAt(x, s.L + 8, by - s.h + 8, 6, 6, false)
+    // the net rack: two poles and a net sagging between them
+    const nL = cx + 2, nB = by - 4, nW = lvl >= 2 ? 34 : 26
+    for (const px of [nL, nL + nW]) form(x, P.rect(px - 1.5, nB - 30, 3, 30), WOOD_D, { rim: 0.4, core: 0.8 })
+    const net = P.poly([[nL, nB - 27], [nL + nW / 2, nB - 22], [nL + nW, nB - 27], [nL + nW - 3, nB - 8], [nL + nW / 2, nB - 4], [nL + 3, nB - 8]])
+    fill(x, net, 0xc8b890, 0.35)
+    x.save(); x.beginPath(); net(x); x.clip()
+    for (let i = -24; i < nW + 24; i += 4) {
+      line(x, x2 => { x2.moveTo(nL + i, nB - 30); x2.lineTo(nL + i + 22, nB) }, 0.6, 0x6a5a3e, 0.7)
+      line(x, x2 => { x2.moveTo(nL + i + 22, nB - 30); x2.lineTo(nL + i, nB) }, 0.6, 0x6a5a3e, 0.7)
+    }
+    x.restore()
+    line(x, net, 0.9, INK, 0.7)
+    for (const [fx, fy] of [[nL + 9, nB - 14], [nL + 17, nB - 11]]) form(x, P.ellipse(fx, fy, 4, 1.8, 0.3), 0xa9c0cc, { rim: 0.4, core: 0.8 })
+    // a basket of the catch and a barrel by the door
+    form(x, P.round(s.L + s.w - 4, by + 1, 11, 7, 2), 0xb08a52, { rim: 0.6, core: 1.2, hatch: 0.2 })
+    for (const dx of [2, 5, 8]) fill(x, P.ellipse(s.L + s.w - 4 + dx, by + 1, 2.4, 1.2, 0.4), 0xa9c0cc)
+    barrel(x, s.L - 2, by + 6, 0.9)
+    if (lvl >= 3) {
+      // a rowing boat tied to the jetty's end
+      const bL = jL + 20, bB = jB + 5
+      const hull = P.poly([[bL, bB - 6], [bL + 30, bB - 6], [bL + 26, bB], [bL + 4, bB]])
+      form(x, hull, 0x7a4a2c, { rim: 0.8, core: 1.6 })
+      line(x, x2 => { x2.moveTo(bL + 2, bB - 4); x2.lineTo(bL + 28, bB - 4) }, 0.7, 0xd8b47e, 0.8)
+      line(x, hull, 1, INK, 0.8)
+      banner(x, s.L + 4, by - s.h - 22, 14)
+    }
+  },
+
   quarry: ({ x, lvl, cx, by }) => {
     // stepped cut in the rock
     for (let t = 0; t < 3; t++) {
