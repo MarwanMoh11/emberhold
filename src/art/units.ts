@@ -3,6 +3,7 @@ import { PAL } from '../config/palette'
 import { ENEMIES } from '../config/enemies'
 import { SOLDIERS, WORKERS } from '../config/units'
 import { bake, css, fill, form, glow, line, lightOf, mix, P, rimLight, shade, shadowOf, INK, type Ctx, type PathFn } from './ink'
+import { BOSS_PAINTERS } from './bosses'
 
 /**
  * Characters.
@@ -1122,6 +1123,8 @@ export function buildUnitTextures(scene: Phaser.Scene) {
     if (def.key === 'siegeBeast') { bakeSiegeBeast(scene, 'enm_siegeBeast', h, def.colour); continue }
     if (def.key === 'thornling') { bakeThornling(scene, 'enm_thornling', h, def.colour); continue }
     if (def.key === 'cinderHound') { bakeHound(scene, 'enm_cinderHound', h, def.colour); continue }
+    const boss = BOSS_PAINTERS[def.key]
+    if (boss) { boss(scene, `enm_${def.key}`, h, def.colour); continue } // S17: the stronghold bosses
     const spec = HORDE[def.key] ?? { build: 'husk' as const }
     bakeHorde(scene, `enm_${def.key}`, { ...spec, h, glow: def.colour })
   }
