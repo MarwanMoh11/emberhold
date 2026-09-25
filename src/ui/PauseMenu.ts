@@ -3,6 +3,9 @@ import { ABILITY_KEYS } from '../config/abilities'
 import { PAL } from '../config/palette'
 import { QUESTS, ACHIEVEMENTS } from '../config/quests'
 import { SaveManager } from '../systems/SaveManager'
+import { RELICS } from '../systems/Relics'
+import { relicSealKey } from '../art/pois'
+import { textStyle } from './theme'
 import type { GameScene } from '../scenes/GameScene'
 import type Phaser from 'phaser'
 
@@ -32,6 +35,10 @@ export class PauseMenu extends Overlay {
   private focusIndex = 0
   private saveNote = ''
   private exportNote = ''
+  /** the Relics strip (S15): a painted seal per relic, blank until won, each with its tooltip */
+  private relicLabel!: Phaser.GameObjects.Text
+  private seals: Phaser.GameObjects.Image[] = []
+  private tip!: Phaser.GameObjects.Text
 
   constructor(scene: Phaser.Scene, private game: GameScene) {
     super(scene, 1_150_000)
@@ -69,6 +76,30 @@ export class PauseMenu extends Overlay {
       // on a menu whose first job is to get you back into the game.
       this.button('Reset progress', () => this.resetProgress(), 'quiet', 14),
     ]
+
+    this.relicLabel = this.text(12, PAL.uiDim, true, 0, 0.5)
+    this.seals = RELICS.map((_, i) => {
+      const img = scene.add.image(0, 0, relicSealKey('empty')).setScrollFactor(0).setInteractive({ useHandCursor: true })
+      img.on('pointerover', () => this.showTip(i))
+      img.on('pointerdown', () => this.showTip(i))
+      img.on('pointerout', () => this.tip.setVisible(false))
+      this.root.add(img)
+      return img
+    })
+    // last, so it draws over the seals and the rows
+    this.tip = scene.add.text(0, 0, '', textStyle({ size: 12, colour: PAL.bone, weight: '600', align: 'center' }))
+      .setOrigin(0.5, 1).setScrollFactor(0).setBackgroundColor('#26170cee').setPadding(9, 6, 9, 6).setVisible(false)
+    this.root.add(this.tip)
+  }
+
+  /** A seal's tooltip: the relic and what it does, or where it is won while it is still missing. */
+  private showTip(i: number) {
+    const r = RELICS[i], img = this.seals[i]
+    const held = this.game.relics.has(r.id)
+    const name = r.name.replace(/^the /, 'The ')
+    this.tip.setWordWrapWidth(Math.min(260, this.W - 32)).setText(held ? `${name}\n${r.effect}` : `${name}  ·  not yet won\n${r.source}`)
+    const half = this.tip.width / 2
+    this.tip.setPosition(Math.max(half + 8, Math.min(this.W - half - 8, img.x)), img.y - img.displayHeight / 2 - 4).setVisible(true)
   }
 
   private cycle(which: 'master' | 'sfx' | 'music') {
@@ -157,7 +188,9 @@ export class PauseMenu extends Overlay {
           'Stand at a site to build, recruit or claim',
     ).setLineSpacing(2)
 
-    const headH = c ? 74 : 126
+    const head0 = c ? 74 : 126
+    const stripH = c ? 26 : 40
+    const headH = head0 + stripH
     const footH = Math.round(this.controls.height) + (c ? 22 : 34)
     const pitch0 = c ? 34 : 44
     const h = Math.min(this.H - 16, headH + LINES.length * pitch0 + footH)
@@ -177,7 +210,8 @@ export class PauseMenu extends Overlay {
     ).setLineSpacing(2).setPosition(cx, y + (c ? 54 : 88))
     this.fitText(this.stats, c ? 11 : 13, w - 44)
     this.rules.clear()
-    if (!c) this.rule(this.rules, cx, y + headH - 12, Math.min(220, w - 80))
+    if (!c) this.rule(this.rules, cx, y + head0 - 12, Math.min(220, w - 80))
+    this.layoutRelics(cx, y + head0 + stripH / 2 - 4, w - (c ? 48 : 64))
 
     const earned = g.quests.unlockedAchievements.size
     const labels = [
@@ -221,5 +255,22 @@ export class PauseMenu extends Overlay {
     }
 
     this.controls.setPosition(cx, y + h - footH / 2 - (c ? 2 : 4))
+  }
+
+  /** The Relics strip: its count, then the seven seals, centred as one line under the heading. */
+  private layoutRelics(cx: number, cy: number, maxW: number) {
+    const g = this.game, c = this.compact
+    this.tip.setVisible(false)
+    this.relicLabel.setFontSize(c ? 11 : 12).setText(`Relics  ${g.relics.list().length}/${RELICS.length}`)
+    const labelW = this.relicLabel.width + 12
+    const pitch = Math.min(c ? 28 : 38, (maxW - labelW) / RELICS.length)
+    const size = pitch * 0.86
+    const left = cx - (labelW + pitch * RELICS.length) / 2
+    this.relicLabel.setPosition(left, cy)
+    RELICS.forEach((r, i) => {
+      const held = g.relics.has(r.id)
+      this.seals[i].setTexture(relicSealKey(held ? r.id : 'empty')).setDisplaySize(size, size)
+        .setPosition(left + labelW + pitch * (i + 0.5), cy)
+    })
   }
 }
