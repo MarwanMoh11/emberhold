@@ -1,5 +1,6 @@
 import type Phaser from 'phaser'
-import { POIS, REGIONS, WALL_LINES, WORLD } from '../config/world'
+import { CAMPS, POIS, REGIONS, WALL_LINES, WORLD } from '../config/world'
+import { WAYSTONE } from '../config/balance'
 import { DPR } from '../core/device'
 
 /**
@@ -42,6 +43,8 @@ import { DPR } from '../core/device'
  *   H.god(on?)           the hero takes no damage (S17)
  *   H.boss('campGallows', 12)  wake a stronghold, stand by its boss for 12 s (god on), then cut it down: its kit, wards, relic
  *   H.regent()           the finale (S17): the causeway sealed, Ashgate burned, the Regent risen on the causeway, felled
+ *   H.quests()           the chain (S18): current quest, progress, arrow target, route length, act banners seen
+ *   H.questStep(n)       finish the current quest n times with dev help (claims, burns, pads, a journey); ids done
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -771,5 +774,102 @@ export function installHarness(game: Phaser.Game) {
     out.victoryCard = !!ui().summary?.open && !!ui().summary?.victory
     return out
   }
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi, relics, relic, relicCheck, god, boss, regent }
+
+  // ---- S18: the campaign ------------------------------------------------
+  const questLog = { banners: [] as string[], done: [] as string[] }
+  const hooked = new WeakSet<object>()
+  const hookQuests = () => {
+    const g = gs()
+    if (hooked.has(g.bus)) return
+    hooked.add(g.bus)
+    g.bus.on('act:begun', (p: any) => questLog.banners.push(`${p.roman} ${p.name}`))
+    g.bus.on('quest:complete', (p: any) => questLog.done.push(p.id))
+  }
+
+  /** The chain now: the current quest, its progress, where the arrow points, and the quest route's length. */
+  const quests = () => {
+    hookQuests()
+    const g = gs(); const q = g.quests; const v = q.view()
+    return {
+      index: q.index, id: q.current?.id ?? null, title: v?.title, hint: v?.hint, have: v?.have, need: v?.need,
+      target: v?.targetX === undefined ? null : [Math.round(v.targetX), Math.round(v.targetY)],
+      route: g.questRoute?.length ?? 0, banners: questLog.banners, done: questLog.done.length,
+    }
+  }
+
+  /**
+   * Finish the current quest `n` times over with dev help, where play would
+   * be slow (S18): coins counted, pads raised through the loader (claiming
+   * their region first), the hall set, claims and burns outright, a night
+   * marked held, the survivors reached and a waystone travelled by the hero.
+   * Workers and soldiers are hired the way play does it: stores filled and
+   * the hero stood at the camp. Returns the ids completed, and where it stuck.
+   */
+  const questStep = (n = 1) => {
+    hookQuests()
+    const g = gs()
+    const out: string[] = []
+    const fill = () => { for (const k of ['coins', 'wood', 'food', 'stone', 'metal', 'crystal']) g.res.addStored(k, 5000, false) }
+    const raise = (list: any[]) => {
+      for (const b of list) if (!g.regions.claimed(b.region)) claim(b.region)
+      g.buildings.load(list.map((b: any) => ({ padId: b.padId, level: 1, hp: 1e9, progress: {}, peakWorkers: 0 })))
+    }
+    const unbuilt = (f: (b: any) => boolean) => g.buildings.buildings.filter((b: any) => b.level === 0 && f(b))
+    for (let k = 0; k < n; k++) {
+      const q = g.quests.current
+      if (!q) break
+      const goal = q.goal
+      switch (goal.type) {
+        case 'collect': g.res.totalGathered[goal.resource] += goal.amount; break
+        case 'build': raise(unbuilt(b => b.key === goal.building && (!goal.region || b.region === goal.region)).slice(0, goal.amount ?? 1)); break
+        case 'settle': raise(unbuilt(b => b.region === goal.region && b.key !== 'wall' && b.key !== 'gate' && !b.padId.includes('.')).slice(0, goal.count)); break
+        case 'line': raise(g.buildings.linePads(goal.line).filter((b: any) => b.level === 0)); break
+        case 'upgrade': lvl('hall', goal.level); break
+        case 'workers': case 'recruit': {
+          fill()
+          const at = g.buildings.buildings.find((b: any) => b.level > 0 && (goal.type === 'recruit'
+            ? b.key === 'barracks' : (b.stats.workers ?? 0) > b.workers.length))
+          if (at) { goTo(at.x, at.y + 30, 12); pump(goal.amount * 1.2 + 1) }
+          break
+        }
+        case 'survive': g.waves.wave = Math.max(g.waves.wave, goal.wave); g.waves.wavesCleared = Math.max(g.waves.wavesCleared, goal.wave); break
+        case 'claim': claim(goal.region); break
+        case 'zone': {
+          const next = REGIONS.find(r => !g.regions.claimed(r.id) && g.regions.claimed(r.claim.from))
+          if (next) claim(next.id)
+          break
+        }
+        case 'burn': burn(goal.camp); break
+        case 'reach': { const p = POIS.find(x => x.id === goal.poi); if (p) { tp(p.x, p.y + 4); pump(1) } break }
+        case 'travel': {
+          const w = g.waystones
+          const to = w.list().find((s: any) => s.id !== WAYSTONE.hallStone)
+          if (!to) return { out, stuck: q.id, why: 'no stone but the hall\'s' }
+          w.activate(to.id, true)
+          const r: any = travel(WAYSTONE.hallStone, to.id, 2)
+          if (!r.ok) return { out, stuck: q.id, why: r.why }
+          break
+        }
+        case 'restore': {
+          fill()
+          const s = POIS.find(p => p.kind === 'shrine' && g.pois.state(p.id) !== 'done')
+          if (s) { if (!g.regions.claimed(s.region)) claim(s.region); g.pois.interact(s.id) }
+          break
+        }
+        case 'relic': for (const id of ['barrowCrown', 'captainsHorn', 'gallowsBell']) if (g.relics.list().length < goal.amount) g.relics.grant(id); break
+        case 'boss': {
+          if (goal.key === 'cinderRegent') { regent(); break }
+          const c = CAMPS.find(x => x.boss === goal.key)
+          if (c) { if (!g.regions.claimed(c.region)) claim(c.region); burn(c.id) }
+          break
+        }
+        default: return { out, stuck: q.id, why: `no dev step for ${goal.type}` }
+      }
+      pump(0.2)
+      if (g.quests.current === q) return { out, stuck: q.id, why: JSON.stringify(quests()) }
+      out.push(q.id)
+    }
+    return { out, stuck: null }
+  }
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi, relics, relic, relicCheck, god, boss, regent, quests, questStep }
 }
