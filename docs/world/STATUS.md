@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S18** ([card](sessions/S18-campaign.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S19** ([card](sessions/S19-save-v2.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -27,6 +27,14 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S18 · Campaign 2.0: done (2026-09-25)
+- C1–C2 (`fe79a1e`), C3 (`a4c5fca`). Goals claim, burn, restore, relic, reach, travel, line, settle (+ `build.region`); `zone` = regions held incl. the hold. All read world state, not events, so dev claims and loads agree. `targetFor` per card; pure candidates in `systems/questAnchors.ts`; a test puts every quest's targets on passable ground. `act:begun` banners, ribbons queue, deeds a12–a15, quest log shows the current act. CONTRACTS §S18.
+- **Chain: 53 quests** (06's 46 + 7 village: a11 cottages, b11 Ferrow granary, c9 Saltmere market, d2 Kettle watch post, d5 Deepvein market, e2 settle Ashgate 4, e4 settle Crown 3). **Deviations:** ids renumbered in chain order within each act; "Three fronts" moved up to b8 (after Greyfall opens the gorge) and acts III–V reordered so a quest waits on at most one claim (III: shrine, mine, Irontooth burned, gorge line, then zone 8; IV opens on the Kettle); survive waves moved to the 1.5× pace: "Three fronts" night 14 (was 10), "Thirty nights" night 30 (06: "Twenty nights", 20). Banners on campFerrow/campIrontooth burning (`CAMP_BANNERS`), not on the quest.
+- Verify (harness, one run): new game plays "Act I · The Rise" (1 screenshot); `H.questStep(27)` finished a2…b13 and c1, banners II and III; the arrow's route to Irontooth 10 points. The user's v2 save (old `q1`) loaded at a2 with no banners or rewards. Saves restored byte-identical.
+- **For S20, rewards (first pass, `QUESTS[].reward`):** act I 30–500 coins (xp 5–150), II 250–1000 (60–200), III 600–1500 (110–320), IV 600–2500 (120–600), V 1500–7000 (300–1400); wood/stone/metal/crystal grow alongside. **Likely slow:** survive goals (b8, c8) and zone goals (c5, c10) only wait; a14 bridgehead (23 pads, ~1.4k wood) in act I; a5 night 1 comes before the barracks; e2/e4 settle counts.
+- Trips: `H.start` pumps 0.6 s, so a1 (30 coins) is done before a script reads the chain; hook banners via `H.quests()` before stepping. `travel` counts journeys this session only (not saved). `QuestManager.load` no longer has the v1 q20→Regent patch; S19's migration owns v1.
+- Not measured: real-play pacing per act (S20), the arrow over long routes by eye, the quest log on a phone. No blueprint moves, no new open decisions.
+
 ### S17 · Bosses and the finale: done (2026-09-25)
 - C1 (`67220cc`) kits, C2 (`cc4b308`) art, C3 (`76adce6`) finale. Real bosses stand at the strongholds (S10's elite stand-ins gone): gallowsKnight 3500 hp / 30 dmg (every swing cleaves ±66°; telegraphed cleave 150 px ×1.6; 4 grunts at 50%, once), thornmother 3000 / 22, speed 14 (5 thornlings every 6 s, cap 15; root lash 460×64 px ×1.5 + snare ×0.4 1.4 s), seamOverseer 4200 / 24 (whip 180 px, aura +20% speed at 280; whipcrack 180 px ×1.3), stairwarden 5000 / 34 (immune while a bound ash priest lives; the pair rises once, 12 s after the last falls; charge from >180 px, shield bash 120 px ×1.2 up close). All numbers in `KITS` (`systems/bosses.ts`) for S20. Every boss keeps the generic ENRAGED flip at 50%.
 - Boss hp persists in `campHealth` under the boss key; the relic drops on the boss's fall (camp burning still grants). The HUD bar takes a boss at its post only within 1100 px of the hero.
@@ -46,13 +54,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - Not measured: wave-mix counts over real nights (unit test only), the slow on soldiers in play, hound patches on soldiers, thornling splinters by eye. No blueprint moves, no new open decisions.
 
 ### S15 · Points of interest II: done (2026-09-25)
-- C1–C2 (`3ac9f3e`), C3 (`48f0cb3`). `Relics` (`scene.relics`: grant/has/list, save `relics`, `relic:granted`), seven relics per 05 with `BOSS_RELICS` on `camp:burned` and `BARROW_RELICS`; relic markers are plinths lit when held. Barrows: hp 220 × tier step, struck by the hero's gathering blow within 70 px, open to a leashed `elite` guardian (tier-scaled), whose fall drops the grave goods (and the relic). Deed a11 Reliquary. Pause page: a Relics strip of wax seals with tooltips. API in CONTRACTS §S15.
-- **Every `MOD_STATS` stat now has a reader** (pack.size, soldier.damage, army.speed, rally.cooldown, worker.speed, worker.gather, tower.range, hero.pierce new; wood.yield was S14's).
-- Verify (harness, one run): barrowKing opened after ~7.4 s of pumping (18 blows of 12), "BARROW KING" 756 hp / 28.8 dmg, leash 460; its fall gave the Barrow Crown and carry 120 → 138 (×1.15). `H.relicCheck()`: soldier dmg ×1.1, army speed ×1.15, rally cd 34 → 27.2, pierce +1, wood ×1.25, worker speed and gather ×1.15, tower range 250 → 275. Saved, reloaded: 7 relics, markers done, Reliquary earned. 2 screenshots (the strip, 4/7 with a tooltip). User saves restored byte-identical.
-- Deviations: relic ids are names (`barrowCrown`…), markers map by `marker`. The Heart-Oak Seed comes with the Thornmother's camp burning, not at the Heart Oak. hero.pierce is the main attack only. The barrow runs its own blow cadence in PoiManager (not `tryHarvest`). A barrow broken open but unplundered is not saved: it reseals at full hp on load, as does one whose guardian leaves the field alive.
-- For S16/S17: the guardian is a renamed `elite` (`breakOpen`); a barrow walker could replace it. Real bosses must keep `boss` on `camp:burned`, or the relics stop flowing. A load with burned strongholds and no `relics` grants their relics silently.
-- Trips: `H.start` again left the Game scene paused in the hidden pane; `H.ui().togglePause()` before pumping. The unit test opens the barrow in 5.8 s at dt 0.1; the harness took ~7.4 s (S20: `POI.barrow.hp`).
-- Not measured: guardian fights by tier, grave-goods values in play, the strip on a landscape phone (compact layout computed, not shot). No blueprint moves, no new open decisions.
+- `Relics` (`scene.relics`, save `relics`), barrows with leashed guardians, deed a11, every `MOD_STATS` stat read, the pause page's relic strip; CONTRACTS §S15.
 
 ### S14 · Points of interest I: done (2026-09-25)
 - `PoiManager` (`scene.pois`, save `pois`), `Modifiers` (`scene.mods`), caches, lore, shrines, landmarks, survivors; deeds a9, a10; CONTRACTS §S14.

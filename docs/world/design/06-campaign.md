@@ -2,6 +2,8 @@
 
 The campaign stays **one running chain**, as today (`QUESTS` in `src/config/quests.ts`). Each step points an arrow at the next thing and pays enough to do it.
 
+> **As landed (S18):** the tables below are the design. `quests.ts` holds the chain as built: the same 46 goals plus seven village quests, "Three fronts" moved up to b8 and acts III–V reordered for the 1.5× pace, ids renumbered in chain order, and the two survive goals moved to nights 14 and 30 (see STATUS §S18).
+
 **What changes:**
 - It grows from 29 quests to **46**, across five acts.
 - Each act ends in a banner.

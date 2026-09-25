@@ -293,17 +293,15 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S18: campaign
 
-*Status: planned.*
+*Status: landed (S18). Goals in [src/config/quests.ts](../../src/config/quests.ts), evaluation and `targetFor` at [src/systems/QuestManager.ts:234](../../src/systems/QuestManager.ts#L234), static targets in [src/systems/questAnchors.ts:57](../../src/systems/questAnchors.ts#L57).*
 
-- `QuestGoal` gains:
-  - `{ type: 'claim', region }`
-  - `{ type: 'burn', camp }`
-  - `{ type: 'restore', shrine }`
-  - `{ type: 'relic', amount }`
-  - `{ type: 'reach', poi }`
-  - `{ type: 'travel' }`
-  - `{ type: 'line', line }`
-  - `{ type: 'settle', region, count }` (buildings standing in a region)
+- `QuestGoal` gains `{ claim, region }`, `{ burn, camp }`, `{ restore, amount }` (shrines restored; was planned as `shrine`), `{ relic, amount }` (held), `{ reach, poi }` (POI done), `{ travel }` (a `waystone:travelled` this session), `{ line, line }` (pieces standing / all), `{ settle, region, count }` (standing buildings, walls and gates excluded). `build` takes `region?`. `zone` counts `regions.claimedCount` (the hold included). `boss` also reads a burned stronghold or its `guardsDown` slot.
+- `QUESTS` (53: 06's 46 plus 7 village quests), ids `a1…e5`: the letter is the act. `ACTS: { roman, name, blurb }[]`, `actOf(q) → 1..5`, `CAMP_BANNERS[campId] → [title, sub]` (campFerrow, campIrontooth). Deeds `a12` Heartwood (`thornmother`), `a13` Slagbreaker (`forges`), `a14` Surveyor (`regionsSeen`, a fog scan every ~90 updates), `a15` Wayfarer (`waystonesLit` of every outpost pad + lone stone).
+- Event `act:begun { act, roman, name, blurb }` as the chain enters an act (a new game plays Act I; a load plays none). The HUD ribbons it; `HUD.toast` now queues up to 3 while one is up.
+- `questAnchors.ts` (pure): `goalAnchors(goal) → Anchor { id, x, y, region? }[]` (empty for live-only goals), `claimAnchor`, `lineAnchors`, `waystoneAnchors`, `relicAnchors`, `bossCamp(key)`, `NOT_SETTLED`, `HALL_ANCHOR`. `buildings.linePads(lineId) → Building[]` (in order, gates included).
+- Save: the quest blob's shape is unchanged. A save whose `done` holds ids not in `QUESTS` (the old `q1…`) restarts at a1 and, on the first update, walks the chain silently past goals already met.
+- The arrow: S12's `questRoute` already follows the nav route when the target is off-screen; S18 adds nothing there. The quest log shows the current act only.
+- Harness: `H.quests()`, `H.questStep(n)`.
 
 ## Save fields
 
