@@ -5,69 +5,102 @@ import { DAYNIGHT, XP } from '../config/balance'
 import { BUILDINGS } from '../config/buildings'
 import { CAMPS, PADS, POIS, REGION_BY_ID, WALL_LINES, WORLD } from '../config/world'
 import { SOLDIERS, WORKERS } from '../config/units'
+import { layWallLine } from '../world/wallLine'
 import { UPGRADE_BY_ID } from '../config/upgrades'
 import { QUESTS } from '../config/quests'
 import { FogMemory } from '../core/FogMemory'
-import { RELIC_BY_ID, RELICS } from './Relics'
+import { RELIC_BY_ID } from './Relics'
+import { guardIds } from './CampManager'
+import { GAME_VERSION } from '../config/version'
 
 // v2 (the frontier) never reads, writes or deletes the v1 keys: see docs/world/design/07-save.md
 const KEY = 'emberhold.save.v2'
 const BACKUP_KEY = 'emberhold.save.backup.v2'
 const SETTINGS_KEY = 'emberhold.settings.v1'
-export const MAX_SAVE_FILE_BYTES = 1_000_000
+/**
+ * The whole save, in its slot and as a portable file, is at most 64 KB
+ * (design 07 §Limits). A blob over it is never written and never read.
+ */
+export const SAVE_LIMIT_BYTES = 64 * 1024
+/** The title refuses a chosen file over this before it reads a byte. */
+export const MAX_SAVE_FILE_BYTES = SAVE_LIMIT_BYTES
+const FOG_MAX = FogMemory.maxEncodedLength(WORLD.width, WORLD.height)
+/** `r:` runs in base64url digits, or `b:` the unpadded base64 bitset (S03). Nothing else. */
+const FOG_FORM = /^(r:[A-Za-z0-9_-]*|b:[A-Za-z0-9+/]*)$/
+const byteLength = (text: string) => new TextEncoder().encode(text).length
 
 const record = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v)
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const count = (v: unknown, max: number): v is number =>
+  finite(v) && Number.isInteger(v) && v >= 0 && v <= max
+const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(s => typeof s === 'string')
+const inWorld = (x: unknown, y: unknown) => finite(x) && x >= 0 && x <= WORLD.width
+  && finite(y) && y >= 0 && y <= WORLD.height
 const resourceBag = (v: unknown) => record(v) && RESOURCE_ORDER.every(k =>
   finite(v[k]) && v[k] >= 0)
-const padMax = new Map(PADS.map(p => [p.id, BUILDINGS[p.key].levels.length]))
-/** Wall pieces are `${line}.${k}` (S09b); `wall${i}` is the old palisade, remapped on load. */
-const wallLineIds = new Set(WALL_LINES.map(l => l.id))
-const gateIds = new Set(WALL_LINES.flatMap(l => l.gates.map(g => g.id)))
+
+// ---- the ids the world knows today ---------------------------------------------
+/**
+ * Every pad a building record may name, with its key's top level: the
+ * blueprint's pads, and each wall line's pieces `${line}.${k}` and gates as
+ * `layWallLine` lays them today (S09b). A piece past a line's end is unknown.
+ */
+const padMax = new Map<string, number>([
+  ...PADS.map(p => [p.id, BUILDINGS[p.key].levels.length] as const),
+  ...WALL_LINES.flatMap(l => layWallLine(l).map(p => [p.id, BUILDINGS[p.key].levels.length] as const)),
+])
+/** `wall${i}` is the palisade before S09b: kept, and remapped onto the pieces on load. */
+const legacyWall = (id: string) => /^wall\d{1,3}$/.test(id)
+const knownPad = (id: string) => padMax.has(id) || legacyWall(id)
+const maxLevelForPad = (id: string) => padMax.get(id) ?? (legacyWall(id) ? BUILDINGS.wall.levels.length : 0)
+const campIds = new Set(CAMPS.map(c => c.id))
+const bossKeys = new Set(CAMPS.flatMap(c => (c.boss ? [c.boss] : [])))
+/** Camp guards (S10): `${campId}.boss` at a stronghold, `${campId}.brazier${k}` at the fortress. */
+const guardKeys = new Set(CAMPS.flatMap(c => guardIds(c).map(g => `${c.id}.${g}`)))
 /** Waystone ids (S11): an outpost's pad id, or a lone stone's POI id. */
 const stoneIds = new Set([...PADS.filter(p => p.key === 'outpost').map(p => p.id),
   ...POIS.filter(p => p.kind === 'waystone').map(p => p.id)])
 /** POI ids (S14): every blueprint POI; only done ones are saved. */
 const poiIds = new Set(POIS.map(p => p.id))
-const maxLevelForPad = (id: string) => padMax.get(id)
-  ?? (/^wall\d+$/.test(id) || wallLineIds.has(id.split('.')[0]) && /^[A-Za-z]+\.\d+$/.test(id) ? BUILDINGS.wall.levels.length
-    : gateIds.has(id) ? BUILDINGS.gate.levels.length : 0)
 
-/** Reject a torn or incompatible save before any manager mutates live state. */
-function validSave(v: unknown): v is SaveBlob {
-  if (!record(v) || v.v !== 2 || !finite(v.savedAt) || !finite(v.playtime)) return false
-  if (!record(v.player) || !finite(v.player.level) || v.player.level < 1
+/**
+ * Types and ranges, strictly: anything wrong here refuses the whole save
+ * before a manager mutates live state. Ids are only checked for being
+ * strings; whether the world still has them is `tolerate`'s job.
+ */
+function validShape(v: unknown): v is SaveBlobV2 {
+  if (!record(v) || v.v !== 2 || !finite(v.savedAt) || v.savedAt < 0
+    || !finite(v.playtime) || v.playtime < 0) return false
+  if (v.meta !== undefined && (!record(v.meta) || typeof v.meta.version !== 'string'
+    || v.meta.version.length > 64)) return false
+  if (!record(v.player) || !count(v.player.level, 999) || v.player.level < 1
     || !finite(v.player.xp) || v.player.xp < 0 || !finite(v.player.hp)
-    || !finite(v.player.x) || v.player.x < 0 || v.player.x > WORLD.width
-    || !finite(v.player.y) || v.player.y < 0 || v.player.y > WORLD.height) return false
+    || !inWorld(v.player.x, v.player.y)) return false
   if (!record(v.res) || !resourceBag(v.res.carried) || !resourceBag(v.res.stored)
-    || !resourceBag(v.res.totalGathered) || !Array.isArray(v.res.discovered)
-    || !v.res.discovered.every(k => typeof k === 'string')) return false
+    || !resourceBag(v.res.totalGathered) || !strings(v.res.discovered)) return false
   if (!Array.isArray(v.buildings) || !v.buildings.every(b => record(b)
-    && typeof b.padId === 'string' && finite(b.level) && b.level >= 0
-    && b.level <= maxLevelForPad(b.padId) && finite(b.hp)
-    && (b.peakWorkers === undefined || finite(b.peakWorkers)
-      && Number.isInteger(b.peakWorkers) && b.peakWorkers >= 0 && b.peakWorkers <= 500))) return false
+    && typeof b.padId === 'string' && count(b.level, 99) && finite(b.hp)
+    // a pad the world still has keeps its key's level range; an unknown one is dropped later
+    && (!knownPad(b.padId) || b.level <= maxLevelForPad(b.padId))
+    && (b.peakWorkers === undefined || count(b.peakWorkers, 500))
+    && (b.trains === undefined || typeof b.trains === 'string')
+    && (b.progress === undefined || record(b.progress)
+      && Object.values(b.progress).every(n => finite(n) && n >= 0)))) return false
   if (!Array.isArray(v.workers) || v.workers.length > 500 || !v.workers.every(w => record(w)
-    && typeof w.key === 'string' && w.key in WORKERS
-    && typeof w.homeId === 'string'
-    && ((w.x === undefined && w.y === undefined)
-      || finite(w.x) && w.x >= 0 && w.x <= WORLD.width
-        && finite(w.y) && w.y >= 0 && w.y <= WORLD.height)
+    && typeof w.key === 'string' && typeof w.homeId === 'string'
+    && ((w.x === undefined && w.y === undefined) || inWorld(w.x, w.y))
     && (w.hp === undefined || finite(w.hp) && w.hp > 0 && w.hp <= 100000)
     && (w.carrying === undefined || finite(w.carrying) && w.carrying >= 0 && w.carrying <= 100000)
+    && (w.carryType === undefined || w.carryType === null || typeof w.carryType === 'string')
     && (w.sheltered === undefined || typeof w.sheltered === 'boolean'))) return false
-  if (!record(v.army) || !record(v.army.counts) || !Object.values(v.army.counts).every(n =>
-    finite(n) && Number.isInteger(n) && n >= 0 && n <= 500)
-    || !Object.keys(v.army.counts).every(k => k in SOLDIERS)) return false
+  if (!record(v.army) || !record(v.army.counts)
+    || !Object.values(v.army.counts).every(n => count(n, 500))) return false
   if (v.army.totalRecruited !== undefined && (!finite(v.army.totalRecruited)
     || v.army.totalRecruited < 0 || v.army.totalRecruited > 1000000)) return false
   if (v.army.holding !== undefined && typeof v.army.holding !== 'boolean') return false
   if (v.army.units !== undefined && (!Array.isArray(v.army.units) || v.army.units.length > 500
-    || !v.army.units.every(u => record(u) && typeof u.key === 'string' && u.key in SOLDIERS
-      && finite(u.x) && u.x >= 0 && u.x <= WORLD.width
-      && finite(u.y) && u.y >= 0 && u.y <= WORLD.height
+    || !v.army.units.every(u => record(u) && typeof u.key === 'string' && inWorld(u.x, u.y)
       && finite(u.hp) && u.hp > 0 && u.hp <= 100000))) return false
   if (!record(v.waves) || !finite(v.waves.wave) || v.waves.wave < 0
     || !finite(v.waves.wavesCleared) || v.waves.wavesCleared < 0
@@ -75,46 +108,37 @@ function validSave(v: unknown): v is SaveBlob {
     || (v.waves.phaseT !== undefined && (!finite(v.waves.phaseT)
       || v.waves.phaseT < -1
       || v.waves.phaseT > Math.max(DAYNIGHT.dayMax, DAYNIGHT.nightSeconds) + 1))) return false
-  if (!record(v.quests) || !finite(v.quests.index) || !Number.isInteger(v.quests.index)
-    || v.quests.index < 0 || v.quests.index > QUESTS.length
-    || !Array.isArray(v.quests.done) || !v.quests.done.every(id => typeof id === 'string')
-    || !Array.isArray(v.quests.achievements)
-    || !v.quests.achievements.every(id => typeof id === 'string')) return false
+  if (!record(v.quests) || !count(v.quests.index, QUESTS.length)
+    || !strings(v.quests.done) || !strings(v.quests.achievements)) return false
   for (const key of ['kills', 'bossKills', 'campsCleared', 'zonesClaimed'] as const) {
     const n = v.quests[key]
-    if (n !== undefined && (!finite(n) || !Number.isInteger(n) || n < 0)) return false
+    if (n !== undefined && !count(n, Number.MAX_SAFE_INTEGER)) return false
+  }
+  for (const key of ['victoryAt', 'victoryWave', 'victoryPlaytime'] as const) {
+    const n = v.quests[key]
+    if (n !== undefined && (!finite(n) || n < 0)) return false
   }
   if (v.coreLost !== undefined && typeof v.coreLost !== 'boolean') return false
-  if (v.quests.defeatedBosses !== undefined && (!Array.isArray(v.quests.defeatedBosses)
-    || !v.quests.defeatedBosses.every(k => typeof k === 'string'))) return false
+  if (v.quests.defeatedBosses !== undefined && !strings(v.quests.defeatedBosses)) return false
   if (v.quests.finalBossHp !== undefined && (!finite(v.quests.finalBossHp)
     || v.quests.finalBossHp < 0 || v.quests.finalBossHp > 100000)) return false
   if (v.combat !== undefined) {
     if (!record(v.combat)) return false
     for (const key of ['kills', 'bossKills'] as const) {
       const n = v.combat[key]
-      if (n !== undefined && (!finite(n) || !Number.isInteger(n) || n < 0)) return false
+      if (n !== undefined && !count(n, Number.MAX_SAFE_INTEGER)) return false
     }
   }
-  if (!Array.isArray(v.regions) || !v.regions.every(z => typeof z === 'string' && REGION_BY_ID.has(z as never))
-    || !Array.isArray(v.camps) || !v.camps.every(c => typeof c === 'string')
+  if (!strings(v.regions) || !strings(v.camps)
     || !Array.isArray(v.upgrades) || !v.upgrades.every(u => Array.isArray(u)
-      && typeof u[0] === 'string' && UPGRADE_BY_ID.has(u[0] as never)
-      && finite(u[1]) && Number.isInteger(u[1]) && u[1] >= 0 && u[1] <= 10000)) return false
-  if (v.exploredFog !== undefined && (typeof v.exploredFog !== 'string' || v.exploredFog.length > FogMemory.maxEncodedLength(WORLD.width, WORLD.height))) return false
-  if (v.campAwake !== undefined && (!Array.isArray(v.campAwake)
-    || !v.campAwake.every(id => typeof id === 'string' && CAMPS.some(c => c.id === id)))) return false
-  if (v.campGuards !== undefined && (!Array.isArray(v.campGuards) || v.campGuards.length > 64
-    || !v.campGuards.every(g => typeof g === 'string' && CAMPS.some(c => g.startsWith(`${c.id}.`))))) return false
-  if (v.waystones !== undefined && (!Array.isArray(v.waystones) || v.waystones.length > 64
-    || !v.waystones.every(id => typeof id === 'string' && stoneIds.has(id)))) return false
-  if (v.pois !== undefined && (!Array.isArray(v.pois) || v.pois.length > POIS.length
-    || !v.pois.every(id => typeof id === 'string' && poiIds.has(id)))) return false
-  if (v.relics !== undefined && (!Array.isArray(v.relics) || v.relics.length > RELICS.length
-    || !v.relics.every(id => typeof id === 'string' && RELIC_BY_ID.has(id)))) return false
+      && typeof u[0] === 'string' && count(u[1], 10000))) return false
+  if (v.exploredFog !== undefined && (typeof v.exploredFog !== 'string'
+    || v.exploredFog.length > FOG_MAX || !FOG_FORM.test(v.exploredFog))) return false
+  for (const key of ['campAwake', 'campGuards', 'waystones', 'pois', 'relics'] as const) {
+    if (v[key] !== undefined && !strings(v[key])) return false
+  }
   if (v.campHealth !== undefined && (!record(v.campHealth)
-    || !Object.entries(v.campHealth).every(([id, hp]) => CAMPS.some(c => c.id === id || c.boss === id)
-      && finite(hp) && hp > 0 && hp <= 100000))) return false
+    || !Object.values(v.campHealth).every(hp => finite(hp) && hp > 0 && hp <= 100000))) return false
   if (!record(v.abilities) || !Array.isArray(v.abilities.slots)
     || !v.abilities.slots.every(s => record(s) && typeof s.key === 'string'
       && typeof s.unlocked === 'boolean')
@@ -122,18 +146,130 @@ function validSave(v: unknown): v is SaveBlob {
   return true
 }
 
-function parseSave(text: string): SaveBlob | null {
-  if (text.length > MAX_SAVE_FILE_BYTES) return null
+/**
+ * A blueprint edit must not break a save (design 07 §Tolerance): ids the
+ * world no longer has are dropped, each list is kept once per id (so every
+ * list is at most its blueprint count), and one warning names what went.
+ */
+function tolerate(v: SaveBlobV2, warn: boolean): SaveBlobV2 {
+  const dropped: Record<string, string[]> = {}
+  const keep = (field: string, list: readonly string[] | undefined, ok: (id: string) => boolean) => {
+    if (!list) return undefined
+    const seen = new Set<string>()
+    return list.filter(id => {
+      if (seen.has(id)) return false
+      seen.add(id)
+      if (!ok(id)) (dropped[field] ??= []).push(id)
+      return ok(id)
+    })
+  }
+  const seenPad = new Set<string>()
+  const buildings = v.buildings.filter(b => {
+    if (seenPad.has(b.padId)) return false
+    seenPad.add(b.padId)
+    if (!knownPad(b.padId)) (dropped.buildings ??= []).push(b.padId)
+    return knownPad(b.padId)
+  })
+  const workers = v.workers.filter(w => {
+    const ok = w.key in WORKERS && knownPad(w.homeId)
+    if (!ok) (dropped.workers ??= []).push(`${w.key}@${w.homeId}`)
+    return ok
+  })
+  const counts = Object.fromEntries(Object.entries(v.army.counts).filter(([k]) => {
+    if (!(k in SOLDIERS)) (dropped.army ??= []).push(k)
+    return k in SOLDIERS
+  })) as SaveBlobV2['army']['counts']
+  const units = v.army.units?.filter(u => {
+    if (!(u.key in SOLDIERS)) (dropped.army ??= []).push(u.key)
+    return u.key in SOLDIERS
+  })
+  // `delete` is true once per id: the first rank of each known upgrade stays
+  const upgradeIds = new Set(keep('upgrades', v.upgrades.map(u => u[0]), id => UPGRADE_BY_ID.has(id as never)))
+  const hurtIds = new Set(keep('campHealth', Object.keys(v.campHealth ?? {}), id => campIds.has(id) || bossKeys.has(id)))
+  const out: SaveBlobV2 = {
+    ...v,
+    buildings,
+    workers,
+    army: { ...v.army, counts, ...(units ? { units } : {}) },
+    upgrades: v.upgrades.filter(u => upgradeIds.delete(u[0])),
+    regions: keep('regions', v.regions, id => REGION_BY_ID.has(id as never))!,
+    camps: keep('camps', v.camps, id => campIds.has(id))!,
+    campAwake: keep('campAwake', v.campAwake, id => campIds.has(id)),
+    campGuards: keep('campGuards', v.campGuards, id => guardKeys.has(id)),
+    campHealth: v.campHealth && Object.fromEntries(Object.entries(v.campHealth).filter(([id]) => hurtIds.has(id))),
+    waystones: keep('waystones', v.waystones, id => stoneIds.has(id)),
+    pois: keep('pois', v.pois, id => poiIds.has(id)),
+    relics: keep('relics', v.relics, id => RELIC_BY_ID.has(id)),
+  }
+  if (warn && Object.keys(dropped).length) console.warn('[save] dropped ids the world no longer has', dropped)
+  return out
+}
+
+/**
+ * Reject a torn, oversized or incompatible save; forgive ids the world has
+ * since lost. `warn` names the dropped ids (on a load or an import, not on the
+ * quiet checks the title and the autosave make).
+ */
+export function parseSave(text: string, warn = false): SaveBlobV2 | null {
+  if (typeof text !== 'string' || text.length > SAVE_LIMIT_BYTES || byteLength(text) > SAVE_LIMIT_BYTES) return null
   try {
     const parsed: unknown = JSON.parse(text)
-    return validSave(parsed) ? parsed : null
+    return validShape(parsed) ? tolerate(parsed, warn) : null
   } catch { return null }
 }
 
-function readSave(key: string): SaveBlob | null {
+/** hp as whole points, never rounding a living worker or soldier down to none */
+const wholeHp = (n: number) => Math.max(1, Math.ceil(n))
+
+/**
+ * The blob as written (design 07 §Limits): places to whole pixels, hp to whole
+ * points, and a field left out wherever its loader already defaults it (no
+ * progress, no peak, no trade, nothing carried, not sheltered) or never reads
+ * it (what a worker carries is its home's resource). A frontier
+ * with every pad built and every worker hired then fits in 64 KB.
+ */
+function compact(b: SaveBlobV2): SaveBlobV2 {
+  const buildings = b.buildings.map(({ progress, peakWorkers, trains, ...d }) => ({
+    ...d, hp: Math.ceil(d.hp),
+    ...(progress && Object.keys(progress).length ? { progress } : {}),
+    ...(peakWorkers ? { peakWorkers } : {}),
+    ...(trains ? { trains } : {}),
+  }))
+  const workers = b.workers.map(w => ({
+    key: w.key, homeId: w.homeId,
+    ...(Number.isFinite(w.x) && Number.isFinite(w.y) ? { x: Math.round(w.x), y: Math.round(w.y) } : {}),
+    ...(Number.isFinite(w.hp) ? { hp: wholeHp(w.hp) } : {}),
+    // the load restores what is carried; its type follows from the home, so it is not written
+    ...(w.carrying > 0 ? { carrying: Math.round(w.carrying * 100) / 100 } : {}),
+    ...(w.sheltered ? { sheltered: true } : {}),
+  }))
+  const units = b.army.units?.map(u => ({ key: u.key, x: Math.round(u.x), y: Math.round(u.y), hp: wholeHp(u.hp) }))
+  return {
+    ...b,
+    buildings: buildings as SaveBlobV2['buildings'],
+    workers: workers as SaveBlobV2['workers'],
+    army: { ...b.army, ...(units ? { units } : {}) },
+  }
+}
+
+/**
+ * Past the limit even compact (more than any run has built): workers and
+ * soldiers give up their places and walk out from home, as older saves did.
+ * Nothing the world keeps is lost; only where people stood.
+ */
+function lean(b: SaveBlobV2): SaveBlobV2 {
+  const { units: _placed, ...army } = b.army
+  return {
+    ...b,
+    workers: b.workers.map(w => ({ key: w.key, homeId: w.homeId })) as SaveBlobV2['workers'],
+    army: army as SaveBlobV2['army'],
+  }
+}
+
+function readSave(key: string, warn = false): SaveBlobV2 | null {
   try {
     const raw = localStorage.getItem(key)
-    return raw ? parseSave(raw) : null
+    return raw ? parseSave(raw, warn) : null
   } catch { return null }
 }
 
@@ -152,8 +288,17 @@ export const DEFAULT_SETTINGS: Settings = {
   reducedMotion: typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false,
 }
 
-export interface SaveBlob {
+/**
+ * Save v2, the one schema (S19). Every field, its owner and its rule are in
+ * design 07 §Schema and the CONTRACTS save-fields table; a session that adds
+ * persistent state adds it here, to `validShape`, `tolerate` if it holds ids,
+ * `load`, both tables and the portability test, in the same commit.
+ */
+export interface SaveBlobV2 {
+  /** the schema: 2 is the frontier. Not the game's version, which is `meta.version` */
   v: 2
+  /** which build wrote it: `GAME_VERSION` ('Beta 1'). Optional so older v2 saves load */
+  meta?: { version: string }
   savedAt: number
   playtime: number
   res: ReturnType<GameScene['res']['toJSON']>
@@ -224,7 +369,7 @@ export class SaveManager {
 
   /** Validate a chosen file before the title asks for final confirmation. */
   static inspectImport(text: string): { wave: number; level: number; savedAt: number } | null {
-    const b = parseSave(text)
+    const b = parseSave(text, true)
     return b ? { wave: b.waves.wave, level: b.player.level, savedAt: b.savedAt } : null
   }
 
@@ -254,8 +399,9 @@ export class SaveManager {
 
   save(): boolean {
     const s = this.scene
-    const blob: SaveBlob = {
+    const blob: SaveBlobV2 = {
       v: 2,
+      meta: { version: GAME_VERSION },
       savedAt: Date.now(),
       playtime: this.playtime,
       res: s.res.toJSON(),
@@ -279,12 +425,19 @@ export class SaveManager {
       combat: { kills: s.combat.kills, bossKills: s.combat.bossKills },
       coreLost: s.coreLost,
     }
+    let text = JSON.stringify(compact(blob))
+    if (byteLength(text) > SAVE_LIMIT_BYTES) text = JSON.stringify(lean(compact(blob)))
+    if (byteLength(text) > SAVE_LIMIT_BYTES) {
+      // never write what could not be read back; the last good slot stays
+      console.warn(`[save] ${byteLength(text)} bytes is over the ${SAVE_LIMIT_BYTES} limit; not saved`)
+      return false
+    }
     try {
       const previous = localStorage.getItem(KEY)
       if (previous && readSave(KEY)) {
         try { localStorage.setItem(BACKUP_KEY, previous) } catch { /* keep current slot writable */ }
       }
-      localStorage.setItem(KEY, JSON.stringify(blob))
+      localStorage.setItem(KEY, text)
       this.lastSavedAt = Date.now()
       return true
     } catch { return false }
@@ -314,7 +467,7 @@ export class SaveManager {
   }
 
   load(): boolean {
-    const blob = readSave(KEY) ?? readSave(BACKUP_KEY)
+    const blob = readSave(KEY, true) ?? readSave(BACKUP_KEY, true)
     if (!blob) return false
 
     const s = this.scene

@@ -23,8 +23,7 @@ const b64Length = (bytes: number) => Math.ceil(bytes * 4 / 3)
  *   digit but the last. Explored ground is a few broad blobs, so a save made
  *   in play is usually this form and a fraction of the bitset.
  *
- * A bare base64 string with no prefix is the v1 bitset; `load` still reads it
- * while the old map is live (S19 drops it).
+ * Anything else, the old unprefixed v1 bitset included, loads nothing (S19).
  */
 export class FogMemory {
   readonly cols: number
@@ -129,8 +128,8 @@ export class FogMemory {
     if (typeof encoded !== 'string') return null
     try {
       if (encoded.startsWith('r:')) return this.decodeRuns(encoded)
-      // `b:` is the bitset; a bare string is the v1 bitset (padded, same bytes)
-      const raw = atob(encoded.startsWith('b:') ? encoded.slice(2) : encoded)
+      if (!encoded.startsWith('b:')) return null
+      const raw = atob(encoded.slice(2))
       if (raw.length !== this.bits.length) return null
       const bits = new Uint8Array(raw.length)
       for (let i = 0; i < raw.length; i++) bits[i] = raw.charCodeAt(i)

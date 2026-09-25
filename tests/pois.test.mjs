@@ -4,7 +4,7 @@ import { loadTs } from './load-ts.mjs'
 
 const { Modifiers } = await loadTs('src/systems/Modifiers.ts')
 const { PoiManager } = await loadTs('src/systems/PoiManager.ts')
-const { SaveManager } = await loadTs('src/systems/SaveManager.ts')
+const { SaveManager, parseSave } = await loadTs('src/systems/SaveManager.ts')
 
 const noop = () => {}
 const obj = () => {
@@ -110,5 +110,7 @@ test('done POIs round-trip through the save and re-register their shrines', () =
     combat: { kills: 0, bossKills: 0 },
   }
   assert.ok(SaveManager.inspectImport(JSON.stringify({ ...save, pois: ids })))
-  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...save, pois: ['shrineNowhere'] })), null)
+  // a POI the blueprint lost is dropped (S19); a wrong type still refuses the save
+  assert.deepEqual(parseSave(JSON.stringify({ ...save, pois: [...ids, 'shrineNowhere'] })).pois, ids)
+  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...save, pois: [7] })), null)
 })

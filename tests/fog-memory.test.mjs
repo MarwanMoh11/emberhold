@@ -85,13 +85,14 @@ test('a 30%-explored frontier saves as runs, well under the bitset', () => {
   assert.ok(encoded.length < FogMemory.maxEncodedLength(NEW.width, NEW.height) / 3, `${encoded.length}`)
 })
 
-test('the v1 bitset still loads while the old map is live', () => {
+test('the old unprefixed v1 bitset loads nothing (S19 let v1 go)', () => {
   const map = explore(OLD, 0.3)
   let raw = ''
   for (const b of map['bits']) raw += String.fromCharCode(b)
   const legacy = btoa(raw)
   assert.equal(legacy.length, 396)
-  assert.deepEqual(marked(FogMemory.fromJSON(legacy, OLD.width, OLD.height)), marked(map))
+  assert.equal(marked(FogMemory.fromJSON(legacy, OLD.width, OLD.height)).length, 0)
+  assert.deepEqual(marked(FogMemory.fromJSON('b:' + legacy.replace(/=+$/, ''), OLD.width, OLD.height)), marked(map))
 })
 
 test('foreign or damaged fog strings load nothing', () => {

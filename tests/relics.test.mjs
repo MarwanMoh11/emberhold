@@ -6,7 +6,7 @@ const { Modifiers } = await loadTs('src/systems/Modifiers.ts')
 const { Relics, RELICS } = await loadTs('src/systems/Relics.ts')
 const { PoiManager } = await loadTs('src/systems/PoiManager.ts')
 const { ResourceManager } = await loadTs('src/systems/ResourceManager.ts')
-const { SaveManager } = await loadTs('src/systems/SaveManager.ts')
+const { SaveManager, parseSave } = await loadTs('src/systems/SaveManager.ts')
 
 const noop = () => {}
 const obj = () => {
@@ -127,5 +127,7 @@ test('a stronghold burned hands over its boss relics; relics round-trip through 
     combat: { kills: 0, bossKills: 0 },
   }
   assert.ok(SaveManager.inspectImport(JSON.stringify({ ...save, relics: ids })))
-  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...save, relics: ['theHolyGrail'] })), null)
+  // a relic the blueprint lost is dropped (S19); a wrong type still refuses the save
+  assert.deepEqual(parseSave(JSON.stringify({ ...save, relics: [...ids, 'theHolyGrail'] })).relics, ids)
+  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...save, relics: [7] })), null)
 })
