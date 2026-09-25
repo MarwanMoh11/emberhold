@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S15** ([card](sessions/S15-poi-two.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S16** ([card](sessions/S16-new-walkers.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -27,6 +27,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S15 · Points of interest II: done (2026-09-25)
+- C1–C2 (`3ac9f3e`), C3 (`48f0cb3`). `Relics` (`scene.relics`: grant/has/list, save `relics`, `relic:granted`), seven relics per 05 with `BOSS_RELICS` on `camp:burned` and `BARROW_RELICS`; relic markers are plinths lit when held. Barrows: hp 220 × tier step, struck by the hero's gathering blow within 70 px, open to a leashed `elite` guardian (tier-scaled), whose fall drops the grave goods (and the relic). Deed a11 Reliquary. Pause page: a Relics strip of wax seals with tooltips. API in CONTRACTS §S15.
+- **Every `MOD_STATS` stat now has a reader** (pack.size, soldier.damage, army.speed, rally.cooldown, worker.speed, worker.gather, tower.range, hero.pierce new; wood.yield was S14's).
+- Verify (harness, one run): barrowKing opened after ~7.4 s of pumping (18 blows of 12), "BARROW KING" 756 hp / 28.8 dmg, leash 460; its fall gave the Barrow Crown and carry 120 → 138 (×1.15). `H.relicCheck()`: soldier dmg ×1.1, army speed ×1.15, rally cd 34 → 27.2, pierce +1, wood ×1.25, worker speed and gather ×1.15, tower range 250 → 275. Saved, reloaded: 7 relics, markers done, Reliquary earned. 2 screenshots (the strip, 4/7 with a tooltip). User saves restored byte-identical.
+- Deviations: relic ids are names (`barrowCrown`…), markers map by `marker`. The Heart-Oak Seed comes with the Thornmother's camp burning, not at the Heart Oak. hero.pierce is the main attack only. The barrow runs its own blow cadence in PoiManager (not `tryHarvest`). A barrow broken open but unplundered is not saved: it reseals at full hp on load, as does one whose guardian leaves the field alive.
+- For S16/S17: the guardian is a renamed `elite` (`breakOpen`); a barrow walker could replace it. Real bosses must keep `boss` on `camp:burned`, or the relics stop flowing. A load with burned strongholds and no `relics` grants their relics silently.
+- Trips: `H.start` again left the Game scene paused in the hidden pane; `H.ui().togglePause()` before pumping. The unit test opens the barrow in 5.8 s at dt 0.1; the harness took ~7.4 s (S20: `POI.barrow.hp`).
+- Not measured: guardian fights by tier, grave-goods values in play, the strip on a landscape phone (compact layout computed, not shot). No blueprint moves, no new open decisions.
+
 ### S14 · Points of interest I: done (2026-09-25)
 - C1–C3 in one commit (`66fd6fd`) plus the lore page's placement. `PoiManager` (`scene.pois`): seen when fog clears within `POI.seeR` 420 (hook in `RegionManager.eraseFog`; landmarks also within 1300 of the hero), done on use, save `pois` (done ids; seen rebuilt from fog). `Modifiers` (`scene.mods`). Atlas glyph per kind; names under seen landmarks and shrines. Deeds a9 Loremaster, a10 Pilgrim. Art in `art/pois.ts`. Harness `H.pois()`, `H.poi(id, s)`.
 - **Wired stats:** food.yield (farm, fishery) and wood.yield (lumber camp) in `haulMultiplier` after mill × granary, and in `incomePerSecond`; trade.income (`tradeIncome`); wall.hp (`Building.hpMod`, set by GameScene; `refreshWallHp` on restore); hero.xp; hero.regen; soldier.hp (new recruits; standing soldiers bumped on restore); infirmary.heal; outpost.heal. **Pending for S15:** hero.pierce, soldier.damage, army.speed, rally.cooldown, worker.speed, worker.gather, pack.size, tower.range.
@@ -46,13 +55,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - No moves of existing pads, no new open decisions.
 
 ### S13b · Village buildings: done (2026-09-25)
-- C1–C3 (`dbf7794`): the seven keys, defs, first-pass costs and `VILLAGE`; 7 pads (101 now: the West Gate green in the hold, `watchDowns`, `docks1`); effects per CONTRACTS §S13b (`dropoffFor(x, y, res?)`, `localBonus`, `haulMultiplier`, `slotsOf`, `marketRateOf`, `nightBlessing`, `watchCovers`); ink art for all seven; healing auras moved to `buildings.auras(dt)`. Each type verified in the harness (numbers in `30d4a7b`).
-- C4 (`f6acc67`): `art/looks.ts` (`STYLE_BY_BIOME`, `STYLED`, `TONED`, `lookFor`, `yardFor`, cap 160); palette `let`s set per bake by `setLook`: five styles' walls, three roofs and touch, ember windows (ash), snow (highland), a waterwheel mill within 200 px of river water; houses wear the look outside the hold's timber. `systems/BuildingLooks.ts`: variants baked lazily in an idle slice (on reveal, and at `startRaise` for the next level), refcounted and removed when unused, falling back to tone 0 then the base at the cap; yards of 1–2 of 8 `yard_*` props on non-military pads, seeded side, off roads and other pads, depth by y, culled.
-- Verify (harness, one run): 12 Greyfall dev cottages: 3 tones, 12 yard layouts; five rows of six cottages in the five styles, 2 screenshots. Late game (17 claimed, all 289 pads at max): **109 `bld_` textures** (96 boot + 13 variants), 16 bakes, mean 8 ms; **the first bake of a session costs 80–105 ms** (warm-up, S21). A restarted game drops the last one's variants. Same id, same look: a pure hash (unit test). User saves restored byte-identical.
-- Deviations: `ensureBuildingTexture(scene, key, lvl, look)` takes a `Look`, not `(style, variant)`. No `flipX` on buildings (their light comes from the upper left). Outposts, pits, delves, the hold's core, military and defence keep one look. The card's docks and market-square screenshots not taken (README cap).
-- For S13c: today's pads use 13 variants, leaving 51. A dense country can exceed that (5 toned keys × 5 styles × 3 tones = 75 combos at max level); past the cap pads quietly fall back (`H.looks().fallbacks`). Raising the cap or dropping tones is S21's call.
-- Not measured: the wheel mill and snow in play (no river mill or Frostmere village pad yet), bake ms on a phone.
-- For S20: every cost past Lv.1, the market's 3 goods a coin, chapel mend 2/4 hp/s. Trips: granary reach is straight-line (farm1's haulers walk round the West wall); `waves.skipToDay` from the warning leaves `phase` as `warning` (harness only).
+- Seven village keys (`cottage`, `granary`, `mill`, `market`, `chapel`, `watchPost`, `docks`) and their effects, regional looks (`art/looks.ts`, `systems/BuildingLooks.ts`, cap 160 `bld_` textures); CONTRACTS §S13b.
 
 ### S13 · Fish and trade: done (2026-09-25)
 - `world/fish.ts` shoals and bank points, `fishery` + `fisher`, `tradingPost` (`tradeIncome`, `tradeRateOf`, `tradeRate`); CONTRACTS §S13.

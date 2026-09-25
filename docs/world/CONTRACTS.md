@@ -256,11 +256,11 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 *Status: landed (S14). [src/systems/PoiManager.ts](../../src/systems/PoiManager.ts), [src/systems/Modifiers.ts](../../src/systems/Modifiers.ts), art in [src/art/pois.ts](../../src/art/pois.ts).*
 
-- `scene.pois: PoiManager`: `state(id) → 'unseen' | 'seen' | 'done'`, `interact(id) → boolean` (use it now: false when done, locked, unaffordable, or a kind not in `LIVE`), `lockedBy(id) → campId | poiId | null`, `count(kind)`, `popBonus()` (added in `recomputeBonuses`), `revealAt(x, y)` (called by `RegionManager.eraseFog`), `here`, `toJSON() → string[]` (done ids, blueprint order), `load(ids?)` (silent; shrines re-register; call before `buildings.load`), `inspect()`. `LIVE` = cache, lore, shrine, survivors, landmark; **S15 adds barrow (and relic markers)**. `POI_BY_ID`, `SHRINE_MODS`, `SURVIVORS` exported.
+- `scene.pois: PoiManager`: `state(id) → 'unseen' | 'seen' | 'done'`, `interact(id) → boolean` (use it now: false when done, locked, unaffordable, or a kind not in `LIVE`), `lockedBy(id) → campId | poiId | null`, `count(kind)`, `popBonus()` (added in `recomputeBonuses`), `revealAt(x, y)` (called by `RegionManager.eraseFog`), `here`, `toJSON() → string[]` (done ids, blueprint order), `load(ids?)` (silent; shrines re-register; call before `buildings.load`), `inspect()`. `LIVE` = cache, lore, shrine, survivors, landmark, and (S15) barrow and relic. `POI_BY_ID`, `SHRINE_MODS`, `SURVIVORS` exported.
 - Constants `POI { seeR 420, landmarkSeeR 1300, touch 50, landmarkTouch 220, loreDwell 1, loreShow 5.5, cardRange 280, cache { perTier, coins, wood, stone, metal, crystal }, coastStep 256 }` (config/balance).
 - Events: `poi:seen { id, kind }`, `poi:done { id, kind }`, `poi:lore { id, name, text }` (every read; the HUD's parchment page).
 - `scene.mods: Modifiers` (built before BuildingManager): `add(sourceId, ...mods: Mod[])` (replaces that source), `remove(id)`, `has(id)`, `value(stat, base)` = (base + Σadd) × Πmult (`mult` is a factor: +15% is 1.15), `list()`, `version`. `MOD_STATS`, `ModStat`, `Mod { stat, mult?, add? }`.
-- Wired readers: `buildings.haulMultiplier` × `buildings.yieldMod(home)` (food.yield on farm/fishery, wood.yield on lumberCamp), `tradeIncome()`, `Building.hpMod(key, hp)` static (wall.hp on wall/gate; `levelHp(lvl?)`, `buildings.refreshWallHp()`), `Player.addXp` (hero.xp), Player regen (hero.regen), `ArmyManager` spawn hpMult (soldier.hp), infirmary aura (infirmary.heal), outpost aura (outpost.heal: base `OUTPOST.heal` at Lv.2, else 0). **Unwired (S15):** hero.pierce, soldier.damage, army.speed, rally.cooldown, worker.speed, worker.gather, pack.size, tower.range.
+- Wired readers: `buildings.haulMultiplier` × `buildings.yieldMod(home)` (food.yield on farm/fishery, wood.yield on lumberCamp), `tradeIncome()`, `Building.hpMod(key, hp)` static (wall.hp on wall/gate; `levelHp(lvl?)`, `buildings.refreshWallHp()`), `Player.addXp` (hero.xp), Player regen (hero.regen), `ArmyManager` spawn hpMult (soldier.hp), infirmary aura (infirmary.heal), outpost aura (outpost.heal: base `OUTPOST.heal` at Lv.2, else 0). The other eight were wired in S15 (§S15).
 - `scene.openChest(x, y, regionTier?)`: with a tier, the cache table (`POI.cache`), else the wave's.
 - Deeds `a9` Loremaster (`loreRead` 12), `a10` Pilgrim (`shrinesRestored` 6) in `achievementStats()`.
 - Charts: `POI_GLYPH` draws a shape per kind; `poiState` answers from `gs.pois`. Atlas names seen landmarks and shrines; `inspect()` adds `pois`, `named`.
@@ -268,9 +268,13 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S15: relics
 
-*Status: planned.*
+*Status: landed (S15). [src/systems/Relics.ts](../../src/systems/Relics.ts); barrows in `PoiManager` (`tickBarrow`, `breakOpen`, `watchGuards`, `plunder`); seals in [src/art/pois.ts](../../src/art/pois.ts); the strip in `PauseMenu.layoutRelics`.*
 
-- `relics.grant(id)`, `relics.has(id)` and `relics.list()`. Each relic registers its modifiers through `Modifiers` (`scene.mods.add(relicId, ...)`), and wires the readers of the stats S14 left unwired.
+- `scene.relics: Relics` (built right after `scene.mods`): `grant(id) → boolean` (false when unknown or held; registers `mods.add(id, ...def.mods)`, lights its marker, emits `relic:granted { id, name }`), `has(id)`, `list() → RelicId[]` (`RELICS` order), `toJSON()`, `load(ids?, burnedCamps?)` (silent; also grants what a burned stronghold's boss held). Grants on `camp:burned` with `boss` via `BOSS_RELICS` (thornmother → thornCrown + heartOakSeed).
+- `RELICS: RelicDef { id, name, source, effect, mods, colour, marker? }`, `RELIC_BY_ID`, `BOSS_RELICS`, `BARROW_RELICS` (barrowKing → barrowCrown, barrowMoor3 → captainsHorn). Ids: barrowCrown, captainsHorn, gallowsBell, thornCrown, heartOakSeed, overseersLash, wardensAegis.
+- Barrows (`LIVE` now includes barrow and relic): struck by the hero's gathering blow every `POI.barrow.strike` within `reach` 70; hp `POI.barrow.hp` × (1 + 0.5 × (tier − 1)); breaks open to an `elite` guardian (`guard = true`, `home { id: barrowId, leash 460, siege 0 }`, hp × (1 + 0.8 tier), dmg × (1 + 0.2 tier)); its fall drops `POI.barrow.bag` and the relic; done then. `interact(barrowId)` breaks it open now. Taken off the field unbeaten → resealed. Unfinished barrows are not saved (full hp on load). `pois.relicHeld(markerId, silent?)`; relic markers are never stood on.
+- **Every `MOD_STATS` stat now has a reader.** New: `res.mods` → `carryCapacity` (pack.size), `army.damageOf(def)` (soldier.damage), soldier move speed (army.speed), `abilities.cooldownOf(key)` (rally.cooldown; the HUD's sweep uses it), `workers.speedMod()` / `gatherMod()` (worker.speed / worker.gather, cycle time and the income estimate), `buildings.towerRange(b)` (tower.range), the hero's shots (hero.pierce, main attack only).
+- Deed `a11` Reliquary (`relicsHeld` 7). Harness: `H.relics()`, `H.relic(id)`, `H.relicCheck()` (each relic's readers before and after).
 
 ## S16 and S17: enemies
 
@@ -310,4 +314,5 @@ Each session that adds persistent state lists its field here: the owner, then a 
 | `campGuards` | S10 | `string[]` of fallen camp guards, `${campId}.boss` or `${campId}.brazier${k}` (optional; ≤ 64; camp ids from `CAMPS`). Guards not listed respawn at full hp on an awake camp |
 | `waystones` | S11 | `string[]` of lit waystone ids: outpost pad ids, `wsHall`, `wsIsle` (optional; ≤ 64; unknown ids refuse the save). `wsHall` is lit whether listed or not |
 | `pois` | S14 | `string[]` of done POI ids (optional; ≤ `POIS.length`; unknown ids refuse the save). Seen is not saved: it is rebuilt from `exploredFog` |
+| `relics` | S15 | `RelicId[]` held (optional; ≤ `RELICS.length`; unknown ids refuse the save). Loaded right after `pois`; burned strongholds in `camps` also grant their boss's relics |
 | _(add rows as they land)_ | | |
