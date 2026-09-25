@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S13b, resume at C4** ([card](sessions/S13b-village-buildings.md)), then S13c · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S13c** ([card](sessions/S13c-settled-country.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -27,14 +27,14 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
-### S13b · Village buildings: partial, done through C3 (2026-09-25)
-- C1–C3 (`dbf7794`, one commit): keys, defs and first-pass costs for `cottage granary mill market chapel watchPost docks` (05's Lv.1 costs; later levels, hp and footprints mine). `VILLAGE` in balance: radii, caps, the two open decisions. Pads (101 now): `market1 chapel1 cottage1 granary1 mill1` on the West Gate green (hold, outside the palisade where the West and Wood Roads part), `watchDowns` on the King's Road, `docks1` by `fishery1`. Lint: `watchPost` in `DEFENCE`, `NEEDS.docks = 'fish'`; 0/0.
-- Effects (CONTRACTS §S13b): `dropoffFor(x, y, res?)` (granary within its `reach` 900 straight line, first), `localBonus`, `haulMultiplier` (applied at delivery and to sheltered output), `slotsOf`, `marketRateOf`, `nightBlessing`, `watchCovers`; WaveManager rings the warning early (`beginWarning(extra)`). Dock hints via `villageHint`. Ink art for all seven (a `wheel` look for mills, unused until C4 sets it). Harness `H.lvl(id, lvl)`.
-- Fix: healing auras (infirmary, outpost Lv.2, chapels) moved to `buildings.auras(dt)`, called after `army.update`: `healAllies` inside `update` only ever found the hero.
-- Verify (harness, one run each, day held): cottage +2/+3 pop; `farm1`'s 2 farmers unload at `granary1` (4380, 3434), mean haul 422 → 330 px, 16 → 23 deliveries in 120 s; mill credited/raw ×1.167 at Lv.1 (want 1.15), ×1.333 at Lv.3, granary Lv.2 ×1.111; market 18 coins in 60 s at 0.3/s, stopped at food 300 / wood 301; night reward 140 → 154 → 168 (chapel Lv.1, Lv.2); swordsman 10 → 18 hp in 4 s by the chapel, none without; `watchDowns` lit (reveal disc 200 = 600 px) and `night:warning` at 11.99 s left vs 8.00 without (routes south + north); docks: `fishery1` slots 2 → 3. 1 screenshot (the green). User saves restored byte-identical.
-- **C4 left for the resumed session**: `STYLE_BY_BIOME`, palette per bake, roof tones, yard props, lazy `ensureBuildingTexture`, the 12-cottage dev helper, the `bld_` count, and the card's other 2 screenshots (styles; the docks). The painters read `VL` (`VillageLook` in `art/buildings.ts`), which C4 sets per bake; everything else still uses the `const` palette.
-- Trips: the green's granary sits outside the palisade, farm1 inside: with the West wall built, farm1's haulers still pick it (straight-line reach) and walk round by the West Gate. Mill rounding is per delivery (±0.5 of ~18). `waves.skipToDay` from the warning leaves `phase` as `warning` (harness only).
-- For S20: every cost past Lv.1, the market's 3 goods a coin, chapel mend 2/4 hp/s.
+### S13b · Village buildings: done (2026-09-25)
+- C1–C3 (`dbf7794`): the seven keys, defs, first-pass costs and `VILLAGE`; 7 pads (101 now: the West Gate green in the hold, `watchDowns`, `docks1`); effects per CONTRACTS §S13b (`dropoffFor(x, y, res?)`, `localBonus`, `haulMultiplier`, `slotsOf`, `marketRateOf`, `nightBlessing`, `watchCovers`); ink art for all seven; healing auras moved to `buildings.auras(dt)`. Each type verified in the harness (numbers in `30d4a7b`).
+- C4 (`f6acc67`): `art/looks.ts` (`STYLE_BY_BIOME`, `STYLED`, `TONED`, `lookFor`, `yardFor`, cap 160); palette `let`s set per bake by `setLook`: five styles' walls, three roofs and touch, ember windows (ash), snow (highland), a waterwheel mill within 200 px of river water; houses wear the look outside the hold's timber. `systems/BuildingLooks.ts`: variants baked lazily in an idle slice (on reveal, and at `startRaise` for the next level), refcounted and removed when unused, falling back to tone 0 then the base at the cap; yards of 1–2 of 8 `yard_*` props on non-military pads, seeded side, off roads and other pads, depth by y, culled.
+- Verify (harness, one run): 12 Greyfall dev cottages: 3 tones, 12 yard layouts; five rows of six cottages in the five styles, 2 screenshots. Late game (17 claimed, all 289 pads at max): **109 `bld_` textures** (96 boot + 13 variants), 16 bakes, mean 8 ms; **the first bake of a session costs 80–105 ms** (warm-up, S21). A restarted game drops the last one's variants. Same id, same look: a pure hash (unit test). User saves restored byte-identical.
+- Deviations: `ensureBuildingTexture(scene, key, lvl, look)` takes a `Look`, not `(style, variant)`. No `flipX` on buildings (their light comes from the upper left). Outposts, pits, delves, the hold's core, military and defence keep one look. The card's docks and market-square screenshots not taken (README cap).
+- For S13c: today's pads use 13 variants, leaving 51. A dense country can exceed that (5 toned keys × 5 styles × 3 tones = 75 combos at max level); past the cap pads quietly fall back (`H.looks().fallbacks`). Raising the cap or dropping tones is S21's call.
+- Not measured: the wheel mill and snow in play (no river mill or Frostmere village pad yet), bake ms on a phone.
+- For S20: every cost past Lv.1, the market's 3 goods a coin, chapel mend 2/4 hp/s. Trips: granary reach is straight-line (farm1's haulers walk round the West wall); `waves.skipToDay` from the warning leaves `phase` as `warning` (harness only).
 
 ### S13 · Fish and trade: done (2026-09-25)
 - C1+C2 (`e08d5a6`, one commit; a cut-off session never logged it): `world/fish.ts` `placeFish` puts shoals on water/sea cells (never a deck), each with a bank gather point `gx, gy` reachable from its fishery; every node has `gx, gy`. `NODE_DEFS.fish` (food), `fishery` (3 levels, 100c 80w, the farm's rates and hp), `fisher` crew (a farmer's numbers, `fishes: true`); fish fields and fishery pads joined the game.
