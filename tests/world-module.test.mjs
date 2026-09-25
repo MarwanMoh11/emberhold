@@ -57,8 +57,12 @@ test('ids the game hardcodes still resolve', () => {
 
 test('camp spawn keys resolve to enemies the game has', () => {
   for (const c of W.CAMPS) assert.ok(ENEMIES[c.spawns.key], `${c.id}: ${c.spawns.key}`)
-  assert.equal(W.resolveSpawnKey('bogWretch[shield]'), 'shield')
-  assert.equal(W.resolveSpawnKey('grunt'), 'grunt')
+  // S16: the four walkers march from their own camps, not stand-ins
+  const own = Object.fromEntries(W.CAMPS.map(c => [c.id, c.spawns.key]))
+  assert.deepEqual(
+    [own.campDrowned, own.campThornmother, own.campStairwarden, own.campForges],
+    ['bogWretch', 'thornling', 'ashPriest', 'cinderHound'],
+  )
 })
 
 test('camps carry their tier, leash and radii (S10)', () => {

@@ -7,7 +7,7 @@
  * (muster resolution along chains, the 2400 px clamp, which approaches are
  * live, fronts per night) are tested on the real raster.
  */
-import { APPROACHES, CAMPS, CROSSINGS, MAWS, REGION_BY_ID, resolveSpawnKey, type RegionId } from '../config/world'
+import { APPROACHES, CAMPS, CROSSINGS, MAWS, REGION_BY_ID, type RegionId } from '../config/world'
 import type { Pt } from '../config/world/blueprint'
 import type { FieldTarget, NavGrid } from '../world/NavGrid'
 
@@ -203,7 +203,7 @@ export class Approaches {
     const m = this.muster(id)
     if (!m || m.kind !== 'camp') return null
     const camp = campById.get(m.id)
-    return camp ? resolveSpawnKey(camp.spawns.key) : null
+    return camp ? camp.spawns.key : null
   }
 
   /**

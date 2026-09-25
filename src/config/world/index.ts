@@ -115,14 +115,11 @@ export interface CampSpec {
   reward: ResourceBag
 }
 
-/** `'bogWretch[shield]'` → `'shield'`: the stand-in until S16 adds the walker. */
-export const resolveSpawnKey = (key: string): string => /\[(\w+)\]$/.exec(key)?.[1] ?? key
-
 export const CAMPS: CampSpec[] = BP.CAMPS.map(c => ({
   id: c.id, name: c.name, x: c.x, y: c.y, hp: c.hp, region: c.region,
   tier: c.tier, leash: CAMP_LEASH, wakeRadius: CAMP_WAKE, siegeRadius: CAMP_SIEGE,
   ...(c.boss ? { boss: c.boss } : {}),
-  spawns: { ...c.spawns, key: resolveSpawnKey(c.spawns.key) },
+  spawns: { ...c.spawns },
   reward: { ...c.reward },
 }))
 

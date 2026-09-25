@@ -49,12 +49,12 @@ test("every approach's first route passes its via crossings in order", () => {
   }
 })
 
-test('every camp spawns an EnemyKey or a name[EnemyKey] placeholder', () => {
+test('every camp spawns a real EnemyKey (S16 resolved the placeholders)', () => {
   const keys = new Set(Object.keys(ENEMIES))
   for (const c of bp.CAMPS) {
     const key = c.spawns.key
-    const m = /^([A-Za-z]+)\[([A-Za-z]+)\]$/.exec(key)
-    assert.ok(keys.has(key) || (m && keys.has(m[2])), `${c.id} spawns '${key}'`)
+    assert.ok(!/[[\]]/.test(key), `${c.id} still spawns a placeholder '${key}'`)
+    assert.ok(keys.has(key), `${c.id} spawns '${key}'`)
   }
 })
 

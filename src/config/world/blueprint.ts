@@ -754,7 +754,7 @@ export interface CampBP {
   y: number
   tier: CampTier
   hp: number
-  /** EnemyKey. `name[fallback]` marks a new walker (docs/world/design/05-content.md) until S16 adds it */
+  /** an EnemyKey (the S16 walkers resolved their `name[fallback]` placeholders) */
   spawns: { key: string; every: number; count: number }
   /** stronghold boss (new EnemyKey), fought at the camp */
   boss?: string
@@ -782,7 +782,7 @@ export const CAMPS: CampBP[] = [
     spawns: { key: 'brute', every: 12, count: 1 }, reward: { coins: 900, wood: 400, stone: 200 },
     why: 'Brutes denned under the peaks. The north-east raids come down the Highroad from here.' },
   { id: 'campDrowned', name: 'the Drowned Bell', region: 'saltmere', x: 1800, y: 3450, tier: 'warcamp', hp: 4000,
-    spawns: { key: 'bogWretch[shield]', every: 10, count: 2 }, reward: { coins: 900, wood: 300, metal: 100 },
+    spawns: { key: 'bogWretch', every: 10, count: 2 }, reward: { coins: 900, wood: 300, metal: 100 },
     why: 'Around the sunken bell tower in the marsh. Raids the harbour and the salt road.' },
   { id: 'campIrontooth', name: 'Irontooth Warcamp', region: 'irontooth', x: 9450, y: 2550, tier: 'warcamp', hp: 4800,
     spawns: { key: 'archer', every: 10, count: 3 }, reward: { coins: 1100, stone: 400, metal: 180 },
@@ -794,19 +794,19 @@ export const CAMPS: CampBP[] = [
     spawns: { key: 'bomber', every: 10, count: 2 }, reward: { coins: 1200, stone: 500, metal: 150 },
     why: 'Powderkegs brewed from the Kettle\'s sulphur. The south-east approach.' },
   { id: 'campThornmother', name: 'the Thornmother\'s Den', region: 'deepwood', x: 900, y: 500, tier: 'stronghold', hp: 5500,
-    spawns: { key: 'thornling[swarm]', every: 8, count: 5 }, boss: 'thornmother', reward: { coins: 1200, wood: 900, crystal: 15 },
+    spawns: { key: 'thornling', every: 8, count: 5 }, boss: 'thornmother', reward: { coins: 1200, wood: 900, crystal: 15 },
     why: 'The Deepwood\'s heart-rot. Optional, and the richest timber relic on the frontier.' },
   { id: 'campOverseers', name: 'the Seam Overseers', region: 'deepvein', x: 8550, y: 6550, tier: 'stronghold', hp: 7000,
     spawns: { key: 'shield', every: 11, count: 2 }, boss: 'seamOverseer', reward: { coins: 1600, metal: 400, crystal: 30 },
     why: 'Slave-drivers of the deep seams. Sits on the Haul Road between the mines and the Ramp.' },
   { id: 'campStairwarden', name: 'the Stairwarden\'s Bastion', region: 'rim', x: 6000, y: 6450, tier: 'stronghold', hp: 7500,
-    spawns: { key: 'ashPriest[commander]', every: 12, count: 1 }, boss: 'stairwarden', reward: { coins: 1800, metal: 450, crystal: 30 },
+    spawns: { key: 'ashPriest', every: 12, count: 1 }, boss: 'stairwarden', reward: { coins: 1800, metal: 450, crystal: 30 },
     why: 'Guards the top of the Cinder Stair. Its fall opens the road to the Crown.' },
   { id: 'campAshgate', name: 'Ashgate Fortress', region: 'ashgate', x: 2500, y: 8150, tier: 'fortress', hp: 12000,
     spawns: { key: 'brute', every: 12, count: 2 }, reward: { coins: 3000, metal: 500, crystal: 40 },
     why: 'The horde\'s great fortress. Burning it drops the fire on the Regent\'s Causeway.' },
   { id: 'campForges', name: 'the Slag Forges', region: 'cinderfall', x: 9650, y: 7450, tier: 'stronghold', hp: 9000,
-    spawns: { key: 'cinderHound[runner]', every: 9, count: 3 }, reward: { coins: 2500, metal: 600, crystal: 60 },
+    spawns: { key: 'cinderHound', every: 9, count: 3 }, reward: { coins: 2500, metal: 600, crystal: 60 },
     why: 'Where the south-east horde is armed. Optional — the road to the Crown does not pass it.' },
 ]
 
