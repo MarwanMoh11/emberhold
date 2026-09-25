@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S13** ([card](sessions/S13-fish-and-trade.md)), then S13b · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S13b** ([card](sessions/S13b-village-buildings.md)), then S13c · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -25,6 +25,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S13 · Fish and trade: done (2026-09-25)
+- C1+C2 (`e08d5a6`, one commit; a cut-off session never logged it): `world/fish.ts` `placeFish` puts shoals on water/sea cells (never a deck), each with a bank gather point `gx, gy` reachable from its fishery; every node has `gx, gy`. `NODE_DEFS.fish` (food), `fishery` (3 levels, 100c 80w, the farm's rates and hp), `fisher` crew (a farmer's numbers, `fishes: true`); fish fields and fishery pads joined the game.
+- C3 (`5bcd635`): `tradingPost` (0.6 / 1.2 / 2.0 coins/s; costs 400c 300w 120s → 900c 500w 300s → 2000c 700s 200m), quay warehouse art with a lit lamp; `buildings.tradeIncome()` (1; **S14 wires `trade.income` there**), `tradeRateOf`, `tradeRate`; panel hint and Coins/s upgrade line. `FUTURE_PADS` deleted; `check.ts` pins every `PadKey`.
+- Verify (harness, one run each): Hollow claimed, `fishery1` Lv.1, 2 fishers: +72 food and 4 deliveries in 60 s of day, 0 of 120 samples on water, gathering at (3691, 4320) and (3775, 4302) on the bank. Saltmere claimed, `trade1`: exactly 18 / 36 / 60 coins in 30 s at Lv.1 / 2 / 3 (counted at `tickTrade`); panel read "+2.0 coins a second". 2 screenshots (one behind the auto-pause menu; one of the jetty with both fishers on the bank). User saves restored byte-identical.
+- S20: fisheries haul to the depot until an outpost stands (`fishery1` → depot is ~1,700 px; ~1 delivery per fisher a minute), so food per fisher is well under a farmer's; trade 2.0/s at Lv.3 against its 2000c cost, and the 6 s coin popup.
+- Trips: claiming a far region on day 1 by harness (`H.claim`) makes night 1 take the hall of an idle hero (baseline without claims holds); pump in day windows. The auto-pause on a hidden pane opens the pause menu: `H.ui().togglePause()`.
+- Not measured: a fishery on the lake or harbour fields in play, the Lv.2–3 art in play, trade with the hall down.
+- No blueprint moves, no new open decisions.
+
 ### S12 · Minimap and atlas: done (2026-09-25)
 - C1: `Minimap` is a local 2400 px window, north up: crops of `atlas_bake` and the world's own fog page (`fog_live`, saved by RegionManager), marks at 9 Hz (pads, seen camps/POIs, stones, bodies, tonight's routes, hero). Seen ground is `ChartMemory` (256 px), shared with the atlas.
 - C2: `AtlasBake` paints the world at 1/16 (640 × 576) through `paintAtlasRect` (low detail) after the visible chunks, ≤2.5 ms a frame; a claim re-queues its box (9 blocks for Downs). **Bake: 79–93 ms of painting over ~100–116 ms wall, worst frame 3–4 ms.**
@@ -45,13 +54,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - No blueprint moves, no new open decisions.
 
 ### S10 · Camps 2.0 and fortification lines: done (2026-09-24)
-- C1: `CampSpec.tier/leash/wakeRadius/siegeRadius/boss`; patrols (`Enemy.home`) capped at 2 × `spawns.count`, fight only inside the leash, stroll, walk home past it, path round obstacles (never the hall field). Melee patrols besiege structures within 600 px. Strongholds raise a stand-in boss (scaled `elite`, "GALLOWS KNIGHT" etc.) at camp + (0, 90) in `CampManager.spawnGuard` (**S17 swaps it there**); Ashgate rings itself with 3 braziers (`enm_brazier`, 2000 hp, 260 px). The camp is `shielded` (WARDED) until its guards fall. Save `campGuards`; `camp:burned { id, tier, boss }`.
-- C2: `src/world/CausewayFire.ts`: 15 flickering flames seal `calderaCauseway` (S05's `setSealed`) until Ashgate burns, then fade; `crossing:opened` → banner "The fire on the causeway dies."
-- C3: every `WALLS` line laid by `layWallLine`, gated by region claim and `line.hall`. Pads: bridgehead 23, millfordLine 19, gorgeLine 18, stairLine 21, passLine 15 (palisade 92). `buildings.lineComplete(id)`. `WALL_RING` removed; the minimap strokes the lines.
-- Verify (harness, one run): Diggers' patrols chased the hero, then stayed ≤ 302 px of camp after he left (leash 700); a dev farm 420 px from Rotwood was razed by its runners; Ashgate took 0 damage with braziers up (guardsUp 3→2→1→0), then 3000; Gallows warded by its knight; `passableAt(6500, 7655)` false → true on burn, banner fired. All five new lines: `H.wallGaps` 0 nav / 0 body leaks, `lineComplete` true; bridgehead hidden at hall 1, shown at 2; stair hidden at 2. User saves restored byte-identical.
-- Deviations: the south route already ran through the bridgehead gate's spot before the line was built (16 px from its centre both ways, 0 wall cells after), so "reroutes" is "still goes through the gate". Archer bands never besiege (arrows sail over structures). Patrols of a burned camp keep strolling its ruin. The stand-in boss has no HUD boss bar (not `def.boss`). 3 screenshots (bridgehead, causeway fire, one hidden-pane miss); no stronghold screenshot.
-- Trips: burning Ashgate still spawns the Cinder Regent at the fortress after 1.6 s (v1 `scheduleFinalBoss`; S17 moves her to the island). A fresh-game hero tp'd onto lava is slid ~500 px to ground. Not measured: patrol path cost with many camps awake (S21), assault through each new gate (the gap check stands in).
-- No blueprint moves, no new open decisions.
+- `CampSpec.tier/leash/wakeRadius/siegeRadius/boss`, patrols and stand-in bosses (`CampManager.spawnGuard`, **S17 swaps them**), `CausewayFire`, every `WALLS` line laid, `buildings.lineComplete(id)`; save `campGuards`.
 
 ### S09b · Walls and panels: done (2026-09-24)
 - `layWallLine` (palisade 92 pads, NavGrid capsules, `H.wallGaps` 0 leaks) and the docked panel (`DockSheet`, `CostChips`, `StatLine`, compact `PlateButton`; CONTRACTS §S09b).

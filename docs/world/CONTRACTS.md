@@ -70,8 +70,8 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - `src/config/world/index.ts` replaces `src/config/map.ts`, which is deleted, and exports:
   - `WORLD = { width, height, centerX, centerY, tile }` (:20). `centerX/Y` is the map's middle, **not** home: use `HALL`. (`balance.ts` no longer re-exports it: S05.)
   - `HALL = { x, y }` (:40, from the `hall` pad), `REGIONS: RegionDef[]` (:34, `RegionBP & { index }`), `REGION_BY_ID`, and `type RegionId, Biome`.
-  - `PADS: PadSpec[]` (:75; `region`, `requiresTownHall` from `hall`, `startLevel`) and `FUTURE_PADS: PadBP[]` (:78; outpost, fishery, tradingPost).
-  - `CAMPS: CampSpec[]` (:146; `region`, `reward: ResourceBag`, bracketed spawn keys resolved by `resolveSpawnKey`), `NODE_CLUSTERS: NodeCluster[]` (:167; `region`, no fish), `NODE_DEFS`.
+  - `PADS: PadSpec[]` (:75; `region`, `requiresTownHall` from `hall`, `startLevel`) (every blueprint pad since S13; `FUTURE_PADS` was deleted in S13).
+  - `CAMPS: CampSpec[]` (:146; `region`, `reward: ResourceBag`, bracketed spawn keys resolved by `resolveSpawnKey`), `NODE_CLUSTERS: NodeCluster[]` (:167; `region`; fish fields since S13), `NODE_DEFS`.
   - `WALL_LINES: WallLineSpec[]` (`WallLineBP & { active }`; every line active since S10). `WALL_RING` was removed in S10 (the minimap strokes `WALL_LINES`).
   - `SPAWN_GATES`, `GATE_BY_ID`: removed by S09 (see §S09).
   - `APPROACHES`, `MAWS`, `CROSSINGS`, `ROADS`, `POIS`, `THRONE`, `FEATURES`, passed through from the blueprint.
@@ -199,7 +199,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 *Status: landed (S11). [src/systems/Waystones.ts](../../src/systems/Waystones.ts), `respawnPoint` in `GameScene`, `dropoffFor` / `outposts` in `BuildingManager`.*
 
-- `BuildingKey` gains `'outpost'` (2 levels; Lv.2 stat `aura: 1`). `FUTURE_PADS` now holds only fishery and tradingPost pads. Constants `OUTPOST { heal 5, healRadius 220, calmRadius 420, light 600, safeRadius 600, stoneDx 44, stoneDy 8 }` and `WAYSTONE { touch 56, channel 1.2, escort 500, hallStone 'wsHall' }` in `config/balance.ts`; **S14** raises `OUTPOST.heal` (Kettle Springs).
+- `BuildingKey` gains `'outpost'` (2 levels; Lv.2 stat `aura: 1`). `FUTURE_PADS` then held only fishery and tradingPost pads (deleted in S13). Constants `OUTPOST { heal 5, healRadius 220, calmRadius 420, light 600, safeRadius 600, stoneDx 44, stoneDy 8 }` and `WAYSTONE { touch 56, channel 1.2, escort 500, hallStone 'wsHall' }` in `config/balance.ts`; **S14** raises `OUTPOST.heal` (Kettle Springs).
 - `buildings.outposts() → Building[]`: built, standing outposts. `buildings.dropoffFor(x, y)`: the depot (hall door while it is down) or the standing outpost nearest by path (`nav.findPath` + `pathLength`), cached per 256 px block until a drop site rises or falls or `nav.version` moves. The hero banks the pack at an outpost as at the depot (not while committed to its upgrade).
 - `scene.respawnPoint() → { x, y, padId }`: the standing outpost nearest the hero's fall with no enemy within `safeRadius` and `damageT <= 0` (not struck in 6 s), if nearer than the hall; else the hall (`padId: 'hall'`). A built outpost reveals ~600 px of fog on build and on load; Lv.2 heals allies within `healRadius` each second while no enemy is within `calmRadius`.
 - `scene.waystones: Waystones`: stone ids are outpost pad ids plus the POIs `wsHall`, `wsIsle` (`LONE_STONES`, drawn with `ws_stone`). `stones() → Stone { id, name, x, y, region, lone }[]` (standing now), `stone(id)`, `list() → StoneInfo (Stone + active)[]`, `isActive(id)`, `activate(id, silent?)` (also on touch within `touch`; `wsHall` starts lit), `here` (the lit stone the hero stands on), `canTravel(to) → { ok, why }`, `travel(to) → boolean` (starts the channel; `lastWhy` on refusal), `channel: { from, to, t } | null`, `progress`, `cancel(why)`, `toJSON()`, `load(ids)`. Night: only `wsHall`. The channel breaks on any hp loss, stepping off the stone, a fall, or nightfall. Soldiers within `escort` arrive in rings of 10 round (stone.x, stone.y + 40).
@@ -224,10 +224,12 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S13: fish and trade
 
-*Status: planned.*
+*Status: landed (S13). [src/world/fish.ts](../../src/world/fish.ts), `NodeManager`, `tickTrade` in `BuildingManager`.*
 
-- `NodeType` gains `'fish'`. Fish nodes are placed on **water** cells inside their field.
-- `BuildingKey` gains `'fishery'` (fish becomes food) and `'tradingPost'` (passive coins per level).
+- `NodeType` gains `'fish'` (`NODE_DEFS.fish`, yields food). `placeFish(r, field, anchor, rand) → FishSpot[]` puts shoals on cells where `fishable(r, i)` (under is water or sea, never a crossing deck); every node now carries a gather point `gx, gy` (fish: the nearest land cell within `FISH_BANK` 160 px, reachable from the field's fishery). Workers walk to `gx, gy`, never to `x, y`.
+- `nodes.candidates(res, x, y, radius, claimer, fish = false)`: fishers (`WorkerDef.fishes`) take shoals only; other crews never do. Search is 760 px of path (`SEARCH_RADIUS`).
+- `BuildingKey` gains `'fishery'` (3 levels, `fisher` crew, the farm's rates) and `'tradingPost'` (3 levels, stat `income` 0.6 / 1.2 / 2.0 coins a second).
+- `buildings.tradeIncome() → number`: the `trade.income` multiplier, 1 for now; **S14** returns `mods.value('trade.income', 1)` there (Saltmere Light +20%). `buildings.tradeRateOf(b)`, `buildings.tradeRate()`: coins a second now. Trade coins bank straight to stores (`res.addStored`).
 
 ## S13b and S13c: a settled country
 
