@@ -8,6 +8,12 @@ import { ENEMIES, type EnemyKey } from '../config/enemies'
 import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
 import { CAMP_MIX, SPAWN_SCATTER, splitBudget, type ApproachId, type NightPlan } from './Approaches'
+import { mixHand } from './walkers'
+
+/** Walkers whose deck card opens into a pack (S16: thornlings come five at a time). */
+const PACKS: Partial<Record<EnemyKey, number>> = Object.fromEntries(
+  Object.values(ENEMIES).filter(d => (d.pack ?? 1) > 1).map(d => [d.key, d.pack]),
+)
 
 export type Phase = 'day' | 'warning' | 'night'
 
@@ -250,13 +256,14 @@ export class WaveManager {
       return { hp: hpMult * (1 + 0.25 * tier), dmg: dmgMult * (1 + 0.15 * tier) }
     }
     for (const t of this.tonight) {
-      const hand = deck.splice(0, split.get(t.id) ?? 0)
-      // the muster camp's own walker makes up its share of the approach
+      // the muster camp's own walker makes up its share of the approach, the
+      // new walkers join by muster (S16: WALKER_MIX), and packs open up
       const own = ap.campKey(t.id)
-      if (own && own in ENEMIES) {
-        const k = Math.round(hand.length * CAMP_MIX)
-        for (let i = 0; i < k; i++) hand[i] = own as EnemyKey
-      }
+      const hand = mixHand(deck.splice(0, split.get(t.id) ?? 0), {
+        own: own && own in ENEMIES ? own as EnemyKey : null,
+        region: ap.muster(t.id)?.region ?? null,
+        tier: ap.tier(t.id),
+      }, CAMP_MIX, PACKS)
       const m = mult(t)
       hand.forEach((key, i) => this.queue.push({
         key, approach: t.id, x: t.x, y: t.y,

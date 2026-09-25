@@ -4,6 +4,7 @@ import type { Targetable } from '../core/types'
 import { nextId } from '../core/ids'
 import { PathFollower } from '../world/PathFollower'
 import type { PathTicket } from '../world/PathFind'
+import { noSlow } from '../systems/walkers'
 
 export type SoldierState = 'form' | 'engage' | 'hold' | 'dead'
 
@@ -37,6 +38,8 @@ export class Soldier implements Targetable {
   pathAx = 0; pathAy = 0
   pathT = 0
   losT = 0
+  /** S16: a bog wretch's slow */
+  readonly slow = noSlow()
 
   sprite!: Phaser.GameObjects.Image
 
@@ -67,6 +70,7 @@ export class Soldier implements Targetable {
     this.pathTicket = null
     this.pathT = 0
     this.losT = 0
+    this.slow.t = 0; this.slow.mult = 1
 
     this.sprite.setTexture(`sol_${def.key}`)
     this.sprite.setOrigin(0.5, 1 - 8 / this.sprite.height)

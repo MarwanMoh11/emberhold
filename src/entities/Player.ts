@@ -8,6 +8,7 @@ import { nextId } from '../core/ids'
 import { CarryStack } from './CarryStack'
 import { walkRadius } from '../world/NavGrid'
 import type { Targetable } from '../core/types'
+import { noSlow, slowMult, tickSlow } from '../systems/walkers'
 import type { GameScene } from '../scenes/GameScene'
 
 export function freshStats(): PlayerStats {
@@ -55,6 +56,8 @@ export class Player implements Targetable {
   invincible = false
   deadTimer = 0
   respawnShieldT = 0
+  /** S16: a bog wretch's slow on the hero's stride */
+  readonly slow = noSlow()
 
   /** temporary multipliers from Rally etc. */
   buffDamage = 1
@@ -179,6 +182,7 @@ export class Player implements Targetable {
       return
     }
     this.respawnShieldT = Math.max(0, this.respawnShieldT - dt)
+    tickSlow(this.slow, dt)
 
     const regen = this.scene.mods?.value('hero.regen', this.stats.regen) ?? this.stats.regen
     if (regen > 0 && this.hp < this.maxHp) {
@@ -186,7 +190,7 @@ export class Player implements Targetable {
     }
 
     const len = Math.hypot(inputX, inputY)
-    const speed = this.stats.moveSpeed
+    const speed = this.stats.moveSpeed * slowMult(this.slow)
     if (this.dodgeTime > 0) {
       this.dodgeTime = Math.max(0, this.dodgeTime - dt)
       this.vx = this.dodgeX * PLAYER.dodgeSpeed

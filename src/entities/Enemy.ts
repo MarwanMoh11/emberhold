@@ -54,6 +54,10 @@ export class Enemy implements Targetable {
   auraDamage = 1
   auraSpeed = 1
   auraT = 0
+  /** S16: an ash priest's heal (hp/s) and the buffed tint; `auraFrame` marks this frame's merge */
+  auraHeal = 0
+  auraTint = 0xd0a8ff
+  auraFrame = -1
 
   bossPhase = 0
   bossTimer = 0
@@ -128,6 +132,9 @@ export class Enemy implements Targetable {
     this.auraDamage = 1
     this.auraSpeed = 1
     this.auraT = 0
+    this.auraHeal = 0
+    this.auraTint = 0xd0a8ff
+    this.auraFrame = -1
     this.bossPhase = 0
     this.bossTimer = def.boss ? 4 : 0
     this.telegraphT = 0

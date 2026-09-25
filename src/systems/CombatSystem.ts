@@ -62,6 +62,13 @@ export class CombatSystem {
       this.scene.fx.shake(0.008, 0.16)
     }
 
+    // S16: the thornling's splinters (visual only) and the hound's burning patch
+    if (def.deathFx === 'splinters') {
+      this.scene.fx.deathBurst(e.x, e.y - e.radius * 0.5, 0x6a4a26, 0.9)
+      this.scene.fx.hitSpark(e.x, e.y - e.radius * 0.5, 0xd8c890, 1.4)
+    }
+    if (def.deathPatch) this.scene.enemies.addPatch(e.x, e.y, def.deathPatch)
+
     this.scene.fx.deathBurst(e.x, e.y - e.radius * 0.5, def.colour, def.boss ? 3.5 : def.elite ? 1.8 : 1)
     if (def.boss) {
       this.scene.fx.explosion(e.x, e.y, 220, PAL.gold)

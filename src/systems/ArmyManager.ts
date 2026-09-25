@@ -7,6 +7,7 @@ import { walkRadius } from '../world/NavGrid'
 import { clamp, rr } from '../core/math'
 import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
+import { slowMult, tickSlow } from './walkers'
 
 /** Front-to-back ordering so tanks screen the shooters. */
 const LINE_ORDER: Record<SoldierKey, number> = {
@@ -146,7 +147,9 @@ export class ArmyManager {
 
       const def = s.def
       let mx = 0, my = 0
-      let speed = def.speed * armySpeed
+      tickSlow(s.slow, dt)
+      const legs = armySpeed * slowMult(s.slow) // the Gallows Bell (S15), a wretch's slow (S16)
+      let speed = def.speed * legs
 
       if (s.target) {
         s.state = 'engage'
@@ -178,7 +181,7 @@ export class ArmyManager {
           my = dy / dg
           // catch-up sprint so the formation does not string out forever; a detour is always behind
           const far = s.follower.active ? Math.max(d, 240) : d
-          speed = def.speed * armySpeed * (far > 220 ? 1.7 : far > 110 ? 1.25 : 1)
+          speed = def.speed * legs * (far > 220 ? 1.7 : far > 110 ? 1.25 : 1)
           if (Math.abs(dx) > 4) s.facing = dx > 0 ? 1 : -1
         }
       }

@@ -8,6 +8,7 @@ import { WORLD } from '../config/world'
 import { walkRadius, type FlowField } from '../world/NavGrid'
 import { MARCH_SPEED, VIA_REACH, viaMid } from './Approaches'
 import { Grid } from '../core/Grid'
+import { applySlow, auraHealed, mergeAura, noAura, type Slow } from './walkers'
 import { clamp, rr } from '../core/math'
 import type { Targetable } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'
@@ -18,14 +19,25 @@ import type { GameScene } from '../scenes/GameScene'
  *  - target re-acquisition is staggered across frames per enemy
  *  - separation is capped to a handful of neighbours
  */
+/** How often a burning patch bites (s). */
+const PATCH_TICK = 0.5
+
+export interface EmberPatch { x: number; y: number; r: number; dps: number; t: number; life: number; tick: number }
+
 export class EnemyManager {
   readonly list: Enemy[] = []
   grid = new Grid<Enemy>(PERF.gridCell)
 
   private free: Enemy[] = []
   private scratch: Enemy[] = []
+  private allyScratch: Targetable[] = []
   private bars: Phaser.GameObjects.Graphics
   private frame = 0
+
+  /** S16: cinder hounds' burning patches, and the layer they are drawn on */
+  readonly patches: EmberPatch[] = []
+  private patchG: Phaser.GameObjects.Graphics
+  private auraFx = noAura()
 
   aliveCount = 0
   /** alive enemies excluding stationary camps — this is what "wave cleared" means */
@@ -34,6 +46,39 @@ export class EnemyManager {
 
   constructor(private scene: GameScene, depth: number) {
     this.bars = scene.add.graphics().setDepth(depth)
+    // on the ground: over the terrain and fields, under anything standing (depth = y)
+    this.patchG = scene.add.graphics().setDepth(-10)
+  }
+
+  /** S16: a burning patch (a cinder hound's death), hurting the hero and soldiers inside. */
+  addPatch(x: number, y: number, p: NonNullable<EnemyDef['deathPatch']>) {
+    this.patches.push({ x, y, r: p.radius, dps: p.dps, t: p.seconds, life: p.seconds, tick: 0 })
+  }
+
+  private updatePatches(dt: number) {
+    const g = this.patchG
+    g.clear()
+    if (!this.patches.length) return
+    const combat = this.scene.combat
+    for (let i = this.patches.length - 1; i >= 0; i--) {
+      const p = this.patches[i]
+      p.t -= dt
+      if (p.t <= 0) { this.patches.splice(i, 1); continue }
+      p.tick -= dt
+      if (p.tick <= 0) {
+        p.tick += PATCH_TICK
+        const hit = this.scene.allyGrid.query(p.x, p.y, p.r, this.allyScratch)
+        for (const a of hit.slice()) {
+          if (a.alive && (a.kind === 'player' || a.kind === 'soldier')) combat.damageAlly(a, p.dps * PATCH_TICK, p.x, p.y)
+        }
+        this.scene.fx.embers(p.x + rr(-p.r, p.r) * 0.6, p.y + rr(-p.r, p.r) * 0.3, 2)
+      }
+      const f = Math.min(1, p.t / 0.6) // fades in its last 0.6 s
+      const flick = 0.85 + Math.sin(this.scene.now * 0.02 + p.x) * 0.15
+      g.fillStyle(0x2a1410, 0.5 * f).fillEllipse(p.x, p.y, p.r * 2.1, p.r * 1.15)
+      g.fillStyle(0xff5a1e, 0.38 * f * flick).fillEllipse(p.x, p.y, p.r * 1.8, p.r * 0.95)
+      g.fillStyle(0xffb04a, 0.42 * f * flick).fillEllipse(p.x, p.y, p.r * 0.95, p.r * 0.5)
+    }
   }
 
   get count() { return this.aliveCount }
@@ -226,18 +271,28 @@ export class EnemyManager {
     // Show the one the player is actually fighting in the single HUD bar.
     this.bossRef = nearestBoss
 
-    // commander auras: few of them, so a direct pass is fine
+    // commander and priest auras: few of them, so a direct pass is fine.
+    // Overlaps take the strongest of each effect (mergeAura), never the product.
     for (let i = 0; i < list.length; i++) {
       const e = list[i]
       if (!e.active || !e.alive || !e.def.aura) continue
-      const near = this.grid.query(e.x, e.y, e.def.aura.radius, this.scratch)
+      const a = e.def.aura
+      const near = this.grid.query(e.x, e.y, a.radius, this.scratch)
       for (let k = 0; k < near.length; k++) {
         const o = near[k]
-        o.auraDamage = e.def.aura.damageMult
-        o.auraSpeed = e.def.aura.speedMult
+        if (o.def.structure) continue
+        if (o.auraFrame !== this.frame) {
+          o.auraFrame = this.frame
+          o.auraDamage = 1; o.auraSpeed = 1; o.auraHeal = 0
+        }
+        this.auraFx.damage = o.auraDamage; this.auraFx.speed = o.auraSpeed; this.auraFx.heal = o.auraHeal
+        mergeAura(this.auraFx, a, o === e)
+        o.auraDamage = this.auraFx.damage; o.auraSpeed = this.auraFx.speed; o.auraHeal = this.auraFx.heal
+        if (a.heal || !(o.auraT > 0)) o.auraTint = a.tint ?? 0xd0a8ff
         o.auraT = 0.5
       }
     }
+    this.updatePatches(dt)
 
     const combat = this.scene.combat
     const nav = this.scene.nav
@@ -252,7 +307,8 @@ export class EnemyManager {
       if (e.spawnT > 0) e.spawnT -= dt
       if (e.auraT > 0) {
         e.auraT -= dt
-        if (e.auraT <= 0) { e.auraDamage = 1; e.auraSpeed = 1 }
+        if (e.auraT <= 0) { e.auraDamage = 1; e.auraSpeed = 1; e.auraHeal = 0 }
+        else if (e.auraHeal > 0) e.hp = auraHealed(e.hp, e.maxHp, e.auraHeal, dt)
       }
 
       // damage over time
@@ -503,13 +559,19 @@ export class EnemyManager {
       this.scene.projectiles.fire(
         e.x + Math.cos(ang) * 14, e.y - e.radius * 0.5 + Math.sin(ang) * 14, ang,
         {
-          tex: 'proj_enemyArrow', damage: dmg, speed: e.def.projectileSpeed ?? 380,
+          tex: e.def.projectileTex ?? 'proj_enemyArrow', tint: e.def.projectileTint,
+          damage: dmg, speed: e.def.projectileSpeed ?? 380,
           faction: 'enemy', fromPlayer: false, knockback: 20,
         },
       )
       this.scene.audio.playVaried('shoot', 0.18)
     } else {
       this.scene.combat.damageAlly(t, dmg, e.x, e.y, e.def.boss ? 220 : 40)
+      const sl = e.def.slows
+      if (sl && t.alive && (t.kind === 'player' || t.kind === 'soldier')) {
+        applySlow((t as unknown as { slow: Slow }).slow, sl.mult, sl.seconds)
+        this.scene.fx.hitSpark(t.x, t.y - t.radius, e.def.colour, 0.6)
+      }
       this.scene.fx.slash(
         e.x + Math.cos(ang) * (e.radius + 6), e.y - e.radius * 0.6 + Math.sin(ang) * 8,
         ang, e.def.boss ? 1.6 : 0.7, e.def.colour,
@@ -704,7 +766,7 @@ export class EnemyManager {
     } else if (e.burnT > 0) {
       s.setTint(0xff9a5a)
     } else if (e.auraT > 0) {
-      s.setTint(0xd0a8ff)
+      s.setTint(e.auraTint)
     } else if (e.telegraphT > 0) {
       s.setTint(0xffd24a)
     } else if (stunned) {
