@@ -110,7 +110,8 @@ export class Player implements Targetable {
 
   addXp(amount: number) {
     if (!this.alive) return
-    this.xp += amount
+    // the Shrine of the First Flame (S14)
+    this.xp += this.scene.mods?.value('hero.xp', amount) ?? amount
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext
       this.level++
@@ -179,8 +180,9 @@ export class Player implements Targetable {
     }
     this.respawnShieldT = Math.max(0, this.respawnShieldT - dt)
 
-    if (this.stats.regen > 0 && this.hp < this.maxHp) {
-      this.hp = Math.min(this.maxHp, this.hp + this.stats.regen * dt)
+    const regen = this.scene.mods?.value('hero.regen', this.stats.regen) ?? this.stats.regen
+    if (regen > 0 && this.hp < this.maxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + regen * dt)
     }
 
     const len = Math.hypot(inputX, inputY)

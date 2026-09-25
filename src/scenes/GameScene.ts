@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { CAMERA, PLAYER, PICKUP, OUTPOST } from '../config/balance'
+import { CAMERA, PLAYER, PICKUP, OUTPOST, POI } from '../config/balance'
 import { PAL } from '../config/palette'
 import { HALL, REGIONS, WORLD, raster } from '../config/world'
 import { ABILITY_KEYS } from '../config/abilities'
@@ -40,6 +40,9 @@ import { LevelSystem } from '../systems/LevelSystem'
 import { QuestManager } from '../systems/QuestManager'
 import { SaveManager, type Settings } from '../systems/SaveManager'
 import { LightingManager } from '../systems/LightingManager'
+import { Modifiers } from '../systems/Modifiers'
+import { PoiManager } from '../systems/PoiManager'
+import { Building } from '../entities/Building'
 import { DPR } from '../core/device'
 import type { DockBands } from '../ui/dock'
 
@@ -89,6 +92,9 @@ export class GameScene extends Phaser.Scene {
   causeway!: CausewayFire
   /** outpost and lone waystones, fast travel (S11) */
   waystones!: Waystones
+  /** S14: shrine (and S15 relic) bonuses by stat */
+  mods!: Modifiers
+  pois!: PoiManager
   abilities!: AbilitySystem
   levels!: LevelSystem
   quests!: QuestManager
@@ -171,6 +177,9 @@ export class GameScene extends Phaser.Scene {
     this.fx.showDamage = this.settings.showDamage
     this.fx.reducedMotion = this.settings.reducedMotion
     this.res = new ResourceManager(this.bus)
+    // before anything that reads a stat: walls and gates take `wall.hp` from here
+    this.mods = new Modifiers()
+    Building.hpMod = (key, hp) => (key === 'wall' || key === 'gate' ? this.mods.value('wall.hp', hp) : hp)
     this.combat = new CombatSystem(this)
     this.nodes = new NodeManager(this)
     this.enemies = new EnemyManager(this, DEPTH.bars)
@@ -207,6 +216,7 @@ export class GameScene extends Phaser.Scene {
     this.camps.build()
     this.causeway = new CausewayFire(this)
     this.waystones = new Waystones(this)
+    this.pois = new PoiManager(this, { fog: DEPTH.fog, light: DEPTH.light, labels: DEPTH.labels })
     addScatter(this)
 
     this.player = new Player(this)
@@ -396,14 +406,21 @@ export class GameScene extends Phaser.Scene {
     this.events.emit('coreLost')
   }
 
-  openChest(x: number, y: number) {
-    const tier = 1 + this.waves.wave * 0.5
+  /**
+   * Spill a supply chest. A camp's chest scales with the wave; a POI cache
+   * (S14) passes its region's tier and scales with that instead.
+   */
+  openChest(x: number, y: number, regionTier?: number) {
+    const c = POI.cache
+    const tier = regionTier === undefined ? 1 + this.waves.wave * 0.5 : 1 + regionTier * c.perTier
+    const base = regionTier === undefined ? { coins: 120, wood: 60, stone: 40, metal: 18 } : c
     const table: [typeof RESOURCE_ORDER[number], number][] = [
-      ['coins', Math.round(120 * tier)],
-      ['wood', Math.round(60 * tier)],
-      ['stone', Math.round(40 * tier)],
+      ['coins', Math.round(base.coins * tier)],
+      ['wood', Math.round(base.wood * tier)],
+      ['stone', Math.round(base.stone * tier)],
     ]
-    if (this.waves.wave >= 5) table.push(['metal', Math.round(18 * tier)])
+    if (regionTier === undefined ? this.waves.wave >= 5 : regionTier >= 2) table.push(['metal', Math.round(base.metal * tier)])
+    if ((regionTier ?? 0) >= 4) table.push(['crystal', Math.round(c.crystal * tier)])
     this.fx.explosion(x, y, 110, PAL.gold)
     this.audio.play('quest', 1.1)
     for (const [k, v] of table) {
@@ -760,6 +777,7 @@ export class GameScene extends Phaser.Scene {
     this.routeMarks.update()
     this.regions.update(dt)
     this.waystones.update(dt)
+    this.pois.update(dt)
     this.quests.update()
     this.res.tickRates(dt)
     this.fx.update(dt)

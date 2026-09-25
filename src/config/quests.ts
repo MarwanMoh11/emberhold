@@ -103,4 +103,6 @@ export const ACHIEVEMENTS = [
   { id: 'a6', title: 'Nightkeeper', desc: 'Survive 10 waves', stat: 'wavesCleared', amount: 10 },
   { id: 'a7', title: 'Beast Slayer', desc: 'Defeat your first boss', stat: 'bossKills', amount: 1 },
   { id: 'a8', title: 'Reclaimer', desc: 'Destroy 5 enemy camps', stat: 'campsCleared', amount: 5 },
+  { id: 'a9', title: 'Loremaster', desc: 'Read all 12 lore stones', stat: 'loreRead', amount: 12 },
+  { id: 'a10', title: 'Pilgrim', desc: 'Restore all 6 shrines', stat: 'shrinesRestored', amount: 6 },
 ] as const

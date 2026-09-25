@@ -112,6 +112,31 @@ export const WAYSTONE = {
 }
 
 /**
+ * Points of interest (S14, design 05 §Points of interest). Loot and effects
+ * are first-pass; S20 tunes them.
+ */
+export const POI = {
+  /** a POI is seen once fog is cleared within this of it (the brush is ~480 px) */
+  seeR: 420,
+  /** landmarks stand tall: seen from this far off, fog or not */
+  landmarkSeeR: 1300,
+  /** stand this near a POI to interact */
+  touch: 50,
+  /** landmarks count as visited from their foot */
+  landmarkTouch: 220,
+  /** seconds on a lore stone before its line shows */
+  loreDwell: 1,
+  /** seconds the lore page stays up */
+  loreShow: 5.5,
+  /** show a shrine's or survivors' card within this */
+  cardRange: 280,
+  /** a cache's loot: `base` × (1 + `perTier` × region tier); metal from tier 2, crystal from tier 4 */
+  cache: { perTier: 0.75, coins: 140, wood: 70, stone: 45, metal: 20, crystal: 4 },
+  /** how the coast is lit when the Saltmere Light is restored: one reveal per `step` px of shore */
+  coastStep: 256,
+}
+
+/**
  * Village buildings (S13b, design 05 §New building types): what does not
  * change with a building's level. Per-level numbers are the defs' stats in
  * config/buildings.ts. First pass; S20 tunes them.

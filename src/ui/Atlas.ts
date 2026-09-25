@@ -12,7 +12,7 @@ import { polyCentroid } from '../world/raster'
 import { AtlasView, pickStone, travelOrder, type ChartMemory } from './chart'
 import { CHART, POI_GLYPH, drawCamp, drawOutpost, drawStone, poiState } from './chartMarks'
 import { DOCK, ON_PAGE, PlateButton, SkinPanel } from './skin'
-import { screen, textStyle } from './theme'
+import { screen, textStyle, titleCase } from './theme'
 
 /** Above the docked sheets, below the pause menu and its screens. */
 const DEPTH = 1_080_000
@@ -48,6 +48,8 @@ export class Atlas {
   private fog: Phaser.GameObjects.Image
   private marks: Phaser.GameObjects.Graphics
   private labels: Phaser.GameObjects.Text[]
+  /** S14: names under seen landmarks and shrines */
+  private poiLabels: { poi: (typeof POIS)[number]; text: Phaser.GameObjects.Text }[]
   private head: SkinPanel
   private foot: SkinPanel
   private title: Phaser.GameObjects.Text
@@ -84,6 +86,11 @@ export class Atlas {
     this.labels = REGIONS.map(r => ui.add.text(0, 0, r.name.toUpperCase(),
       textStyle({ voice: 'caps', size: 12, weight: '800', colour: ON_PAGE.text, align: 'center' }))
       .setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(DEPTH + 4).setStroke('#efe0bc', 3))
+    this.poiLabels = POIS.filter(p => p.kind === 'landmark' || p.kind === 'shrine').map(poi => ({
+      poi,
+      text: ui.add.text(0, 0, titleCase(poi.name), textStyle({ size: 11, weight: 'italic 700', colour: ON_PAGE.text, align: 'center' }))
+        .setOrigin(0.5, 0).setScrollFactor(0).setDepth(DEPTH + 4).setStroke('#efe0bc', 3).setVisible(false),
+    }))
     this.head = new SkinPanel(ui, 'hud').setScrollFactor(0).setDepth(DEPTH + 5)
     this.foot = new SkinPanel(ui, 'hud').setScrollFactor(0).setDepth(DEPTH + 5)
     this.title = ui.add.text(0, 0, 'THE FRONTIER', textStyle({ voice: 'caps', size: 16, weight: '800', colour: PAL.gold }))
@@ -114,6 +121,7 @@ export class Atlas {
 
   private setShown(v: boolean) {
     for (const o of [this.bg, this.base, this.fog, this.marks, this.title, this.note, ...this.labels]) o.setVisible(v)
+    if (!v) for (const l of this.poiLabels) l.text.setVisible(false)
     this.head.setVisible(v)
     this.foot.setVisible(v)
     this.closeBtn.setVisible(v)
@@ -342,6 +350,11 @@ export class Atlas {
       if (st === 'unseen') continue
       POI_GLYPH[poi.kind](g, v.ox + poi.x * z, v.oy + poi.y * z, st === 'done' ? s * 0.55 : s * 0.8)
     }
+    for (const { poi, text } of this.poiLabels) {
+      const seen = poiState(gs, this.memory, poi) !== 'unseen'
+      text.setVisible(seen)
+      if (seen) text.setPosition(v.ox + poi.x * z, v.oy + poi.y * z + s + 2)
+    }
     for (const b of gs.buildings.outposts()) drawOutpost(g, v.ox + b.x * z, v.oy + b.y * z, s * 0.8)
     const ws = gs.waystones
     for (const st of this.stones()) {
@@ -409,6 +422,8 @@ export class Atlas {
       open: this.open, openMs: Math.round(this.openMs * 10) / 10,
       z: Math.round(v.z * 1e4) / 1e4, zMin: Math.round(v.zMin * 1e4) / 1e4, vp: v.vp,
       explored: [...this.explored], focus: this.focus, note: this.note.text,
+      pois: POIS.filter(p => poiState(this.gs, this.memory, p) !== 'unseen').length,
+      named: this.poiLabels.filter(l => l.text.visible).map(l => l.poi.id),
       stones: this.stones().map(s => {
         const [x, y] = v.toScreen(s.x, s.y)
         return { id: s.id, lit: s.active, x: Math.round(x), y: Math.round(y) }

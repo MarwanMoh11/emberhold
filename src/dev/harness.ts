@@ -1,5 +1,5 @@
 import type Phaser from 'phaser'
-import { REGIONS, WALL_LINES, WORLD } from '../config/world'
+import { POIS, REGIONS, WALL_LINES, WORLD } from '../config/world'
 import { DPR } from '../core/device'
 
 /**
@@ -621,5 +621,17 @@ export function installHarness(game: Phaser.Game) {
     return { pads: bs.length, standing: bs.filter(b => b.alive).length, textures: g.buildings.looks.stats() }
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll }
+  /** S14: POIs by kind (`done/seen/total`), where the hero stands, locked survivors, live modifiers. */
+  const pois = () => gs().pois.inspect()
+  /** S14: stand the hero on a POI for `seconds` (claim its region first), then its state. */
+  const poi = (id: string, seconds = 2) => {
+    const g = gs()
+    const p = POIS.find(q => q.id === id)
+    if (!p) return `no POI "${id}"`
+    tp(p.x, p.y + 4)
+    pump(seconds)
+    return { id, state: g.pois.state(id), locked: g.pois.lockedBy(id), here: g.pois.here, hero: [Math.round(g.player.x), Math.round(g.player.y)] }
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi }
 }

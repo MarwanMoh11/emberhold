@@ -167,9 +167,16 @@ export class RegionManager {
   private eraseFog(x: number, y: number) {
     this.explored.mark(x, y)
     this.fog.erase(this.brush, x / FOG_SCALE, y / FOG_SCALE)
+    // POIs are seen when the fog clears round them (S14)
+    this.scene?.pois?.revealAt(x, y)
   }
 
   fogJSON() { return this.explored.toJSON() }
+
+  /** True when explored ground lies within `r` of (x, y) (S14: a POI is seen). */
+  exploredNear(x: number, y: number, r: number): boolean {
+    return this.explored.anyWithin(x, y, r)
+  }
 
   forEachExplored(fn: (x: number, y: number) => void) {
     this.explored.forEachMarked(fn)

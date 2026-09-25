@@ -57,38 +57,46 @@ export function drawOutpost(g: G, x: number, y: number, s: number) {
 }
 
 /**
- * POI markers by kind. **S14 hook:** replace an entry to give a kind its own
- * icon; until then every kind is a generic ring in its own ink, and a done POI
- * is drawn dimmed. `s` is the half-size in screen px.
+ * POI markers by kind (S14 drew each its own): an inked shape in the kind's
+ * colour. A done POI is drawn smaller. `s` is the half-size in screen px.
  */
 export const POI_GLYPH: Record<PoiKind, (g: G, x: number, y: number, s: number) => void> = {
   waystone: (g, x, y, s) => drawStone(g, x, y, s * 0.8, false),
-  shrine: ring(PAL.heroTrim),
-  cache: ring(PAL.gold),
-  lore: ring(CHART.lapis),
-  barrow: ring(0x6a5a7a),
-  survivors: ring(CHART.moss),
-  landmark: ring(CHART.gilt),
-  relic: ring(PAL.ember),
+  // a pediment on two posts
+  shrine: shape(PAL.heroTrim, (g, x, y, s) => {
+    g.fillTriangle(x - s, y - s * 0.2, x, y - s, x + s, y - s * 0.2)
+    g.fillRect(x - s * 0.8, y - s * 0.2, s * 1.6, s * 1.1)
+  }),
+  // a chest
+  cache: shape(PAL.gold, (g, x, y, s) => g.fillRect(x - s * 0.9, y - s * 0.6, s * 1.8, s * 1.3)),
+  // an upright slab
+  lore: shape(CHART.lapis, (g, x, y, s) => g.fillRect(x - s * 0.5, y - s, s, s * 1.9)),
+  // a mound
+  barrow: shape(0x6a5a7a, (g, x, y, s) => { g.slice(x, y + s * 0.5, s, Math.PI, 0, false); g.fillPath() }),
+  // a hut
+  survivors: shape(CHART.moss, (g, x, y, s) => {
+    g.fillTriangle(x - s, y - s * 0.1, x, y - s, x + s, y - s * 0.1)
+    g.fillRect(x - s * 0.7, y - s * 0.1, s * 1.4, s)
+  }),
+  // a peak
+  landmark: shape(CHART.gilt, (g, x, y, s) => g.fillTriangle(x - s * 1.1, y + s * 0.8, x, y - s * 1.2, x + s * 1.1, y + s * 0.8)),
+  // a diamond
+  relic: shape(PAL.ember, (g, x, y, s) => g.fillPoints([{ x, y: y - s }, { x: x + s * 0.8, y }, { x, y: y + s }, { x: x - s * 0.8, y }], true)),
 }
 
-function ring(colour: number) {
+/** Draw `body` once in ink a little larger (the outline), then in `colour`. */
+function shape(colour: number, body: (g: G, x: number, y: number, s: number) => void) {
   return (g: G, x: number, y: number, s: number) => {
     g.fillStyle(CHART.ink, 0.9)
-    g.fillCircle(x, y, s + 1.2)
+    body(g, x, y, s + 1.4)
     g.fillStyle(colour, 1)
-    g.fillCircle(x, y, s)
-    g.fillStyle(CHART.ink, 0.9)
-    g.fillCircle(x, y, s * 0.35)
+    body(g, x, y, s)
   }
 }
 
 export type PoiChartState = 'unseen' | 'seen' | 'done'
 
-/**
- * What the charts know of a POI. **S14 hook:** once `PoiManager` lands, answer
- * with `gs.pois.state(poi.id)`; until then a POI is seen once its ground is.
- */
+/** What the charts know of a POI: `gs.pois.state(id)` (S14); before a scene has one, seen once its ground is. */
 export function poiState(gs: GameScene, memory: ChartMemory, poi: PoiBP): PoiChartState {
   const pois = (gs as unknown as { pois?: { state(id: string): PoiChartState } }).pois
   if (pois) return pois.state(poi.id)

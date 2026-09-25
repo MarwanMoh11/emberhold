@@ -251,6 +251,8 @@ export class QuestManager {
       wavesCleared: s.waves.wavesCleared,
       bossKills: this.bossKills,
       campsCleared: this.campsCleared,
+      loreRead: s.pois?.count('lore') ?? 0,
+      shrinesRestored: s.pois?.count('shrine') ?? 0,
     }
   }
 

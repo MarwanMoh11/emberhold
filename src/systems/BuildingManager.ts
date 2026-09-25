@@ -279,7 +279,27 @@ export class BuildingManager {
     let m = 1
     if (home && (home.key === 'farm' || home.key === 'lumberCamp')) m *= this.localBonus('mill', home.x, home.y)
     if (res === 'food') m *= 1 + (this.granaryFor(x, y)?.stats.haul ?? 0)
-    return m
+    // S14: shrines (and S15 relics) multiply after the local bonuses
+    return m * this.yieldMod(home)
+  }
+
+  /** `food.yield` on farm and fishery crews, `wood.yield` on lumber camps; 1 elsewhere (S14). */
+  yieldMod(home: Building | undefined): number {
+    const mods = this.scene.mods
+    if (!home || !mods) return 1
+    if (home.key === 'farm' || home.key === 'fishery') return mods.value('food.yield', 1)
+    if (home.key === 'lumberCamp') return mods.value('wood.yield', 1)
+    return 1
+  }
+
+  /** Walls and gates take a new `wall.hp` (S14): max hp moves, and hp keeps its share of it. */
+  refreshWallHp() {
+    for (const b of this.buildings) {
+      if ((b.key !== 'wall' && b.key !== 'gate') || b.level <= 0 || b.maxHp <= 0) continue
+      const max = Building.hpMod(b.key, b.def.levels[b.level - 1].hp)
+      b.hp = b.alive ? b.hp * (max / b.maxHp) : b.hp
+      b.maxHp = max
+    }
   }
 
   /** Worker slots a camp has now: its level's, plus one from docks within reach of a fishery (S13b). */
@@ -435,6 +455,8 @@ export class BuildingManager {
       if ((s.heal ?? 0) > bo.heal) { bo.heal = s.heal ?? 0; bo.healRadius = s.radius ?? 0 }
     }
     bo.pop += Math.min(cottagePop, VILLAGE.cottagePopMax)
+    // survivors who walked in (S14)
+    bo.pop += this.scene.pois?.popBonus() ?? 0
     this.scene.res.setBuildingCarry(bo.carry)
     this.scene.applyBuildingBonuses()
   }
@@ -671,7 +693,7 @@ export class BuildingManager {
       this.scene.fx.popup(b.x, b.y - 40, `${b.def.short} DESTROYED`, PAL.danger, 18)
       this.scene.fx.popup(b.x, b.y - 18, 'rubble remains — walk in to rebuild', PAL.uiDim, 12)
     } else {
-      b.maxHp = b.def.levels[b.level - 1].hp
+      b.maxHp = Building.hpMod(b.key, b.def.levels[b.level - 1].hp)
       b.hp = b.maxHp * 0.4
       b.alive = true
       b.applyTexture()
@@ -839,9 +861,10 @@ export class BuildingManager {
         this.healTick = 1
         const tent = this.buildings.find(x => x.key === 'healingTent' && x.level > 0)
         if (tent) {
-          this.scene.combat.healAllies(tent.x, tent.y, this.bonus.healRadius, this.bonus.heal)
+          const heal = this.scene.mods?.value('infirmary.heal', this.bonus.heal) ?? this.bonus.heal
+          this.scene.combat.healAllies(tent.x, tent.y, this.bonus.healRadius, heal)
           if (player.alive && dist(player.x, player.y, tent.x, tent.y) < this.bonus.healRadius) {
-            player.heal(this.bonus.heal)
+            player.heal(heal)
           }
         }
       }
@@ -861,9 +884,13 @@ export class BuildingManager {
     if (this.outpostHealT > 0) return
     this.outpostHealT = 1
     for (const b of this.dropSites) {
-      if (b.key !== 'outpost' || b.level < 2 || !b.alive) continue
+      if (b.key !== 'outpost' || !b.alive) continue
+      // Lv.2's own heal, plus the Kettle Springs' (a Lv.1 infirmary's) on every outpost (S14)
+      const base = b.level >= 2 ? OUTPOST.heal : 0
+      const heal = this.scene.mods?.value('outpost.heal', base) ?? base
+      if (heal <= 0) continue
       if (this.scene.enemies.grid.nearest(b.x, b.y, OUTPOST.calmRadius, e => e.alive)) continue
-      this.scene.combat.healAllies(b.x, b.y, OUTPOST.healRadius, OUTPOST.heal)
+      this.scene.combat.healAllies(b.x, b.y, OUTPOST.healRadius, heal)
     }
   }
 
@@ -1172,7 +1199,7 @@ export class BuildingManager {
    * modifiers (`mods.value('trade.income', 1)`; the Saltmere Light adds 20%).
    */
   tradeIncome(): number {
-    return 1
+    return this.scene.mods?.value('trade.income', 1) ?? 1
   }
 
   /** Coins a second this post earns now (0 unless built and standing). */
@@ -1364,7 +1391,7 @@ export class BuildingManager {
       } else {
         if (b.level > d.level) {
           b.level = d.level
-          b.maxHp = b.def.levels[d.level - 1].hp
+          b.maxHp = Building.hpMod(b.key, b.def.levels[d.level - 1].hp)
         }
         while (b.level < d.level) b.completeLevel()
         b.hp = Math.max(1, Math.min(b.maxHp, d.hp))

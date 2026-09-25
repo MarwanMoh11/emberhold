@@ -57,6 +57,21 @@ export class FogMemory {
     this.bits[i >> 3] |= 1 << (i & 7)
   }
 
+  /** True when any marked cell's centre lies within `r` of (x, y). */
+  anyWithin(x: number, y: number, r: number): boolean {
+    const c = this.cell
+    const x0 = Math.max(0, Math.floor((x - r) / c)), x1 = Math.min(this.cols - 1, Math.floor((x + r) / c))
+    const y0 = Math.max(0, Math.floor((y - r) / c)), y1 = Math.min(this.rows - 1, Math.floor((y + r) / c))
+    for (let cy = y0; cy <= y1; cy++) {
+      for (let cx = x0; cx <= x1; cx++) {
+        const i = cy * this.cols + cx
+        if (!(this.bits[i >> 3] & (1 << (i & 7)))) continue
+        if (Math.hypot((cx + 0.5) * c - x, (cy + 0.5) * c - y) <= r) return true
+      }
+    }
+    return false
+  }
+
   forEachMarked(fn: (x: number, y: number) => void) {
     for (let cy = 0; cy < this.rows; cy++) {
       for (let cx = 0; cx < this.cols; cx++) {

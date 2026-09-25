@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import type { ResourceType } from './types'
 import type { BuildingKey } from '../config/buildings'
 import type { RegionId } from '../config/world'
-import type { Pt } from '../config/world/blueprint'
+import type { PoiKind, Pt } from '../config/world/blueprint'
 
 export interface GameEvents {
   'res:gained': { type: ResourceType; amount: number }
@@ -28,6 +28,11 @@ export interface GameEvents {
   /** A sleeping camp woke: its region was claimed or the hero came within `WAKE_RADIUS` (S08). */
   'camp:woke': { id: string }
   'region:claimed': { id: RegionId }
+  /** S14: a POI came out of the fog; a POI was opened, read, restored, joined or reached */
+  'poi:seen': { id: string; kind: PoiKind }
+  'poi:done': { id: string; kind: PoiKind }
+  /** S14: a lore stone was read (each time); the HUD shows its line on a parchment page */
+  'poi:lore': { id: string; name: string; text: string }
   'quest:complete': { id: string }
   'boss:spawned': { name: string }
   'boss:killed': { name: string }

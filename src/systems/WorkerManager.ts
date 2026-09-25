@@ -497,6 +497,7 @@ export class WorkerManager {
       const cycle = w.def.gatherTime / rate
       // 0.62 accounts for walking between the node and the stockpile
       const perSec = (perCycle / cycle) * 0.62 * (home.key === 'farm' || home.key === 'lumberCamp' ? mill : 1)
+        * this.scene.buildings.yieldMod(home)
       out[w.carryType] = (out[w.carryType] ?? 0) + perSec
     }
     return out

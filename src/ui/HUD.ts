@@ -2,8 +2,8 @@ import Phaser from 'phaser'
 import { PAL } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { ABILITIES, ABILITY_KEYS, ABILITY_SLOTS } from '../config/abilities'
-import { PLAYER } from '../config/balance'
-import { REGION_BY_ID } from '../config/world'
+import { PLAYER, POI } from '../config/balance'
+import { POIS, REGION_BY_ID } from '../config/world'
 import { clamp, short } from '../core/math'
 import { DPR, IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
 import { ABILITY_ICON } from '../art/icons'
@@ -123,6 +123,11 @@ export class HUD {
   private padL = 16
   private padR = 16
   private toastT = 0
+  /** S14: a lore stone's line, on a parchment page under the ribbon */
+  private lorePanel: SkinPanel
+  private loreTitle: Phaser.GameObjects.Text
+  private loreText: Phaser.GameObjects.Text
+  private loreT = 0
   private hintT = 0
   private lastCarryHint = -9999
   private flashCarry = 0
@@ -184,6 +189,10 @@ export class HUD {
     this.toastRibbon = panel('ribbon', D.toast)
     this.toastText = t({ voice: 'display', size: 22, colour: PAL.bone, shadow: true }).setDepth(D.toast + 1)
     this.toastSub = t({ size: 15, weight: 'italic 500', colour: PAL.bone, stroke: 4, align: 'center', wrap: 460 }, 0.5, 0).setDepth(D.toast + 1)
+    this.lorePanel = panel('page', D.toast)
+    this.loreTitle = t({ voice: 'caps', size: 13, weight: '800', colour: ON_PAGE.gilt }, 0.5, 0).setDepth(D.toast + 1)
+    this.loreText = t({ size: 16, weight: 'italic 600', colour: ON_PAGE.text, align: 'center', wrap: 380 }, 0.5, 0).setDepth(D.toast + 1)
+    this.lorePanel.setVisible(false)
     this.comboText = t({ voice: 'display', size: 26, colour: PAL.gold, stroke: 5 })
     this.statsText = t({ size: 11, weight: '500', colour: PAL.uiDim, stroke: 3 }, 0, 1)
     this.lowHp = ui.add.image(0, 0, vignetteTexture(ui, 0x7a1408)).setOrigin(0, 0)
@@ -219,6 +228,15 @@ export class HUD {
     this.game.bus.on('region:claimed', ({ id }) => {
       const r = REGION_BY_ID.get(id)
       if (r) this.toast(r.name, r.blurb, 4.6)
+    })
+    // points of interest (S14): a lore stone's page; a ribbon for a shrine, survivors or a landmark
+    this.game.bus.on('poi:lore', ({ name, text }) => this.lore(name, text))
+    this.game.bus.on('poi:done', ({ id, kind }) => {
+      const poi = POIS.find(p => p.id === id)
+      if (!poi) return
+      if (kind === 'shrine') this.toast(`${titleCase(poi.name)} restored`, poi.effect ?? '', 4.6)
+      else if (kind === 'survivors') this.toast(titleCase(poi.name), poi.effect ?? '', 4.2)
+      else if (kind === 'landmark') this.toast(titleCase(poi.name), '', 3.2)
     })
     this.game.bus.on('crossing:opened', ({ id }) => {
       if (id === 'calderaCauseway') this.toast('The fire on the causeway dies.', '', 4.6)
@@ -271,6 +289,13 @@ export class HUD {
     this.toastRibbon.setAlpha(0)
     this.toastText.setAlpha(0)
     this.toastSub.setAlpha(0)
+  }
+
+  /** A lore stone's line on a parchment page (S14). */
+  lore(name: string, text: string) {
+    this.loreTitle.setText(name.toUpperCase())
+    this.loreText.setText(`“${text}”`)
+    this.loreT = POI.loreShow
   }
 
   hint(msg: string) {
@@ -639,6 +664,22 @@ export class HUD {
       this.toastRibbon.setVisible(false)
       this.toastText.setVisible(false)
       this.toastSub.setVisible(false)
+    }
+
+    if (this.loreT > 0) {
+      this.loreT -= dt
+      const a = Math.min(1, (POI.loreShow - this.loreT) / 0.2, this.loreT / 0.5)
+      const pw = Math.min(this.W - 32, 440)
+      this.loreText.setWordWrapWidth(pw - 48, true)
+      const ph = Math.ceil(this.loreText.height) + 58
+      const py = Math.max(this.H * 0.2 + 44, g.uiBands.top + 56)
+      this.lorePanel.setVisible(true).setAlpha(a).place(this.W / 2 - pw / 2, py, pw, ph)
+      this.loreTitle.setVisible(true).setAlpha(a).setPosition(this.W / 2, py + 16)
+      this.loreText.setVisible(true).setAlpha(a).setPosition(this.W / 2, py + 38)
+    } else if (this.loreTitle.visible) {
+      this.lorePanel.setVisible(false)
+      this.loreTitle.setVisible(false)
+      this.loreText.setVisible(false)
     }
 
     if (this.hintT > 0 && !this.blocked) {

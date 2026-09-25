@@ -27,6 +27,8 @@ const gateIds = new Set(WALL_LINES.flatMap(l => l.gates.map(g => g.id)))
 /** Waystone ids (S11): an outpost's pad id, or a lone stone's POI id. */
 const stoneIds = new Set([...PADS.filter(p => p.key === 'outpost').map(p => p.id),
   ...POIS.filter(p => p.kind === 'waystone').map(p => p.id)])
+/** POI ids (S14): every blueprint POI; only done ones are saved. */
+const poiIds = new Set(POIS.map(p => p.id))
 const maxLevelForPad = (id: string) => padMax.get(id)
   ?? (/^wall\d+$/.test(id) || wallLineIds.has(id.split('.')[0]) && /^[A-Za-z]+\.\d+$/.test(id) ? BUILDINGS.wall.levels.length
     : gateIds.has(id) ? BUILDINGS.gate.levels.length : 0)
@@ -105,6 +107,8 @@ function validSave(v: unknown): v is SaveBlob {
     || !v.campGuards.every(g => typeof g === 'string' && CAMPS.some(c => g.startsWith(`${c.id}.`))))) return false
   if (v.waystones !== undefined && (!Array.isArray(v.waystones) || v.waystones.length > 64
     || !v.waystones.every(id => typeof id === 'string' && stoneIds.has(id)))) return false
+  if (v.pois !== undefined && (!Array.isArray(v.pois) || v.pois.length > POIS.length
+    || !v.pois.every(id => typeof id === 'string' && poiIds.has(id)))) return false
   if (v.campHealth !== undefined && (!record(v.campHealth)
     || !Object.entries(v.campHealth).every(([id, hp]) => CAMPS.some(c => c.id === id)
       && finite(hp) && hp > 0 && hp <= 100000))) return false
@@ -167,6 +171,8 @@ export interface SaveBlob {
   campGuards?: string[]
   /** Waystones lit (S11): outpost pad ids, `wsHall`, `wsIsle`. */
   waystones?: string[]
+  /** POIs done (S14): caches opened, lore read, shrines restored, survivors joined, landmarks reached. */
+  pois?: string[]
   abilities: ReturnType<GameScene['abilities']['toJSON']>
   combat: { kills: number; bossKills: number }
   coreLost?: boolean
@@ -262,6 +268,7 @@ export class SaveManager {
       campHealth: s.camps.healthJSON(),
       campGuards: s.camps.guardsJSON(),
       waystones: s.waystones.toJSON(),
+      pois: s.pois.toJSON(),
       abilities: s.abilities.toJSON(),
       combat: { kills: s.combat.kills, bossKills: s.combat.bossKills },
       coreLost: s.coreLost,
@@ -310,6 +317,8 @@ export class SaveManager {
     this.awaySeconds = blob.savedAt ? Math.max(0, (Date.now() - blob.savedAt) / 1000) : 0
     s.regions.load(blob.regions as never)
     if (blob.exploredFog) s.regions.loadFog(blob.exploredFog)
+    // before the buildings: a restored Shrine of the Mason sets wall hp as they load
+    s.pois.load(blob.pois)
     s.buildings.load(blob.buildings)
     s.res.load(blob.res)
     s.player.level = blob.player.level

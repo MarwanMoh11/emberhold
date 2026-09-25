@@ -202,11 +202,22 @@ export class Building implements Targetable {
     this.ghost.setVisible(false)
   }
 
+  /**
+   * S14: walls and gates take `wall.hp` (the Shrine of the Mason). GameScene
+   * points this at its Modifiers; the default leaves every hp as the def has it.
+   */
+  static hpMod: (key: BuildingKey, hp: number) => number = (_key, hp) => hp
+
+  /** Max hp at `lvl` (default: this level), after `Building.hpMod`. */
+  levelHp(lvl = this.level): number {
+    return Building.hpMod(this.key, this.def.levels[lvl - 1].hp)
+  }
+
   completeLevel() {
     this.level++
     this.progress = {}
     this.committed = false
-    this.maxHp = this.def.levels[this.level - 1].hp
+    this.maxHp = this.levelHp()
     this.hp = this.maxHp
     this.alive = true
     this.state = 'done'

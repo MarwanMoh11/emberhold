@@ -49,7 +49,9 @@ export class ArmyManager {
     const def = SOLDIERS[key]
     let s = this.free.pop()
     if (!s) s = new Soldier(this.scene)
-    const hpMult = 1 + this.scene.buildings.bonus.troopDmg * 0.3
+    const base = 1 + this.scene.buildings.bonus.troopDmg * 0.3
+    // the Shrine of the Fallen (S14)
+    const hpMult = this.scene.mods?.value('soldier.hp', base) ?? base
     s.spawn(def, x + (silent ? 0 : rr(-8, 8)), y + (silent ? 0 : rr(-4, 4)), this.soldiers.length, hpMult)
     this.soldiers.push(s)
     this.dirty = true
