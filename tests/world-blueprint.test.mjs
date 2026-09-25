@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { loadTs } from './load-ts.mjs'
-import { approachRoutes, lint, loadBlueprint, rasterise } from '../docs/world/tools/render.mjs'
+import { approachRoutes, freeSpots, lint, loadBlueprint, rasterise } from '../docs/world/tools/render.mjs'
 
 const { bp } = await loadBlueprint()
 const { ENEMIES } = await loadTs('src/config/enemies.ts')
@@ -56,4 +56,19 @@ test('every camp spawns an EnemyKey or a name[EnemyKey] placeholder', () => {
     const m = /^([A-Za-z]+)\[([A-Za-z]+)\]$/.exec(key)
     assert.ok(keys.has(key) || (m && keys.has(m[2])), `${c.id} spawns '${key}'`)
   }
+})
+
+test('--free (S13c): every spot it offers, added as a pad, keeps the lint at 0 errors and 0 warnings', () => {
+  let b = bp
+  const add = (key, near, n) => {
+    const f = freeSpots(b, r, 'downs', { key, near, n })
+    assert.equal(f.spots.length, n, `${key}: ${f.spots.length} spots`)
+    b = { ...b, PADS: [...b.PADS, ...f.spots.map((s, i) => ({ id: `free${key}${i}`, key, x: s.x, y: s.y, region: 'downs', hall: 1 }))] }
+  }
+  add('cottage', undefined, 10)
+  add('farm', [4700, 1500], 5)
+  add('watchPost', [5000, 1000], 3)
+  add('lumberCamp', [4000, 950], 2)
+  const bad = lint(b, r).map(i => `${i.level} ${i.what}: ${i.msg}`)
+  assert.deepEqual(bad, [])
 })

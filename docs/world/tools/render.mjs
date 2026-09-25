@@ -6,6 +6,8 @@
  *   node docs/world/tools/render.mjs --region kettle  one region's contents, compact
  *   node docs/world/tools/render.mjs --at 5120,4230   what is at (and near) a world point
  *   node docs/world/tools/render.mjs --borders        which regions touch, and through what
+ *   node docs/world/tools/render.mjs --free downs [--near x,y] [--key farm] [--n 12]
+ *                                                     spots where a new pad passes every rule (S13c)
  *   node docs/world/tools/render.mjs --quiet          errors only; exit code 1 if any
  *   --no-svg · --svg <path> · --labels (label every pad) · --blueprint <path>
  *
@@ -397,6 +399,66 @@ function describePoint(bp, r, x, y) {
   return lines.join('\n')
 }
 
+/**
+ * `--free <region> [--near x,y] [--key k] [--n 12]` (S13c): spots, nearest
+ * first, where a pad of `key` passes every pad rule of the lint, plus 70px
+ * (or half the road + 40) off any road's centre line and 120px off any claim
+ * stone. Picked greedily: each spot counts as a pad for the next, so the whole
+ * list can go in together.
+ */
+export function freeSpots(bp, r, id, { near, key = 'cottage', n = 12, step = 10 } = {}) {
+  const g = bp.REGIONS.find(x => x.id === id)
+  if (!g) return { error: `no region '${id}'` }
+  const hall = bp.PADS.find(p => p.id === 'hall')
+  const [nx, ny] = near ?? (g.id === 'hold' ? [hall.x, hall.y] : [g.claim.x, g.claim.y])
+  const reach = flowField(r, [r.cell(hall.x, hall.y)])
+  const landAt = (x, y) => { const c = r.cell(x, y); return c >= 0 && r.terrain[c] === T.LAND && !(r.crossing[c] >= 0 && r.under[c] !== T.LAND) }
+  const foot = [[0, 0], ...[0, 1, 2, 3, 4, 5, 6, 7].map(k => [Math.cos(k * Math.PI / 4) * RULES.padFootprint, Math.sin(k * Math.PI / 4) * RULES.padFootprint])]
+  const need = key === 'crystalDelve' ? RULES.campClear.crystalDelve
+    : PRODUCTION.has(key) ? RULES.campClear.production
+    : DEFENCE.has(key) ? RULES.campClear.defence : RULES.campClear.other
+  const threats = [...bp.CAMPS, ...bp.MAWS]
+  const stones = bp.REGIONS.filter(x => x.id !== 'hold').map(x => x.claim)
+  const pois = bp.POIS.filter(p => p.kind !== 'relic')
+  const fields = bp.NODES.filter(f => f.type !== 'fish')
+  const want = NEEDS[key]
+  const pads = bp.PADS.map(p => [p.x, p.y])
+  const ok = (x, y) => {
+    if (r.regionAt(x, y) !== id) return false
+    if (!foot.every(([dx, dy]) => landAt(x + dx, y + dy))) return false
+    const c = nearestPassable(r, x, y)
+    if (c < 0 || reach[c] === Infinity) return false
+    if (bp.WALLS.some(w => distToPolyline(x, y, w.pts, w.ring) < RULES.padWallClear)) return false
+    if (threats.some(t => hyp(x, y, t.x, t.y) < need)) return false
+    if (fields.some(f => hyp(x, y, f.x, f.y) < f.r + 60)) return false
+    if (pois.some(p => hyp(x, y, p.x, p.y) < 90)) return false
+    if (stones.some(s => hyp(x, y, s.x, s.y) < 120)) return false
+    if (bp.ROADS.some(rd => distToPolyline(x, y, rd.pts, false) < Math.max(70, rd.width / 2 + 40))) return false
+    if (want) {
+      const got = bp.NODES.filter(f => f.type === want && hyp(x, y, f.x, f.y) <= RULES.workerRadius).reduce((s, f) => s + f.n, 0)
+      if (got < 6) return false
+    }
+    return true
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (const [x, y] of g.poly) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y) }
+  const cand = []
+  for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step)
+    for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step)
+      if (inPoly(x, y, g.poly)) cand.push([x, y, hyp(x, y, nx, ny)])
+  cand.sort((a, b) => a[2] - b[2])
+  const out = []
+  for (const [x, y, d] of cand) {
+    if (out.length >= n) break
+    if (pads.some(([px, py]) => hyp(x, y, px, py) < RULES.padSpacingWarn)) continue
+    if (!ok(x, y)) continue
+    pads.push([x, y])
+    const road = Math.min(...bp.ROADS.map(rd => distToPolyline(x, y, rd.pts, false)))
+    out.push({ x, y, d: Math.round(d), road: Math.round(road) })
+  }
+  return { near: [nx, ny], key, spots: out }
+}
+
 // ---------------------------------------------------------------------------
 // SVG atlas
 // ---------------------------------------------------------------------------
@@ -566,6 +628,16 @@ async function main() {
 
   if (opt('--region')) { console.log(describeRegion(bp, r, opt('--region'))); return }
   if (opt('--at')) { const [x, y] = opt('--at').split(',').map(Number); console.log(describePoint(bp, r, x, y)); return }
+  if (opt('--free')) {
+    const f = freeSpots(bp, r, opt('--free'), {
+      near: opt('--near')?.split(',').map(Number), key: opt('--key'), n: opt('--n') ? Number(opt('--n')) : undefined,
+    })
+    if (f.error) { console.log(f.error); return }
+    console.log(`free ${f.key} spots in ${opt('--free')}, nearest (${f.near.join(',')}) first; each counts as a pad for the next:`)
+    for (const s of f.spots) console.log(`  ${s.x},${s.y}  ${s.d}px away · road ${s.road}px`)
+    if (!f.spots.length) console.log('  none')
+    return
+  }
   if (flag('--borders')) {
     for (const b of borders(bp, r)) console.log(`${b.a} | ${b.b}: ${b.via.length ? `via ${b.via.join(', ')}` : 'open land'} (${b.open}px of walkable border)`)
     return
