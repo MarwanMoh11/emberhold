@@ -34,9 +34,21 @@ export const WAVES: WaveDef[] = [
   { wave: 12, enemies: { grunt: 36, brute: 10, elite: 3, bomber: 8, swarm: 40 }, spread: 12 },
 ]
 
+/**
+ * The macro pace runs at 1.5× the first pass (STATUS 2026-09-24): night `n`
+ * threatens like first-pass night `n / WAVE_PACE`, so night 45 is the old 30.
+ * The scripted list above is that first pass. Its nights land at
+ * `stretched(k)` (1, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18) with their banners
+ * and bosses (the siege beast on 8, Krahn on 15); the nights between take
+ * counts part-way between their neighbours.
+ */
+export const WAVE_PACE = 1.5
+const stretched = (k: number) => (k === 1 ? 1 : Math.round(k * WAVE_PACE))
+const LAST = stretched(WAVES.length)
+
 /** Past the scripted list, the director keeps building waves that scale. */
 export function proceduralWave(wave: number): WaveDef {
-  const t = wave - WAVES.length
+  const t = wave / WAVE_PACE - WAVES.length
   const s = 1 + t * 0.14
   const def: WaveDef = {
     wave,
@@ -55,15 +67,28 @@ export function proceduralWave(wave: number): WaveDef {
     dmgMult: 1 + t * 0.13,
     spread: 12,
   }
-  if (wave % 5 === 0) {
-    def.boss = wave % 10 === 0 ? 'warlord' : 'siegeBeast'
-    def.banner = wave % 10 === 0 ? 'A WARLORD RETURNS' : 'SIEGE BEAST INBOUND'
+  // a boss every 8 nights (the first pass: every 5), a Warlord every 16
+  if (wave % 8 === 0) {
+    def.boss = wave % 16 === 0 ? 'warlord' : 'siegeBeast'
+    def.banner = wave % 16 === 0 ? 'A WARLORD RETURNS' : 'SIEGE BEAST INBOUND'
   }
   return def
 }
 
 export function waveDef(wave: number): WaveDef {
-  return WAVES.find(w => w.wave === wave) ?? proceduralWave(wave)
+  if (wave > LAST) return proceduralWave(wave)
+  const at = WAVES.find(w => stretched(w.wave) === wave)
+  if (at) return { ...at, wave }
+  // between two scripted nights: the counts part-way, no banner, no boss
+  const k = WAVES.findIndex(w => stretched(w.wave) > wave)
+  const a = WAVES[Math.max(0, k - 1)], b = WAVES[k]
+  const f = (wave - stretched(a.wave)) / (stretched(b.wave) - stretched(a.wave))
+  const enemies: WaveDef['enemies'] = {}
+  for (const key of new Set([...Object.keys(a.enemies), ...Object.keys(b.enemies)]) as Set<EnemyKey>) {
+    const n = Math.round((a.enemies[key] ?? 0) * (1 - f) + (b.enemies[key] ?? 0) * f)
+    if (n > 0) enemies[key] = n
+  }
+  return { wave, enemies, spread: a.spread }
 }
 
 /**
@@ -80,15 +105,15 @@ export interface DirectorInput {
 export function directorAdjust(def: WaveDef, input: DirectorInput): WaveDef {
   const out: WaveDef = { ...def, enemies: { ...def.enemies }, ...(def.approaches ? { approaches: [...def.approaches] } : {}) }
   // Lots of walls up -> send more sappers to make the player defend actively.
-  if (input.wallHp > 3000 && def.wave >= 6) {
+  if (input.wallHp > 3000 && def.wave >= 9) {
     out.enemies.bomber = (out.enemies.bomber ?? 0) + Math.min(8, Math.floor(input.wallHp / 2500))
   }
   // Big standing army -> a couple of elites so the line has something to chew.
-  if (input.soldierCount > 14 && def.wave >= 7) {
+  if (input.soldierCount > 14 && def.wave >= 11) {
     out.enemies.elite = (out.enemies.elite ?? 0) + 1
   }
   // Tower-heavy -> archers to trade at range.
-  if (input.towerCount >= 4 && def.wave >= 6) {
+  if (input.towerCount >= 4 && def.wave >= 9) {
     out.enemies.archer = (out.enemies.archer ?? 0) + input.towerCount
   }
   return out

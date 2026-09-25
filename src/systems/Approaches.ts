@@ -30,9 +30,9 @@ export const CAMP_MIX = 0.3
 /** When a main approach first comes: from a wave, or as soon as any listed region is claimed. */
 export const OPENS: Record<ApproachId, { wave: number; claimed?: RegionId[] }> = {
   south: { wave: 1 },
-  west: { wave: 5, claimed: ['hollow'] },
-  east: { wave: 8, claimed: ['greyfall'] },
-  southeast: { wave: 11, claimed: ['kettle', 'ferrow'] },
+  west: { wave: 8, claimed: ['hollow'] },
+  east: { wave: 12, claimed: ['greyfall'] },
+  southeast: { wave: 17, claimed: ['kettle', 'ferrow'] },
 }
 
 /** Budget weight: the south road carries the most. */
@@ -40,9 +40,9 @@ export const weightOf = (id: ApproachId): number => (id === 'south' ? 1 : 0.8)
 
 /** How many main approaches a night may use. */
 export function frontsFor(wave: number): number {
-  if (wave >= 20) return Infinity
-  if (wave >= 10) return 3
-  if (wave >= 5) return 2
+  if (wave >= 30) return Infinity
+  if (wave >= 15) return 3
+  if (wave >= 8) return 2
   return 1
 }
 

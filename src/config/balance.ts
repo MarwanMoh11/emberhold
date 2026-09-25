@@ -66,7 +66,7 @@ export const CAMERA = {
 export const DAYNIGHT = {
   /**
    * Day length is `dayBase + dayPerRegion × claimed regions` (the hold not
-   * counted), capped at `dayMax`: see `dayLength`. Open decision, tuned in S20.
+   * counted), capped at `dayMax`: see `dayLength`. Kept as landed (human, 2026-09-25).
    */
   dayBase: 60,
   dayPerRegion: 10,
@@ -81,7 +81,7 @@ export const DAYNIGHT = {
  * The night's reward in coins, before chapels bless it: `base + perWave × wave`.
  * Design 01 §The micro loop: it buys at least one build or upgrade at that stage.
  */
-export const NIGHT_REWARD = { base: 40, perWave: 25 }
+export const NIGHT_REWARD = { base: 50, perWave: 17 }
 export const nightReward = (wave: number): number => NIGHT_REWARD.base + NIGHT_REWARD.perWave * wave
 
 /** Seconds of day, given how many regions beyond the hold are claimed. */
@@ -161,20 +161,24 @@ export const POI = {
  */
 export const VILLAGE = {
   /**
-   * Population from every cottage together, at most. Open question to the
-   * human (2026-09-25); the design's default is no cap. A number here caps it.
+   * Population from every cottage together, at most (S20's call, 2026-09-25):
+   * 150 is about 50 cottages at Lv.2, so the cap binds only late. With the
+   * houses and the hall the whole pop tops out near 320, under the ~340
+   * workers past which a save sheds places (S19).
    */
-  cottagePopMax: Infinity,
+  cottagePopMax: 150,
   market: {
     /**
-     * Whether markets sell surplus for coins at all. Open question to the
-     * human (2026-09-25); the design's default is yes. `false` idles them.
+     * Whether markets sell surplus for coins at all (S20's call: yes, as a
+     * trickle). Wood and food pile up by the thousand from act I, so selling
+     * gives them a use; the rates (0.2 / 0.4 / 0.6 coins a second) keep the
+     * claims paced by their costs, not by the markets.
      */
     sells: true,
     /** food and wood are sold only above this much of each in store */
     floor: 300,
     /** goods sold for each coin earned */
-    goodsPerCoin: 3,
+    goodsPerCoin: 4,
     /** +this per cottage or longhouse within `homeRadius`, at most `homeMax` */
     perHome: 0.05,
     homeMax: 0.5,

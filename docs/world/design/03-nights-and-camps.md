@@ -10,7 +10,7 @@ World v2 replaces gates with **approaches**: named routes from a muster, over na
 
 ## Day and night
 
-- **Day.** Default `day = 60 + 10 × claimedRegions` seconds (the hold not counted), capped at 180. The base constants stay in `DAYNIGHT` (`src/config/balance.ts`). This is an **open decision**: S20 tunes it, and the human confirms.
+- **Day.** Default `day = 60 + 10 × claimedRegions` seconds (the hold not counted), capped at 180. The base constants stay in `DAYNIGHT` (`src/config/balance.ts`). Kept as landed (human, 2026-09-25).
 - **Warning.** `warningSeconds` (8 s) before dusk, fire `night:warning`. Tonight's approach routes are drawn as ember dotted lines, on the ground (only near the hero) and on the minimap and atlas. A banner names them: *"Tonight: the south road and the west ford."*
 - **Night** has two parts: **march** and **fight**.
   - The fight window (`nightSeconds`, 34 s) starts when the first marcher sets foot on claimed ground, or 25 s after dusk, whichever comes first.
@@ -24,9 +24,9 @@ Each approach is a **chain** of musters and a **via** list of crossings. The hor
 | Approach | Chain (nearest first) | Via | First route (from the tool) | Opens |
 |---|---|---|---|---|
 | **south**: the south road | campFerrow → campStairwarden → **mawStair** | oldBridge | 2.7k px: ferrow › hold | wave 1 |
-| **west**: the west ford | campGallows → **mawBone** | millford | 5.2k: barrowmoor › hollow › hold | wave 5, or when hollow is claimed |
-| **east**: the gorge | campIrontooth | gorgeBridge | 4.6k: irontooth › greyfall › hold | wave 8, or when greyfall is claimed |
-| **southeast**: the Kettle | campKettle → campOverseers → **mawRamp** | oldBridge | 4.0k: kettle › ferrow › hold | wave 11, or when kettle or ferrow is claimed |
+| **west**: the west ford | campGallows → **mawBone** | millford | 5.2k: barrowmoor › hollow › hold | wave 8, or when hollow is claimed |
+| **east**: the gorge | campIrontooth | gorgeBridge | 4.6k: irontooth › greyfall › hold | wave 12, or when greyfall is claimed |
+| **southeast**: the Kettle | campKettle → campOverseers → **mawRamp** | oldBridge | 4.0k: kettle › ferrow › hold | wave 17, or when kettle or ferrow is claimed |
 | north (raid) | campDiggers | — | 2.9k: downs › hold | while its camp is awake |
 | northwest (raid) | campThornstake → campThornmother | — | 3.5k: whisperwood › hold | while its camp is awake |
 | northeast (raid) | campHollowpeak | — | 5.8k via scarpStair | while its camp is awake |
@@ -42,10 +42,10 @@ To regenerate the route column, run `node docs/world/tools/render.mjs`. The lint
 
   | Waves | Approaches per night |
   |---|---|
-  | 1–4 | 1 |
-  | 5–9 | up to 2 |
-  | 10–19 | up to 3 |
-  | 20+ | every live one |
+  | 1–7 | 1 |
+  | 8–14 | up to 2 |
+  | 15–29 | up to 3 |
+  | 30+ | every live one |
 
   The budget is split by weight: south 1.0, others 0.8. The existing wave director (`directorAdjust`) still scales the total.
 - **Scaling.** Enemies take the tier of their muster's region:

@@ -67,24 +67,24 @@ Generated from the blueprint. Hall is the Command Hall level at which the border
 | Region | Tier | Hall | Cost | Area (M px²) | Entered from | For |
 |---|---|---|---|---|---|---|
 | Emberhold `hold` | 0 | 1 | — | 3.9 | — | Home. Hall, depot, the muster buildings and the first line: the bridge. |
-| The Barrow Downs `downs` | 1 | 1 | 120 coins | 5.3 | hold | Food. The best open farmland north of the river, and barrows to break open. |
-| Whisperwood `whisperwood` | 1 | 1 | 200 coins, 60 wood | 4.9 | hold | Wood. Two lumber clearings and the first warcamp worth burning. |
-| Hollow Village `hollow` | 1 | 1 | 300 coins, 150 wood | 2.6 | hold | People. Rebuilt houses, a river fishery, and the Millford crossing to hold. |
-| Greyfall Scarp `greyfall` | 2 | 2 | 450 coins, 250 wood | 2.4 | hold | Stone. Quarries at the cliff foot; the Gorge Bridge is the east approach. |
-| The Ferrow Fields `ferrow` | 2 | 2 | 600 coins, 300 wood, 100 food | 4.1 | hold | The bridgehead. Big farms on the floodplain and the first muster to break. |
-| Frostmere `frostmere` | 3 | 3 | 900 coins, 400 wood, 200 stone | 7.4 | downs | Pine and fish, and the Shrine of the First Flame on Frostmere Isle. |
-| Saltmere `saltmere` | 3 | 3 | 900 coins, 500 wood, 150 stone | 5.0 | hollow | Coin. The old quay takes a trading post, the only building that earns coins. |
-| Irontooth Foothills `irontooth` | 3 | 3 | 1000 coins, 350 stone | 7.4 | greyfall | Metal. Open-cast iron on the east bank, across the Gorge Bridge. |
-| Barrowmoor `barrowmoor` | 3 | 3 | 1100 coins, 300 stone, 200 food | 6.1 | hollow | Relics. Barrows and battlefield caches, and the Gallows Knight's stronghold. |
-| The Kettle `kettle` | 3 | 3 | 1200 coins, 400 stone | 3.8 | ferrow | The south-east muster. Sulphur stone and healing springs. |
-| The Deepwood *(optional)* `deepwood` | 3 | 3 | 1300 coins, 800 wood | 4.8 | whisperwood | Giant timber, the Heart Oak, and the Thornmother's den. |
-| Deepvein `deepvein` | 4 | 4 | 1800 coins, 600 stone, 120 metal | 6.0 | irontooth | Deep metal and the first crystal delve, behind three walls of cliff. |
-| The Blackened Rim `rim` | 4 | 4 | 2000 coins, 700 stone, 150 metal + burn campFerrow | 3.1 | ferrow | The Cinder Stair: fortify its top and the south approach is yours. |
-| Ashgate `ashgate` | 4 | 4 | 2400 coins, 800 stone, 250 metal | 9.6 | barrowmoor | The fortress. Burning it unseals the Crown. |
-| The Cinder Crown `crown` | 5 | 5 | 4000 coins, 1200 stone, 600 metal, 40 crystal + burn campStairwarden | 8.7 | rim | The finale. The causeway to the throne is sealed until Ashgate falls. |
-| Cinderfall *(optional)* `cinderfall` | 5 | 5 | 3500 coins, 500 metal, 30 crystal | 3.2 | deepvein | The richest crystal and the Slag Forges that arm the south-east. |
+| The Barrow Downs `downs` | 1 | 1 | 200 coins | 5.3 | hold | Food. The best open farmland north of the river, and barrows to break open. |
+| Whisperwood `whisperwood` | 1 | 1 | 320 coins, 100 wood | 4.9 | hold | Wood. Two lumber clearings and the first warcamp worth burning. |
+| Hollow Village `hollow` | 1 | 1 | 480 coins, 240 wood | 2.6 | hold | People. Rebuilt houses, a river fishery, and the Millford crossing to hold. |
+| Greyfall Scarp `greyfall` | 2 | 2 | 720 coins, 400 wood | 2.4 | hold | Stone. Quarries at the cliff foot; the Gorge Bridge is the east approach. |
+| The Ferrow Fields `ferrow` | 2 | 2 | 960 coins, 480 wood, 160 food | 4.1 | hold | The bridgehead. Big farms on the floodplain and the first muster to break. |
+| Frostmere `frostmere` | 3 | 3 | 1450 coins, 650 wood, 320 stone | 7.4 | downs | Pine and fish, and the Shrine of the First Flame on Frostmere Isle. |
+| Saltmere `saltmere` | 3 | 3 | 1450 coins, 800 wood, 240 stone | 5.0 | hollow | Coin. The old quay takes a trading post, the only building that earns coins. |
+| Irontooth Foothills `irontooth` | 3 | 3 | 1600 coins, 560 stone | 7.4 | greyfall | Metal. Open-cast iron on the east bank, across the Gorge Bridge. |
+| Barrowmoor `barrowmoor` | 3 | 3 | 1750 coins, 480 stone, 320 food | 6.1 | hollow | Relics. Barrows and battlefield caches, and the Gallows Knight's stronghold. |
+| The Kettle `kettle` | 3 | 3 | 1900 coins, 640 stone | 3.8 | ferrow | The south-east muster. Sulphur stone and healing springs. |
+| The Deepwood *(optional)* `deepwood` | 3 | 3 | 2100 coins, 1300 wood | 4.8 | whisperwood | Giant timber, the Heart Oak, and the Thornmother's den. |
+| Deepvein `deepvein` | 4 | 4 | 2900 coins, 960 stone, 190 metal | 6.0 | irontooth | Deep metal and the first crystal delve, behind three walls of cliff. |
+| The Blackened Rim `rim` | 4 | 4 | 3200 coins, 1100 stone, 240 metal + burn campFerrow | 3.1 | ferrow | The Cinder Stair: fortify its top and the south approach is yours. |
+| Ashgate `ashgate` | 4 | 4 | 3800 coins, 1300 stone, 400 metal | 9.6 | barrowmoor | The fortress. Burning it unseals the Crown. |
+| The Cinder Crown `crown` | 5 | 5 | 6400 coins, 1900 stone, 960 metal, 64 crystal + burn campStairwarden | 8.7 | rim | The finale. The causeway to the throne is sealed until Ashgate falls. |
+| Cinderfall *(optional)* `cinderfall` | 5 | 5 | 5600 coins, 800 metal, 48 crystal | 3.2 | deepvein | The richest crystal and the Slag Forges that arm the south-east. |
 
-Command Hall levels already run from 1 to 5 (Ember Tent to Citadel), and each region's `hall` maps onto them directly. The costs in this table are first-pass values; S20 owns balance.
+Command Hall levels already run from 1 to 5 (Ember Tent to Citadel), and each region's `hall` maps onto them directly. The costs in this table are S20's (about 1.6× the first pass); the hall levels rose with them.
 
 ## Pacing targets
 

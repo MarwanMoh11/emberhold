@@ -69,7 +69,7 @@ test('after the Ferrow Muster burns, the south road musters at the Stairwarden',
 })
 
 test('the gorge closes for good when Irontooth burns', () => {
-  assert.ok(world().live(8).includes('east'))
+  assert.ok(world().live(12).includes('east'))
   const a = world({ burned: ['campIrontooth'] })
   assert.equal(a.muster('east'), null)
   assert.ok(!a.live(30).includes('east'))
@@ -79,8 +79,8 @@ test('the gorge closes for good when Irontooth burns', () => {
 test('approaches open by wave or by claim; raids only while their camp is awake', () => {
   const a = world()
   assert.deepEqual(a.live(1), ['south'])
-  assert.deepEqual(a.live(5), ['south', 'west'])
-  assert.deepEqual(a.live(11), ['south', 'west', 'east', 'southeast'])
+  assert.deepEqual(a.live(8), ['south', 'west'])
+  assert.deepEqual(a.live(17), ['south', 'west', 'east', 'southeast'])
   assert.deepEqual(world({ claimed: ['hold', 'hollow'] }).live(1), ['south', 'west'])
   assert.deepEqual(world({ claimed: ['hold', 'ferrow'] }).live(2), ['south', 'southeast'])
   assert.deepEqual(world({ awake: ['campDiggers'] }).live(1), ['south', 'north'])
@@ -90,16 +90,16 @@ test('approaches open by wave or by claim; raids only while their camp is awake'
 })
 
 test('fronts per night, and the budget split', () => {
-  assert.deepEqual([1, 4, 5, 9, 10, 19].map(frontsFor), [1, 1, 2, 2, 3, 3])
-  assert.equal(frontsFor(20), Infinity)
+  assert.deepEqual([1, 7, 8, 14, 15, 29].map(frontsFor), [1, 1, 2, 2, 3, 3])
+  assert.equal(frontsFor(30), Infinity)
   const a = world({ awake: ['campDiggers'] })
   const p1 = a.tonight(1)
   assert.deepEqual(p1.fronts, ['south'])
   assert.equal(p1.raid, 'north')
-  const p12 = world().tonight(12)
+  const p12 = world().tonight(17)
   assert.equal(p12.fronts.length, 3)
   assert.equal(p12.fronts[0], 'south')
-  assert.equal(world().tonight(25).fronts.length, 4)
+  assert.equal(world().tonight(30).fronts.length, 4)
   const s = splitBudget({ fronts: ['south', 'west'], raid: 'north' }, 40)
   assert.equal([...s.values()].reduce((x, y) => x + y, 0), 40)
   assert.equal(s.get('north'), 12)

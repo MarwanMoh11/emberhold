@@ -18,7 +18,7 @@ test('localBonus: the best mill in reach counts, mills never stack', () => {
 
 test('market: its rate, +5% a home up to +50%, and the floor', () => {
   const sell = BUILDINGS.market.levels.map(l => l.stats.sell)
-  assert.deepEqual(sell, [0.3, 0.6, 1])
+  assert.deepEqual(sell, [0.2, 0.4, 0.6])
   assert.equal(V.marketRate(0.6, 0), 0.6)
   assert.ok(Math.abs(V.marketRate(0.6, 2) - 0.66) < 1e-9)
   assert.ok(Math.abs(V.marketRate(1, 40) - 1.5) < 1e-9, 'capped at +50%')

@@ -47,10 +47,10 @@ const B = (
 export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
   townHall: B('townHall', 'Command Hall', 'HALL', 'core', 92, 78, [
     { cost: {}, hp: 1400, stats: { pop: 4, unlockTier: 1, prod: 0 }, label: 'Ember Tent' },
-    { cost: { coins: 320, wood: 200 }, hp: 2200, stats: { pop: 8, unlockTier: 2, prod: 0.1 }, label: 'Timber Hall' },
-    { cost: { coins: 800, wood: 500, stone: 260 }, hp: 3400, stats: { pop: 12, unlockTier: 3, prod: 0.25 }, label: 'Stone Hall' },
-    { cost: { coins: 1800, wood: 900, stone: 700, metal: 180 }, hp: 5200, stats: { pop: 18, unlockTier: 4, prod: 0.45 }, label: 'Bastion Hall' },
-    { cost: { coins: 4200, stone: 1600, metal: 600, crystal: 40 }, hp: 8000, stats: { pop: 26, unlockTier: 5, prod: 0.7 }, label: 'Citadel' },
+    { cost: { coins: 500, wood: 320 }, hp: 2200, stats: { pop: 8, unlockTier: 2, prod: 0.1 }, label: 'Timber Hall' },
+    { cost: { coins: 1300, wood: 800, stone: 420 }, hp: 3400, stats: { pop: 12, unlockTier: 3, prod: 0.25 }, label: 'Stone Hall' },
+    { cost: { coins: 2900, wood: 1450, stone: 1100, metal: 290 }, hp: 5200, stats: { pop: 18, unlockTier: 4, prod: 0.45 }, label: 'Bastion Hall' },
+    { cost: { coins: 6700, stone: 2600, metal: 960, crystal: 64 }, hp: 8000, stats: { pop: 26, unlockTier: 5, prod: 0.7 }, label: 'Citadel' },
   ], 'Heart of the hold. Upgrading unlocks new structures, territory and population.', { blocking: true }),
 
   // Single level on purpose: the depot is a drop-off, so it must never
@@ -125,9 +125,9 @@ export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
 
   // `sell` is coins a second while food and wood stand above VILLAGE.market.floor.
   market: B('market', 'Market', 'MARKET', 'support', 62, 50, [
-    { cost: { coins: 120, wood: 80 }, hp: 480, stats: { sell: 0.3 }, label: 'Market Stalls' },
-    { cost: { coins: 300, wood: 200, stone: 80 }, hp: 700, stats: { sell: 0.6 }, label: 'Market Cross' },
-    { cost: { coins: 700, wood: 400, stone: 250 }, hp: 980, stats: { sell: 1 }, label: 'Market Hall' },
+    { cost: { coins: 120, wood: 80 }, hp: 480, stats: { sell: 0.2 }, label: 'Market Stalls' },
+    { cost: { coins: 300, wood: 200, stone: 80 }, hp: 700, stats: { sell: 0.4 }, label: 'Market Cross' },
+    { cost: { coins: 700, wood: 400, stone: 250 }, hp: 980, stats: { sell: 0.6 }, label: 'Market Hall' },
   ], 'Sells the surplus food and wood above a floor for coins. Homes nearby bring more buyers.',
     { blocking: true }),
 
