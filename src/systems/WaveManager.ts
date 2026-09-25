@@ -1,7 +1,7 @@
 import { waveDef, directorAdjust, type WaveDef } from '../config/waves'
 import { WORLD } from '../config/world'
 import type { Pt } from '../config/world/blueprint'
-import { DAYNIGHT, VILLAGE, dayLength } from '../config/balance'
+import { DAYNIGHT, VILLAGE, dayLength, nightReward } from '../config/balance'
 import { PAL } from '../config/palette'
 import { rr, ri, shuffled, clamp } from '../core/math'
 import { ENEMIES, type EnemyKey } from '../config/enemies'
@@ -329,7 +329,7 @@ export class WaveManager {
     this.wavesCleared++
     this.bannerText = ''
     // each standing chapel blesses the reward, +50% at most in all (S13b)
-    const reward = Math.round((40 + this.wave * 25) * this.scene.buildings.nightBlessing())
+    const reward = Math.round(nightReward(this.wave) * this.scene.buildings.nightBlessing())
     this.scene.res.addStored('coins', reward, false)
     this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 120, `NIGHT ${this.wave} HELD`, PAL.good, 30)
     this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 84, `+${reward} coins`, PAL.coins, 18)

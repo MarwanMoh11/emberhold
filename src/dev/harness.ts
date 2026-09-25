@@ -2,6 +2,7 @@ import type Phaser from 'phaser'
 import { CAMPS, POIS, REGIONS, WALL_LINES, WORLD } from '../config/world'
 import { WAYSTONE } from '../config/balance'
 import { DPR } from '../core/device'
+import { makeProbe } from './probe'
 
 /**
  * Dev-only scripted-play harness, stripped from production builds.
@@ -45,6 +46,7 @@ import { DPR } from '../core/device'
  *   H.regent()           the finale (S17): the causeway sealed, Ashgate burned, the Regent risen on the causeway, felled
  *   H.quests()           the chain (S18): current quest, progress, arrow target, route length, act banners seen
  *   H.questStep(n)       finish the current quest n times with dev help (claims, burns, pads, a journey); ids done
+ *   H.probe.start(); H.probe.run(12); H.probe.report()   the S20 economy probe: a scripted run, per-wave rows
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -60,9 +62,15 @@ export function installHarness(game: Phaser.Game) {
     if (u?.levelUp?.open) u.levelUp.choose(0)
   }
 
-  const pump = (seconds: number, stepMs = 33) => {
+  /** `headless` steps the scenes without drawing them (the probe's long runs). */
+  const pump = (seconds: number, stepMs = 33, headless = false) => {
     const n = Math.max(1, Math.round((seconds * 1000) / stepMs))
-    for (let i = 0; i < n; i++) { t += stepMs; game.loop.step(t); auto() }
+    const loop = game.loop as any
+    const draw = loop.callback
+    if (headless) loop.callback = (time: number, delta: number) => game.headlessStep(time, delta)
+    try {
+      for (let i = 0; i < n; i++) { t += stepMs; game.loop.step(t); auto() }
+    } finally { loop.callback = draw }
   }
 
   const start = (load = false) => {
@@ -871,5 +879,6 @@ export function installHarness(game: Phaser.Game) {
     }
     return { out, stuck: null }
   }
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi, relics, relic, relicCheck, god, boss, regent, quests, questStep }
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi, relics, relic, relicCheck, god, boss, regent, quests, questStep,
+    probe: makeProbe({ gs, pump, start, tp, questStep }) }
 }

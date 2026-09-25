@@ -77,6 +77,13 @@ export const DAYNIGHT = {
   warningSeconds: 8,
 }
 
+/**
+ * The night's reward in coins, before chapels bless it: `base + perWave × wave`.
+ * Design 01 §The micro loop: it buys at least one build or upgrade at that stage.
+ */
+export const NIGHT_REWARD = { base: 40, perWave: 25 }
+export const nightReward = (wave: number): number => NIGHT_REWARD.base + NIGHT_REWARD.perWave * wave
+
 /** Seconds of day, given how many regions beyond the hold are claimed. */
 export function dayLength(claimedRegions: number): number {
   return Math.min(DAYNIGHT.dayMax, DAYNIGHT.dayBase + DAYNIGHT.dayPerRegion * Math.max(0, claimedRegions))
