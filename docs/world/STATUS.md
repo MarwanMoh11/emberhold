@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S19** ([card](sessions/S19-save-v2.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S20** ([card](sessions/S20-balance.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -14,7 +14,7 @@ These bind every session. Add a line when one is made, with the date and who dec
 - 2026-09-23 (design): development happens on `world-v2`. `main` stays the live v1 game until S22.
 - 2026-09-24 (human): slow the macro pace to about 1.5× (acts end near waves 8, 18, 33 and 45; the Regent near wave 50, about 2.5–3 h of game clock), but keep the micro loop tight: a reward every 30–60 s, a quest or milestone every 3–5 min, and every night a clear win with a reward. Targets are in [01 §Pacing](design/01-world.md#pacing-targets); S18 and S20 honour them.
 - 2026-09-24 (human): by the endgame every region, the hold included, is dense with buildings and reads as one settled country. Seven village building types, regional styles, and pads from 94 to ~238 ([05 §A settled country](design/05-content.md#a-settled-country-s13b-s13c)); S13c may add pads, and `world:lint` must stay clean.
-- 2026-09-25 (human): **let go of v1 completely.** v2 is the main game. There is no migration, no Veteran's charter and no "old frontier": v2 ignores every v1 key (it never reads, migrates or deletes them) and every player starts fresh. S19 drops design 07's migration options and keeps the schema consolidation and portability. When the work is complete, the game ships as **Beta 1**: a version label on the title screen and in the save's metadata, landed by S19 and shipped by S22.
+- 2026-09-25 (human): **let go of v1 completely.** v2 is the main game. There is no migration, no Veteran's charter and no "old frontier": v2 ignores every v1 key (it never reads, migrates or deletes them) and every player starts fresh. S19 drops design 07's migration options and keeps the schema consolidation and portability. When the work is complete, the game ships as **Beta 1**: a version label on the title screen and in the save's metadata, landed by S19 and shipped by S22. **Landed (S19):** v1 keys untouched (tested), design 07 §Migration closed, `GAME_VERSION` on the title and in `meta.version`.
 - 2026-09-25 (human): run length stays as landed: more waves, the Regent near wave 50, and `day = 60 + 10 × claimed` capped at 180 s. Longer days were declined.
 - 2026-09-25 (human): worker drop-off (depot, outpost or granary), the cottage population cap (`VILLAGE.cottagePopMax`, none today) and markets selling surplus (`VILLAGE.market.sells`, on today) are **S20's call**. Choose whatever balances best against the pacing decision above, and record the choice in S20's entry.
 
@@ -25,6 +25,16 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 _(none open)_
 
 ## Log
+
+### S19 · Save v2: done (2026-09-25)
+- C1 (`6765c87`) schema, limits, tests; C2 (`21636cb`) Beta 1 on the title, docs. **Implemented the decision: v1 let go** (no migration, charter, chest or old frontier; the card's C2 dropped). v1 keys are never read, written or deleted; a test holds it.
+- `SaveBlobV2` is the one schema. `validShape` is strict on types and ranges; `tolerate` drops unknown ids (pads incl. laid wall pieces, worker homes, soldiers, upgrades, regions, camps, guards, boss hp, waystones, POIs, relics), keeps each once, one `console.warn`. Fog `r:`/`b:` only (v1 bare bitset gone), ≤ 3842. CONTRACTS §S19; save-fields table consolidated with owners.
+- **64 KB enforced on read and write.** Raw, a maxed frontier (every pad, 343 workers, 150 soldiers, full fog) was ~105 KB, so `save()` writes a compact form (whole px and hp, defaults and `carryType` left out): ~56 KB. Past 64 KB workers and soldiers lose their places (walk out from home) before a save is refused.
+- `GAME_VERSION = 'Beta 1'` (`config/version.ts`): top right of the title, `meta.version` in every save. S22 ships it.
+- Tests: every field round-trips, a blueprint edit drops ids, v1 untouched, oversized refused, maxed fits, download → import. POI and relic tests now expect drops, not refusals.
+- Verify (browser, one run; the pane's storage was empty and is restored empty): title shows BETA 1 (1 screenshot); new game → save (18.4 KB, meta Beta 1) → reload → load at the same x/y, coins, quest a2; a planted v1 key untouched; `H.buildAll` save 19.5 KB.
+- Deviations: unknown ids in `regions`, `camps`, `waystones`, `pois`, `relics` etc. no longer refuse a save (CONTRACTS said they did). Workers and soldiers reload within 0.5 px of where they stood.
+- For S20: save size grows ~80 B per worker; a cottage cap far past ~340 workers makes saves go lean (places lost), not fail. Not measured: a real late-game save's size, import on a phone. No blueprint moves, no new open decisions.
 
 ### S18 · Campaign 2.0: done (2026-09-25)
 - C1–C2 (`fe79a1e`), C3 (`a4c5fca`). Goals claim, burn, restore, relic, reach, travel, line, settle (+ `build.region`); `zone` = regions held incl. the hold. All read world state, not events, so dev claims and loads agree. `targetFor` per card; pure candidates in `systems/questAnchors.ts`; a test puts every quest's targets on passable ground. `act:begun` banners, ribbons queue, deeds a12–a15, quest log shows the current act. CONTRACTS §S18.
@@ -44,13 +54,7 @@ _(none open)_
 - Not measured: fights without god mode, boss damage vs a real army, the knight's cleave on soldiers, art at night. No blueprint moves, no new open decisions.
 
 ### S16 · New walkers: done (2026-09-25)
-- C1 (`3d77721`) defs and behaviours, C2 (`c519264`) art, C3 (`9425f46`) wiring. bogWretch (hits slow the hero and soldiers to ×0.7 for 1.5 s), thornling (pack 5, splinter burst), ashPriest (ranged 200, aura 220 px: +25% dmg, 10 hp/s to the others), cinderHound (3 s burning patch, 56 px, 14 dps). Pure rules in `systems/walkers.ts`; API in CONTRACTS §S16.
-- Blueprint placeholders resolved (campDrowned, campThornmother, campStairwarden, campForges); `resolveSpawnKey` removed; tests reject any bracket.
-- **Wave mix for S20** (`WALKER_MIX`, dealt by `mixHand` in WaveManager): the camp's own walker is `CAMP_MIX` 0.3 of its approach; bogWretch tops up to 1 in 4 at Saltmere and Barrowmoor musters; cinderHound 1 in 5 at tier 5+; ashPriest 1 in 12 at tier 4+ and capped there (own share included); thornlings only as the Thornmother's own, each card opening into 5.
-- Verify (harness, one run): woke each camp, 13 s: Drowned 2 wretches, Thornmother 5 thornlings, Stairwarden 1 priest, Forges 3 hounds. Wretch hit: hero slow t 1.5, ×0.7, refreshed per hit, lifted after. Priest: grunt 5.7 → 15.6 hp in 1 s, auraDamage 1.25; grunt 600 px off untouched; priest heals 0 itself. Hound death: patch r 56, 14 dps, gone after 3 s. Gallery: all four `enm_` textures (1 screenshot, plus one retaken at a smaller zoom). User saves restored byte-identical.
-- Deviations: overlapping auras now take the strongest of each effect (before: the last writer won), which also applies to warlord and commander auras. The priest's aura reuses `aura` with `heal`/`tint` added.
-- For S17: a Stairwarden guard stand-in is still `elite`, beside the priests; S15's barrow guardian is also a renamed `elite`.
-- Not measured: wave-mix counts over real nights (unit test only), the slow on soldiers in play, hound patches on soldiers, thornling splinters by eye. No blueprint moves, no new open decisions.
+- bogWretch, thornling, ashPriest, cinderHound (`systems/walkers.ts`), wave mix `WALKER_MIX`/`CAMP_MIX` for S20; overlapping auras take the strongest of each effect; CONTRACTS §S16.
 
 ### S15 · Points of interest II: done (2026-09-25)
 - `Relics` (`scene.relics`, save `relics`), barrows with leashed guardians, deed a11, every `MOD_STATS` stat read, the pause page's relic strip; CONTRACTS §S15.
