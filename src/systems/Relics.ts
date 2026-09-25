@@ -37,7 +37,7 @@ export const RELICS: RelicDef[] = [
 ]
 export const RELIC_BY_ID = new Map<string, RelicDef>(RELICS.map(r => [r.id, r]))
 
-/** What a stronghold's boss held: granted when its camp burns (`camp:burned`'s `boss`). */
+/** What a stronghold's boss held: granted when it falls (S17), or when its camp burns (`camp:burned`'s `boss`). */
 export const BOSS_RELICS: Record<string, RelicId[]> = {
   gallowsKnight: ['gallowsBell'],
   thornmother: ['thornCrown', 'heartOakSeed'],
@@ -60,6 +60,10 @@ export class Relics {
   constructor(private readonly scene: GameScene) {
     scene.bus?.on('camp:burned', ({ boss }) => {
       for (const id of BOSS_RELICS[boss ?? ''] ?? []) this.grant(id)
+    })
+    // S17: a stronghold boss drops its relic where it falls (the camp's burning still grants it, for saves)
+    scene.bus?.on('enemy:killed', ({ key, boss }) => {
+      if (boss) for (const id of BOSS_RELICS[key] ?? []) this.grant(id)
     })
   }
 

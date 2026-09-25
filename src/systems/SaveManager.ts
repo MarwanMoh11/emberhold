@@ -113,7 +113,7 @@ function validSave(v: unknown): v is SaveBlob {
   if (v.relics !== undefined && (!Array.isArray(v.relics) || v.relics.length > RELICS.length
     || !v.relics.every(id => typeof id === 'string' && RELIC_BY_ID.has(id)))) return false
   if (v.campHealth !== undefined && (!record(v.campHealth)
-    || !Object.entries(v.campHealth).every(([id, hp]) => CAMPS.some(c => c.id === id)
+    || !Object.entries(v.campHealth).every(([id, hp]) => CAMPS.some(c => c.id === id || c.boss === id)
       && finite(hp) && hp > 0 && hp <= 100000))) return false
   if (!record(v.abilities) || !Array.isArray(v.abilities.slots)
     || !v.abilities.slots.every(s => record(s) && typeof s.key === 'string'

@@ -3,6 +3,7 @@ import type { EnemyDef, EnemyKey } from '../config/enemies'
 import type { Targetable } from '../core/types'
 import { nextId } from '../core/ids'
 import type { FieldTarget } from '../world/NavGrid'
+import type { KitState } from '../systems/bosses'
 
 export type EnemyState = 'move' | 'attack' | 'stun' | 'dead'
 
@@ -63,7 +64,9 @@ export class Enemy implements Targetable {
   bossTimer = 0
   telegraphT = 0
   chargeT = 0
-  bossAttack: 'slam' | 'charge' | 'shockwave' | 'cinderVolley' | 'cinderNova' | null = null
+  bossAttack: 'slam' | 'charge' | 'shockwave' | 'cinderVolley' | 'cinderNova' | 'cleave' | 'rootLash' | 'whipcrack' | null = null
+  /** S17: a stronghold boss's kit state (systems/bosses.ts), made on its first update */
+  kit: KitState | null = null
   chargeVX = 0
   chargeVY = 0
   chargeHits = new Set<number>()
@@ -140,6 +143,7 @@ export class Enemy implements Targetable {
     this.telegraphT = 0
     this.chargeT = 0
     this.bossAttack = null
+    this.kit = null
     this.chargeVX = this.chargeVY = 0
     this.chargeHits.clear()
     this.bossAimX = this.bossAimY = 0

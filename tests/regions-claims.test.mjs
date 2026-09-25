@@ -100,7 +100,7 @@ function camps({ hero = [0, 0], claimed = ['hold'] } = {}) {
   }
   const label = { setVisible: nop, setText: nop }
   const c = Object.create(CampManager.prototype)
-  Object.assign(c, { scene, destroyedCount: 0, guardsDown: new Set(), camps: CAMPS.map(spec => new CampRec(spec, label, null)) })
+  Object.assign(c, { scene, destroyedCount: 0, guardsDown: new Set(), bossHp: new Map(), camps: CAMPS.map(spec => new CampRec(spec, label, null)) })
   return { c, scene, events, spawned }
 }
 
@@ -157,8 +157,7 @@ test('a stronghold is warded while its boss lives; the fortress while a brazier 
   c.wake('campAshgate')
   c.update(0.1)
   const gallows = c.camps.find(k => k.spec.id === 'campGallows')
-  const boss = spawned.find(e => e.key === 'elite')
-  assert.match(boss.def.name, /GALLOWS KNIGHT/)
+  const boss = spawned.find(e => e.key === 'gallowsKnight') // S17: the real boss, not S10's stand-in
   assert.ok(boss.guard && boss.home.id === 'campGallows')
   assert.equal(gallows.enemy.shielded, true)
   const braziers = spawned.filter(e => e.key === 'brazier')
@@ -183,7 +182,16 @@ test('a stronghold is warded while its boss lives; the fortress while a brazier 
   const b = camps()
   b.c.load([], ['campGallows', 'campAshgate', 'campOverseers'], c.guardsJSON())
   b.c.update(0.1)
-  assert.deepEqual(b.spawned.filter(e => e.key === 'elite').map(e => e.home.id), ['campOverseers'])
+  assert.deepEqual(b.spawned.filter(e => e.key === 'seamOverseer').map(e => e.home.id), ['campOverseers'])
   assert.equal(b.spawned.filter(e => e.key === 'brazier').length, 0)
+  // S17: a hurt boss's hp is saved under its key and comes back with it
+  const ov = b.spawned.find(e => e.key === 'seamOverseer')
+  ov.maxHp = 4200; ov.hp = 2000
+  b.c.update(0.1)
+  assert.equal(b.c.healthJSON().seamOverseer, 2000)
+  const r = camps()
+  r.c.load([], ['campOverseers'])
+  r.c.loadHealth(b.c.healthJSON())
+  assert.equal(r.c.bossHp.get('seamOverseer'), 2000)
   assert.ok(events.every(([k]) => k !== 'camp:burned'))
 })

@@ -5,6 +5,7 @@ export type EnemyKey =
   | 'bomber' | 'swarm' | 'elite' | 'commander'
   | 'siegeBeast' | 'warlord' | 'cinderRegent' | 'camp' | 'brazier'
   | 'bogWretch' | 'thornling' | 'ashPriest' | 'cinderHound'
+  | 'gallowsKnight' | 'thornmother' | 'seamOverseer' | 'stairwarden'
 
 export type TargetPref = 'nearest' | 'structures' | 'workers' | 'player'
 
@@ -159,6 +160,36 @@ export const ENEMIES: Record<EnemyKey, EnemyDef> = {
     hp: 60, damage: 8, speed: 170, range: 28, attackRate: 1.2, radius: 14, scale: 1.05,
     colour: 0xff6a2a, accent: 0x5a2010, xp: 6, coins: 7, prefers: 'nearest',
     deathPatch: { radius: 56, dps: 14, seconds: 3 },
+  },
+  // ---- S17: the stronghold bosses (05-content §Bosses; kits in systems/bosses.ts) ----
+  gallowsKnight: {
+    key: 'gallowsKnight', name: 'THE GALLOWS KNIGHT',
+    hp: 3500, damage: 30, speed: 70, range: 58, attackRate: 0.8, radius: 30, scale: 1.9,
+    colour: 0xb8c8d8, accent: 0x2a2630, xp: 420, coins: 600, prefers: 'player',
+    boss: true, knockbackResist: 1, healthbar: true,
+    drops: [{ type: 'metal', chance: 1, amount: 80 }, { type: 'stone', chance: 1, amount: 60 }],
+  },
+  thornmother: {
+    key: 'thornmother', name: 'THE THORNMOTHER',
+    hp: 3000, damage: 22, speed: 14, range: 64, attackRate: 0.7, radius: 34, scale: 2,
+    colour: 0xc8d26a, accent: 0x3a2a1a, xp: 380, coins: 500, prefers: 'player',
+    boss: true, knockbackResist: 1, healthbar: true,
+    drops: [{ type: 'wood', chance: 1, amount: 160 }, { type: 'crystal', chance: 1, amount: 6 }],
+  },
+  seamOverseer: {
+    key: 'seamOverseer', name: 'THE SEAM OVERSEER',
+    hp: 4200, damage: 24, speed: 64, range: 180, attackRate: 0.75, radius: 28, scale: 1.8,
+    colour: 0xffb04a, accent: 0x3a2a22, xp: 460, coins: 700, prefers: 'player',
+    boss: true, knockbackResist: 1, healthbar: true,
+    aura: { radius: 280, damageMult: 1, speedMult: 1.2, tint: 0xffd08a },
+    drops: [{ type: 'metal', chance: 1, amount: 140 }, { type: 'stone', chance: 1, amount: 80 }],
+  },
+  stairwarden: {
+    key: 'stairwarden', name: 'THE STAIRWARDEN',
+    hp: 5000, damage: 34, speed: 58, range: 60, attackRate: 0.7, radius: 32, scale: 2,
+    colour: 0x8ab0d8, accent: 0x2a3040, xp: 520, coins: 800, prefers: 'player',
+    boss: true, knockbackResist: 1, healthbar: true,
+    drops: [{ type: 'metal', chance: 1, amount: 160 }, { type: 'crystal', chance: 1, amount: 10 }],
   },
   warlord: {
     key: 'warlord', name: 'WARLORD KRAHN',

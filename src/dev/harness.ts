@@ -39,6 +39,9 @@ import { DPR } from '../core/device'
  *   H.relics()           relics held (S15) and the readers their stats feed: carry, rally cooldown, pierce, tower range…
  *   H.relic('gallowsBell')  grant a relic now
  *   H.relicCheck()       grant each relic in turn: every reader's value before and after, and the ratio
+ *   H.god(on?)           the hero takes no damage (S17)
+ *   H.boss('campGallows', 12)  wake a stronghold, stand by its boss for 12 s (god on), then cut it down: its kit, wards, relic
+ *   H.regent()           the finale (S17): the causeway sealed, Ashgate burned, the Regent risen on the causeway, felled
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -672,5 +675,98 @@ export function installHarness(game: Phaser.Game) {
     return out
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi, relics, relic, relicCheck }
+
+  /** S17: the hero takes no damage while on. */
+  const god = (on = true) => { gs().combat.god = on; return `god ${on ? 'on' : 'off'}` }
+
+  /**
+   * S17: wake a stronghold and stand 170 px off its boss for `fightS` s (god
+   * on): what its kit did. Then cut it down in blows of a tenth of its hp,
+   * breaking the Stairwarden's bound priests (and their one return) first.
+   */
+  const boss = (id: string, fightS = 12) => {
+    const g = gs()
+    const rec = g.camps.camps.find((c: any) => c.spec.id === id)
+    if (!rec?.spec.boss) return `no stronghold boss at "${id}"`
+    god(true)
+    const relicsBefore = g.relics.list().length
+    g.camps.wake(id)
+    pump(0.1)
+    const find = () => rec.guards.find((e: any) => e?.active && e.alive && e.key === rec.spec.boss)
+    let b = find()
+    if (!b) return `${id}: no boss stood`
+    tp(b.x + 40, b.y + 170)
+    const out: any = { key: b.key, name: b.def.name, maxHp: b.maxHp, dmg: b.damage, bar: g.enemies.bossRef === b, campWarded: !!rec.enemy?.shielded }
+    const moves = new Set<string>()
+    let wardedS = 0
+    const watch = (s: number) => {
+      for (let t = 0; t < s; t += 0.25) {
+        g.player.hp = g.player.maxHp
+        pump(0.25)
+        const q = find()
+        if (!q) return
+        if (q.bossAttack) moves.add(q.bossAttack)
+        if (q.shielded) wardedS += 0.25
+      }
+    }
+    watch(fightS)
+    b = find()
+    out.moves = [...moves]
+    out.summons = b?.kit?.summons.filter((q: any) => q.active && q.alive).length ?? 0
+    out.bound = b?.kit?.bound.filter((q: any) => q.active && q.alive).length ?? 0
+    out.immuneWhileBound = b?.key === 'stairwarden' ? !!b.shielded : undefined
+    const breakBound = () => { for (const q of b?.kit?.bound ?? []) if (q.active && q.alive) g.combat.damageEnemy(q, 1e6, q.x, q.y) }
+    let rebound = false, hanged = false
+    for (let k = 0; k < 60 && b?.alive; k++) {
+      if (b.shielded) {
+        breakBound(); pump(0.2)
+        if (k > 0 && !rebound) { watch(13); rebound = !!b.shielded; breakBound(); pump(0.2) }
+        continue
+      }
+      g.combat.damageEnemy(b, b.maxHp * 0.1, b.x, b.y)
+      pump(0.2)
+      if (b.kit?.risen && b.key === 'gallowsKnight') hanged = true
+    }
+    pump(0.5)
+    out.hangedRose = b?.key === 'gallowsKnight' ? hanged : undefined
+    out.priestsReturned = b?.key === 'stairwarden' ? rebound : undefined
+    out.wardedS = wardedS
+    out.fallen = !find() && g.camps.guardsDown.has(`${id}.boss`)
+    out.campOpen = rec.enemy ? !rec.enemy.shielded : null
+    out.relics = g.relics.list().slice(relicsBefore)
+    return out
+  }
+
+  /** S17: the finale, end to end. God on; returns each step's state. */
+  const regent = () => {
+    const g = gs()
+    god(true)
+    const find = () => g.enemies.list.find((e: any) => e.active && e.alive && e.key === 'cinderRegent')
+    const out: any = { sealed: g.nav.isSealed('calderaCauseway') }
+    tp(6500, 7400)
+    run(0, 1, 3)
+    out.walkedTo = where()
+    out.risenBefore = !!find()
+    burn('campAshgate')
+    pump(2.5)
+    out.sealedAfter = g.nav.isSealed('calderaCauseway')
+    out.risenAfterBurn = !!find()
+    tp(6500, 7400)
+    run(0, 1, 1.5)
+    pump(0.5)
+    const r = find()
+    out.risen = r ? { at: [Math.round(r.x), Math.round(r.y)], hp: Math.round(r.hp), bar: g.enemies.bossRef === r, hero: where() } : null
+    if (!r) return out
+    const liveBefore = g.approaches.live(g.waves.wave + 1)
+    for (let k = 0; k < 40 && r.alive; k++) { g.combat.damageEnemy(r, r.maxHp * 0.1, r.x, r.y); pump(0.2) }
+    pump(2)
+    out.fell = !r.alive || !find()
+    out.defeated = g.quests.finalBossDefeated
+    out.approachesBefore = liveBefore
+    out.approachesAfter = g.approaches.live(g.waves.wave + 1)
+    out.tonight = g.approaches.tonight(g.waves.wave + 1)
+    out.victoryCard = !!ui().summary?.open && !!ui().summary?.victory
+    return out
+  }
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi, relics, relic, relicCheck, god, boss, regent }
 }

@@ -3,7 +3,8 @@ import { PAL } from '../config/palette'
 import { textStyle } from '../ui/theme'
 import { rr } from '../core/math'
 import type { CampHome, Enemy } from '../entities/Enemy'
-import { ENEMIES, type EnemyKey } from '../config/enemies'
+import type { EnemyKey } from '../config/enemies'
+import { BOSS_POST } from './bosses'
 import type { GameScene } from '../scenes/GameScene'
 import Phaser from 'phaser'
 
@@ -14,13 +15,6 @@ export type CampState = 'asleep' | 'awake' | 'burned'
 export const WAKE_RADIUS = CAMP_WAKE
 /** The fortress's braziers (S10): each must fall before the fortress can be damaged. */
 export const BRAZIERS = { count: 3, ring: 260, hp: 2000 }
-/**
- * A stronghold's boss until S17 brings the real ones: an elite this much
- * tougher, named after the boss key, standing within `leash` of its camp.
- * S17 swaps `CampManager.spawnGuard`'s boss branch for the boss's own EnemyKey.
- */
-export const STAND_IN = { hp: 8, dmg: 1.6, leash: 420, dy: 90 }
-
 /** 'gallowsKnight' → 'the Gallows Knight' */
 export const bossName = (key: string) => `the ${key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase())}`
 
@@ -65,8 +59,30 @@ export class CampManager {
   destroyedCount = 0
   /** guards that have fallen, as `${campId}.${guardId}` (save `campGuards`) */
   readonly guardsDown = new Set<string>()
+  /**
+   * S17: a stronghold boss's hp while it stands hurt, by boss key (save
+   * `campHealth` under the key): a retreat, a sweep or a reload resumes the fight.
+   */
+  readonly bossHp = new Map<string, number>()
 
-  constructor(private scene: GameScene) {}
+  constructor(private scene: GameScene) {
+    // settle a fallen guard the moment it dies, before its pooled body can be handed to another spawn
+    scene.bus?.on('enemy:killed', () => { for (const rec of this.camps) this.settleFallen(rec) })
+  }
+
+  private settleFallen(rec: CampRec) {
+    const ids = guardIds(rec.spec)
+    for (let k = 0; k < ids.length; k++) {
+      const g = rec.guards[k]
+      if (!g || !g.active || g.alive || !g.guard) continue
+      rec.guards[k] = null
+      const key = `${rec.spec.id}.${ids[k]}`
+      if (this.guardsDown.has(key)) continue
+      this.guardsDown.add(key)
+      if (ids[k] === 'boss' && rec.spec.boss) this.bossHp.delete(rec.spec.boss)
+      this.onGuardFell(rec, ids[k])
+    }
+  }
 
   build() {
     for (const spec of CAMPS) {
@@ -132,10 +148,14 @@ export class CampManager {
       const key = `${rec.spec.id}.${ids[k]}`
       if (this.guardsDown.has(key)) continue
       const g = rec.guards[k]
-      if (g && g.active && g.alive && g.guard) continue
-      if (g && !g.alive && g.hp <= 0) {
+      if (g && g.active && g.alive && g.guard) {
+        if (ids[k] === 'boss' && rec.spec.boss && g.hp < g.maxHp) this.bossHp.set(rec.spec.boss, g.hp)
+        continue
+      }
+      if (g && !g.alive && g.hp <= 0 && g.guard) {
         rec.guards[k] = null
         this.guardsDown.add(key)
+        if (ids[k] === 'boss' && rec.spec.boss) this.bossHp.delete(rec.spec.boss)
         this.onGuardFell(rec, ids[k])
         continue
       }
@@ -149,10 +169,13 @@ export class CampManager {
     const s = this.scene
     let e: Enemy | null
     if (gid === 'boss' && spec.boss) {
-      // S17: spawn the boss's own EnemyKey here instead of the stand-in
-      const def = { ...ENEMIES.elite, name: bossName(spec.boss).replace(/^the /, '').toUpperCase() }
-      e = s.enemies.spawn('elite', spec.x, spec.y + STAND_IN.dy, STAND_IN.hp, STAND_IN.dmg, def)
-      if (e) e.home = { ...rec.home, leash: STAND_IN.leash }
+      // S17: the stronghold's own boss, at its post below the camp, with the hp it last had
+      e = s.enemies.spawn(spec.boss as EnemyKey, spec.x, spec.y + BOSS_POST.dy)
+      if (e) {
+        e.home = { ...rec.home, leash: BOSS_POST.leash }
+        const hp = this.bossHp.get(spec.boss)
+        if (hp) e.hp = Math.max(1, Math.min(e.maxHp, hp))
+      }
     } else {
       const a = -Math.PI / 2 + (k * Math.PI * 2) / BRAZIERS.count
       e = s.enemies.spawn('brazier', spec.x + Math.cos(a) * BRAZIERS.ring, spec.y + Math.sin(a) * BRAZIERS.ring)
@@ -240,6 +263,7 @@ export class CampManager {
     rec.state = 'burned'
     rec.enemy = null
     rec.sleeper?.setVisible(false)
+    if (rec.spec.boss) this.bossHp.delete(rec.spec.boss)
     this.destroyedCount++
     rec.label.setVisible(false)
 
@@ -274,6 +298,7 @@ export class CampManager {
         hp[rec.spec.id] = rec.enemy.hp
       }
     }
+    for (const [key, v] of this.bossHp) hp[key] = Math.max(1, Math.round(v))
     return hp
   }
 
@@ -295,6 +320,8 @@ export class CampManager {
 
   loadHealth(hp: Record<string, number>) {
     for (const rec of this.camps) {
+      const b = rec.spec.boss
+      if (b && hp[b] !== undefined && rec.state !== 'burned' && !this.guardsDown.has(`${rec.spec.id}.boss`)) this.bossHp.set(b, hp[b])
       const value = hp[rec.spec.id]
       if (rec.state !== 'awake' || value === undefined) continue
       this.ensureEnemy(rec)

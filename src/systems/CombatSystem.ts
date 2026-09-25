@@ -86,8 +86,11 @@ export class CombatSystem {
     this.scene.enemies.despawn(e)
   }
 
+  /** dev: the hero takes no damage (harness `H.god()`, S17) */
+  god = false
+
   damageAlly(t: Targetable, amount: number, srcX: number, srcY: number, knockback = 0) {
-    if (!t.alive) return
+    if (!t.alive || (this.god && t.kind === 'player')) return
     const killed = t.applyDamage(amount, srcX, srcY, knockback)
     if (t.kind !== 'player') {
       this.scene.fx.damage(t.x, t.y - t.radius - 14, Math.round(amount), false, '#ff9a8a')

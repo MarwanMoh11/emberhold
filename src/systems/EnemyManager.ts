@@ -9,6 +9,8 @@ import { walkRadius, type FlowField } from '../world/NavGrid'
 import { MARCH_SPEED, VIA_REACH, viaMid } from './Approaches'
 import { Grid } from '../core/Grid'
 import { applySlow, auraHealed, mergeAura, noAura, type Slow } from './walkers'
+import { BossKits } from './BossKits'
+import { BOSS_BAR_RANGE } from './bosses'
 import { clamp, rr } from '../core/math'
 import type { Targetable } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'
@@ -43,8 +45,11 @@ export class EnemyManager {
   /** alive enemies excluding stationary camps — this is what "wave cleared" means */
   walkerCount = 0
   bossRef: Enemy | null = null
+  /** S17: the stronghold bosses' kits */
+  readonly kits: BossKits
 
   constructor(private scene: GameScene, depth: number) {
+    this.kits = new BossKits(scene)
     this.bars = scene.add.graphics().setDepth(depth)
     // on the ground: over the terrain and fields, under anything standing (depth = y)
     this.patchG = scene.add.graphics().setDepth(-10)
@@ -263,6 +268,8 @@ export class EnemyManager {
           const dx = e.x - this.scene.player.x
           const dy = e.y - this.scene.player.y
           const d2 = dx * dx + dy * dy
+          // a boss at its post (a stronghold's, the Regent) only takes the bar when the hero is near
+          if (e.home && d2 > BOSS_BAR_RANGE * BOSS_BAR_RANGE) continue
           if (d2 < nearestBossD2) { nearestBossD2 = d2; nearestBoss = e }
         }
       }
@@ -576,7 +583,10 @@ export class EnemyManager {
         e.x + Math.cos(ang) * (e.radius + 6), e.y - e.radius * 0.6 + Math.sin(ang) * 8,
         ang, e.def.boss ? 1.6 : 0.7, e.def.colour,
       )
-      if (e.def.boss) this.scene.fx.shake(0.01, 0.14)
+      if (e.def.boss) {
+        this.scene.fx.shake(0.01, 0.14)
+        this.kits.onStrike(e, t)
+      }
     }
   }
 
@@ -615,12 +625,16 @@ export class EnemyManager {
       this.scene.fx.shake(0.018, 0.5)
     }
 
+    const kit = this.kits.handles(e)
+    if (kit) this.kits.tick(e, dt)
+
     if (e.telegraphT > 0) {
       e.telegraphT -= dt
       if (e.telegraphT <= 0) this.bossRelease(e)
       return
     }
     if (e.bossTimer > 0) return
+    if (kit) { this.kits.choose(e, distToTarget); return }
 
     e.bossTimer = e.def.key === 'cinderRegent' ? rr(3.8, 5.4)
       : e.def.key === 'warlord' ? rr(4.5, 7) : rr(5, 8)
@@ -671,24 +685,7 @@ export class EnemyManager {
     } else if (e.def.key === 'warlord') {
       const roll = Math.random()
       if (roll < 0.4 && distToTarget > 200) {
-        // telegraphed charge
-        e.bossAttack = 'charge'
-        e.telegraphT = 0.7
-        const aimX = e.target?.x ?? e.x
-        const aimY = e.target?.y ?? e.y
-        const aimD = Math.max(1, Math.hypot(aimX - e.x, aimY - e.y))
-        const travel = Math.min(aimD, e.speed * 4.2 * 1.2)
-        e.bossAimX = e.x + (aimX - e.x) / aimD * travel
-        e.bossAimY = e.y + (aimY - e.y) / aimD * travel
-        const line = this.scene.add.graphics().setDepth(e.y - 1)
-        line.lineStyle(e.radius * 2 + 24, PAL.danger, 0.14)
-        line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
-        line.lineStyle(4, PAL.danger, 0.8)
-        line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
-        this.scene.tweens.add({ targets: line, alpha: 0, duration: 700, onComplete: () => line.destroy() })
-        this.scene.fx.warningCircle(e.bossAimX, e.bossAimY, e.radius + 30, PAL.danger, e.telegraphT)
-        this.scene.fx.popup(e.x, e.y - e.radius - 40, 'CHARGE!', PAL.danger, 20)
-        this.scene.fx.ring(e.x, e.y, 120, PAL.gold, 0.7)
+        this.telegraphCharge(e)
       } else if (roll < 0.75) {
         // call reinforcements
         const n = 5 + e.bossPhase * 4
@@ -708,10 +705,32 @@ export class EnemyManager {
     }
   }
 
+  /** A telegraphed charge along a line at the target (the warlord's; the Stairwarden's, S17). */
+  telegraphCharge(e: Enemy) {
+    e.bossAttack = 'charge'
+    e.telegraphT = 0.7
+    const aimX = e.target?.x ?? e.x
+    const aimY = e.target?.y ?? e.y
+    const aimD = Math.max(1, Math.hypot(aimX - e.x, aimY - e.y))
+    const travel = Math.min(aimD, e.speed * 4.2 * 1.2)
+    e.bossAimX = e.x + (aimX - e.x) / aimD * travel
+    e.bossAimY = e.y + (aimY - e.y) / aimD * travel
+    const line = this.scene.add.graphics().setDepth(e.y - 1)
+    line.lineStyle(e.radius * 2 + 24, PAL.danger, 0.14)
+    line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
+    line.lineStyle(4, PAL.danger, 0.8)
+    line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
+    this.scene.tweens.add({ targets: line, alpha: 0, duration: 700, onComplete: () => line.destroy() })
+    this.scene.fx.warningCircle(e.bossAimX, e.bossAimY, e.radius + 30, PAL.danger, e.telegraphT)
+    this.scene.fx.popup(e.x, e.y - e.radius - 40, 'CHARGE!', PAL.danger, 20)
+    this.scene.fx.ring(e.x, e.y, 120, PAL.gold, 0.7)
+  }
+
   private bossRelease(e: Enemy) {
     const attack = e.bossAttack
     e.bossAttack = null
     e.attackCd = Math.max(e.attackCd, 0.8)
+    if (this.kits.release(e, attack)) return
     if (attack === 'slam') {
       this.scene.fx.explosion(e.x, e.y, 190, 0xd4a05a)
       this.scene.combat.areaDamageAllies(e.x, e.y, 190, e.damage * 1.8)
