@@ -14,16 +14,15 @@ These bind every session. Add a line when one is made, with the date and who dec
 - 2026-09-23 (design): development happens on `world-v2`. `main` stays the live v1 game until S22.
 - 2026-09-24 (human): slow the macro pace to about 1.5× (acts end near waves 8, 18, 33 and 45; the Regent near wave 50, about 2.5–3 h of game clock), but keep the micro loop tight: a reward every 30–60 s, a quest or milestone every 3–5 min, and every night a clear win with a reward. Targets are in [01 §Pacing](design/01-world.md#pacing-targets); S18 and S20 honour them.
 - 2026-09-24 (human): by the endgame every region, the hold included, is dense with buildings and reads as one settled country. Seven village building types, regional styles, and pads from 94 to ~238 ([05 §A settled country](design/05-content.md#a-settled-country-s13b-s13c)); S13c may add pads, and `world:lint` must stay clean.
+- 2026-09-25 (human): **let go of v1 completely.** v2 is the main game. There is no migration, no Veteran's charter and no "old frontier": v2 ignores every v1 key (it never reads, migrates or deletes them) and every player starts fresh. S19 drops design 07's migration options and keeps the schema consolidation and portability. When the work is complete, the game ships as **Beta 1**: a version label on the title screen and in the save's metadata, landed by S19 and shipped by S22.
+- 2026-09-25 (human): run length stays as landed: more waves, the Regent near wave 50, and `day = 60 + 10 × claimed` capped at 180 s. Longer days were declined.
+- 2026-09-25 (human): worker drop-off (depot, outpost or granary), the cottage population cap (`VILLAGE.cottagePopMax`, none today) and markets selling surplus (`VILLAGE.market.sells`, on today) are **S20's call**. Choose whatever balances best against the pacing decision above, and record the choice in S20's entry.
 
 ## Open decisions
 
 These need the human. Don't guess them. Use the default and flag it in your handoff.
 
-- **v1 saves** ([07-save.md §Migration](design/07-save.md#migration)): the options are the Veteran's charter (default), a clean slate, or keeping v1 playable. Blocks S19 only. Until then, S04's guard keeps v1 saves untouched and starts v2 fresh.
-- **Worker drop-off** (raised by S06): v1 crews stocked their own camp ("the short loop makes the settlement look busy"); design 04 §S06, the blueprint's depot and S06's card send every haul to the depot. Default (landed): the depot, via `buildings.dropoffFor`. Hold crews now walk ~500 px each way; Ferrow farmers ~1,550 px over the bridge until `outFerrow` stands (S11: `dropoffFor` takes the nearest outpost by path). Returning to v1 is a one-line change in `dropoffFor` (take the worker's camp). Tune in S20 either way.
-- **Cottage population cap** (raised 2026-09-25, orchestrator): default (landed) none. `VILLAGE.cottagePopMax` in `config/balance.ts` (`Infinity`); a number there caps all cottages together.
-- **Markets sell surplus for coins** (raised 2026-09-25, orchestrator): default (landed) yes, above 300 food and wood, 3 goods a coin. `VILLAGE.market.sells` (and `floor`, `goodsPerCoin`) in `config/balance.ts`; `false` idles every market.
-- **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s (landed in S09 as `dayLength` in `config/balance.ts`). Tuned in S20.
+_(none open)_
 
 ## Log
 
