@@ -123,7 +123,7 @@ The design files:
 | [04-systems.md](design/04-systems.md) | Chunked terrain, fog, culling, NavGrid, pathing, regions and claims, outposts, waystones, roads, minimap and atlas, performance budgets |
 | [05-content.md](design/05-content.md) | New buildings, fish and trade, a settled country (village buildings, regional styles, pad targets), POIs, relics, new enemies and bosses |
 | [06-campaign.md](design/06-campaign.md) | Campaign 2.0: five acts and 46 quests |
-| [07-save.md](design/07-save.md) | Save v2: schema, limits, and v1 migration (open decision) |
+| [07-save.md](design/07-save.md) | Save v2: schema, limits, tolerance; v1 let go (decided 2026-09-25) |
 
 ## Session index
 
@@ -150,7 +150,7 @@ The design files:
 | S16 | [New walkers](sessions/S16-new-walkers.md) | bog wretch, thornling, ash priest, cinder hound |
 | S17 | [Bosses and the finale](sessions/S17-bosses.md) | four stronghold bosses; the Regent on her island |
 | S18 | [Campaign 2.0](sessions/S18-campaign.md) | 46 quests across five acts; a new first ten minutes |
-| S19 | [Save v2](sessions/S19-save-v2.md) | the schema consolidated, v1 migration, portability tests |
+| S19 | [Save v2](sessions/S19-save-v2.md) | the schema consolidated, v1 let go, the Beta 1 label, portability tests |
 | S20 | [Balance and pacing](sessions/S20-balance.md) | economy and night tuning with the harness |
 | S21 | [Performance and mobile](sessions/S21-performance.md) | budgets met on a phone |
 | S22 | [Playthrough and cutover](sessions/S22-cutover.md) | full run to the Regent, then merge to `main` |

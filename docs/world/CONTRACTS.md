@@ -52,8 +52,8 @@ Each entry has a status line that reads *planned* until its session lands it; th
 *Status: landed (S03). `FogMemory` at [src/core/FogMemory.ts](../../src/core/FogMemory.ts), `Culler` at [src/systems/Culler.ts](../../src/systems/Culler.ts).*
 
 - `new FogMemory(width, height, cell = 64)`, sized from the world; `.cols`, `.rows`, `mark(x, y)`, `forEachMarked(fn)`, `load(encoded)` (ORs in; malformed or other-size strings load nothing).
-  - `toJSON()` returns the shorter of `b:` + unpadded base64 bitset and `r:` + alternating run lengths (unexplored first) as base64url varints (5 value bits, bit 6 = more). A bare base64 string is the v1 bitset, still read until S19.
-  - `static maxEncodedLength(width, height, cell = 64)` = the `b:` length (3842 new world, 398 old). `validSave` checks `exploredFog` against it.
+  - `toJSON()` returns the shorter of `b:` + unpadded base64 bitset and `r:` + alternating run lengths (unexplored first) as base64url varints (5 value bits, bit 6 = more). Anything else, the old bare v1 bitset included, loads nothing (S19).
+  - `static maxEncodedLength(width, height, cell = 64)` = the `b:` length (3842 new world, 398 old). `validShape` checks `exploredFog` against it.
   - `static fromJSON(encoded, width, height, cell = 64) → FogMemory`.
 - `ZoneManager` exports `FOG_SCALE = 8`; the fog RenderTexture is `ceil(WORLD / 8)` and the brush scales by `2 / FOG_SCALE` (~960 px reveal).
 - `src/systems/Culler.ts` (type-only Phaser import; node-testable):
@@ -87,8 +87,8 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `H.world()` returns `{ size, regions, claimed[], pads, built, camps, campsLive, nodes, enemies, wave, phase, chunks, cull }`.
 - Save:
   - Keys `emberhold.save.v2` and `emberhold.save.backup.v2`, blob `v: 2`. The v1 keys are never read, written or deleted.
-  - `validSave` rejects `v !== 2`, so a v1-shaped save or file is refused quietly and the game starts fresh.
-  - `regions: RegionId[]` replaces `zones`; every id must be in `REGION_BY_ID`.
+  - `validShape` rejects `v !== 2`, so a v1-shaped save or file is refused quietly and the game starts fresh.
+  - `regions: RegionId[]` replaces `zones`; since S19 an id not in `REGION_BY_ID` is dropped, not refused.
 
 ## S05: NavGrid
 
@@ -170,7 +170,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - `PadSpec.piece?: { part, dir, len, ux, uy, cap? }` on wall and gate pads. `BuildingManager.generateWalls` lays every `WALL_LINES` entry with `active` (only the palisade until S10).
 - `Building.boxDy / boxHW / boxHH`: the solid box `blockerAt` and `resolveCollision` use (a wall piece's is centred on the line and covers its share + 2 px; turned for slants). `Building.depth` (posts y + 33, a `v` gate y + 34, `h` runs y + x·1e-4), `Building.texKey(scene, lvl)`.
 - Art: `pieceTextureKey(key, lvl, piece) → string | null` (`bld_wall_v_${lvl}`, `bld_wallpost_${lvl}`, `bld_gate_v_${lvl}`; lvl 0 → `blueprint_wall_v` / `blueprint_wallpost` / `blueprint_gate_v`); `textureFoot(texKey)` (px from a texture's bottom to its pad point; 16 unless registered). Horizontal `bld_wall_${lvl}` is 72 px wide.
-- Saves: `maxLevelForPad` accepts `${line}.${k}` for any `WALL_LINES` id, every `WALL_LINES` gate id, and still `wall\d+`; `BuildingManager.load` remaps old `wall\d+` entries (Save fields).
+- Saves: a record may name any piece or gate `layWallLine` lays for a `WALL_LINES` line (since S19 a piece past a line's end is dropped), and still `wall\d+`; `BuildingManager.load` remaps old `wall\d+` entries (Save fields).
 - Harness: `H.buildLine(id = 'palisade', lvl)` (through the loader; also lowers), `H.wallGaps(lineId = 'palisade') → { pieces, built, navLeaks, bodyLeaks }` (samples every 4 px; a nav leak is ground neither walled nor under a standing gate's box, a body leak is `blockerAt(x, y, 8)` null), `H.assault(key, x, y, seconds, lineId) → { struck, firstBroken, inside, insideUnbroken, target }`.
 - The dock, for every panel from here on (fishery, trading post, relics, S13b's buildings use only these):
   - `DOCK` tokens: `gutter` 16, `pad` 10, `touch` 44, `rowH` 28, `collapsedH` 64, `sideW` 300, `phoneMaxFrac` 0.30, `deskMaxFrac` 0.20, `titleSize` 15, `bodySize` 13, `depth`. `compactH(viewW) → 44 | 36`.
@@ -303,21 +303,42 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - The arrow: S12's `questRoute` already follows the nav route when the target is off-screen; S18 adds nothing there. The quest log shows the current act only.
 - Harness: `H.quests()`, `H.questStep(n)`.
 
+## S19: save v2
+
+*Status: landed (S19). [src/systems/SaveManager.ts](../../src/systems/SaveManager.ts), [src/config/version.ts](../../src/config/version.ts).*
+
+- `SaveBlobV2` is the one schema (`SaveBlob` is gone). `parseSave(text, warn = false) → SaveBlobV2 | null` (exported): over `SAVE_LIMIT_BYTES` (64 KB, also `MAX_SAVE_FILE_BYTES`) or bad JSON → null; `validShape` (types and ranges, strict) → null; then `tolerate` drops ids the world no longer has, keeps each id once, and with `warn` logs one `console.warn('[save] dropped ids …', { field: ids })`. `load()` and `inspectImport` warn; `hasSave`, `peek` and the autosave's check do not.
+- Known ids: pads are `PADS` plus `layWallLine(line)` pieces and gates for every `WALL_LINES` line (a piece past a line's end is unknown), and legacy `wall\d{1,3}` (remapped on load). A known pad keeps its key's level range; an unknown pad's record is dropped whatever its level.
+- `save()` writes `compact(blob)`: worker and soldier x/y rounded, their hp `max(1, ceil)`, building hp `ceil`; `progress` only if non-empty, `peakWorkers` only if > 0, `trains` only if set; a worker's `carrying` (2 dp) only if > 0, `sheltered` only if true, `carryType` never (the load never read it). Over 64 KB it writes `lean`: workers `{ key, homeId }` only, `army` without `units`. Still over → not written, `save()` false, the last slot kept.
+- `GAME_VERSION = 'Beta 1'` (`config/version.ts`): the only place the build's name lives. The title shows it top right; every save writes `meta: { version }`.
+- v1: no key named `*.v1` for saves is ever read, written or deleted (settings stay `emberhold.settings.v1`).
+
 ## Save fields
 
-Each session that adds persistent state lists its field here: the owner, then a one-line shape. S19 consolidates them.
+`SaveBlobV2` in `SaveManager.ts`, consolidated by S19. "Ids" means unknown ones are dropped by `tolerate` (one warning), not refused; a wrong type or range still refuses the whole save. A session that adds persistent state adds a row here, the field to `SaveBlobV2`, `validShape`, `tolerate` (if it holds ids) and `load`, a row in design 07 §Schema, and a round trip in `tests/save-portability.test.mjs`.
 
 | Field | Owner | Shape |
 |---|---|---|
-| `v` | S04 | `2` (the blob field is `v`, not `version`) |
-| `regions` | S04 | `RegionId[]` claimed, `hold` included; replaces v1 `zones` |
-| `exploredFog` | S03 | `FogMemory.toJSON()`: `r:` runs or `b:` bitset (v1 bare base64 still read), length ≤ `FogMemory.maxEncodedLength(WORLD.width, WORLD.height)` |
-| `regions` | S04, S08 | unchanged shape; S08 owns the rules (`RegionManager.toJSON`, in `REGIONS` order) |
-| `campAwake` | S08 | `string[]` of camp ids awake and standing (optional; every id in `CAMPS`). Load also wakes any camp with a `campHealth` entry |
-| `buildings[].padId` | S09b | wall pieces are `${line}.${k}` (`palisade.0`–`palisade.87`), gates their blueprint ids. Old `wall\d+` still validates; on load each new palisade piece the save does not name takes the level and hp of the nearest old pad within 72 px (128 px within 130 px of a gate). The next save writes the new ids |
-| `campHealth` | S04, S17 | `Record<id, hp>`: camp ids (a standing camp's hp) and, from S17, stronghold boss keys (a hurt boss's hp). Validated against `CAMPS` ids and `boss` keys |
-| `campGuards` | S10 | `string[]` of fallen camp guards, `${campId}.boss` or `${campId}.brazier${k}` (optional; ≤ 64; camp ids from `CAMPS`). Guards not listed respawn at full hp on an awake camp |
-| `waystones` | S11 | `string[]` of lit waystone ids: outpost pad ids, `wsHall`, `wsIsle` (optional; ≤ 64; unknown ids refuse the save). `wsHall` is lit whether listed or not |
-| `pois` | S14 | `string[]` of done POI ids (optional; ≤ `POIS.length`; unknown ids refuse the save). Seen is not saved: it is rebuilt from `exploredFog` |
-| `relics` | S15 | `RelicId[]` held (optional; ≤ `RELICS.length`; unknown ids refuse the save). Loaded right after `pois`; burned strongholds in `camps` also grant their boss's relics |
-| _(add rows as they land)_ | | |
+| `v` | S04 | `2`, the schema (not the build). Anything else refuses the save |
+| `meta` | S19 | `{ version: string }` (≤ 64 chars), `GAME_VERSION` of the build that wrote it. Optional (older v2 saves) |
+| `savedAt`, `playtime` | v1 | ms since epoch, seconds played; finite, ≥ 0 |
+| `res` | v1 | `{ carried, stored, totalGathered }` bags of every `RESOURCE_ORDER` key (finite, ≥ 0), `discovered: string[]` |
+| `player` | v1, S04 | `{ level 1–999, xp ≥ 0, hp, x, y }`, x/y inside `WORLD` |
+| `upgrades` | v1 | `[id, rank 0–10000][]`; ids in `UPGRADE_BY_ID`, once each |
+| `buildings` | v1, S09b | `{ padId, level, hp, progress?, peakWorkers? (0–500), trains? }[]`; pads from `PADS`, laid wall pieces `${line}.${k}`, gates, legacy `wall\d+` (remapped on load, S09b); level ≤ the key's levels; once per pad |
+| `workers` | v1 | `{ key, homeId, x?, y?, hp?, carrying?, carryType?, sheltered? }[]` ≤ 500; `key` in `WORKERS`, `homeId` a known pad |
+| `army` | v1 | `{ counts: Record<SoldierKey, 0–500>, units?: { key, x, y, hp }[] ≤ 500, totalRecruited?, holding? }`; soldier keys in `SOLDIERS` |
+| `waves` | v1, S09 | `{ wave ≥ 0, wavesCleared ≥ 0, phase, phaseT? (−1 … max(dayMax, nightSeconds) + 1) }` |
+| `quests` | v1, S18 | `{ index 0–QUESTS.length, done, achievements: string[], kills?, bossKills?, campsCleared?, zonesClaimed?, defeatedBosses?, finalBossHp? (0–100000), victoryAt?, victoryWave?, victoryPlaytime? }`; unknown `done` ids restart the chain at a1 and walk it silently (S18) |
+| `regions` | S04, S08 | `RegionId[]` claimed, `hold` included (`RegionManager.toJSON`, in `REGIONS` order); ids |
+| `exploredFog` | S03 | `FogMemory.toJSON()`: `r:` runs or `b:` bitset only, length ≤ `FogMemory.maxEncodedLength(WORLD.width, WORLD.height)` (3842) |
+| `camps` | v1, S04 | burned camp ids (`CAMPS`); ids |
+| `campAwake` | S08 | camp ids awake and standing (optional); ids. Load also wakes any camp with a `campHealth` entry |
+| `campHealth` | S04, S17 | `Record<id, hp 0–100000>`: standing camps' hp and, from S17, hurt stronghold bosses' hp under the boss key; ids from `CAMPS` ids and `boss` keys |
+| `campGuards` | S10 | fallen guards `${campId}.boss` / `${campId}.brazier${k}` (optional); ids from `guardIds(camp)`. Guards not listed respawn at full hp on an awake camp |
+| `waystones` | S11 | lit waystone ids: outpost pad ids, `wsHall`, `wsIsle` (optional); ids. `wsHall` is lit whether listed or not |
+| `pois` | S14 | done POI ids (optional); ids from `POIS`. Seen is not saved: it is rebuilt from `exploredFog` |
+| `relics` | S15 | `RelicId[]` held (optional); ids from `RELICS`. Loaded right after `pois`; burned strongholds in `camps` also grant their boss's relics |
+| `abilities` | v1 | `{ slots: { key, unlocked }[], ultimate: boolean }`; unknown slot keys are ignored by the load |
+| `combat` | v1 | `{ kills?, bossKills? }` lifetime, whole numbers ≥ 0 |
+| `coreLost` | v1 | `boolean` (optional; derived from a level-0 hall if absent) |
