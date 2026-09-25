@@ -8,6 +8,17 @@ import { POST_LEN } from '../world/wallLine'
 
 export type BuildState = 'empty' | 'raising' | 'done'
 
+/**
+ * What dresses a building beyond its base art (S13b C4, `BuildingLooks`): the
+ * regional variant to show for a level, and the yard round it.
+ */
+export interface BuildingSkin {
+  /** The built texture to show for `lvl` now: its look once baked, else the base. */
+  texture(b: Building, lvl: number): string
+  /** Stand or clear the yard props after the art changes. */
+  dress(b: Building): void
+}
+
 export class Building implements Targetable {
   readonly id = nextId()
   readonly kind = 'building' as const
@@ -69,7 +80,7 @@ export class Building implements Targetable {
   ghost: Phaser.GameObjects.Image
   visible = true
 
-  constructor(scene: Phaser.Scene, spec: PadSpec) {
+  constructor(scene: Phaser.Scene, spec: PadSpec, private skin?: BuildingSkin) {
     this.def = BUILDINGS[spec.key]
     this.key = spec.key
     this.padId = spec.id
@@ -173,12 +184,14 @@ export class Building implements Targetable {
 
   applyTexture() {
     const built = this.level > 0
-    const key = built ? this.texKey(this.sprite.scene, this.level) : this.blueprintKey(this.sprite.scene)
+    const scene = this.sprite.scene
+    const key = !built ? this.blueprintKey(scene) : this.skin && !this.piece ? this.skin.texture(this, this.level) : this.texKey(scene, this.level)
     this.sprite.setTexture(key)
     this.seat(this.sprite)
     this.sprite.setDepth(this.depth)
     this.sprite.clearTint().setAlpha(1)
     this.ghost.setVisible(!built)
+    this.skin?.dress(this)
   }
 
   setFrameTexture() {

@@ -23,6 +23,7 @@ import { SOLDIERS, WORKER_FOR, WORKERS, type SoldierKey } from '../config/units'
 import { wantsTouchTargets, DPR } from '../core/device'
 import type { GameScene } from '../scenes/GameScene'
 import { BuildingPanel, type PanelChip, type PanelRow } from '../ui/BuildingPanel'
+import { BuildingLooks } from './BuildingLooks'
 
 /** SPEAR → Spear: the card's small caps do the shouting. */
 const cap = (w: string) => w.charAt(0) + w.slice(1).toLowerCase()
@@ -126,7 +127,11 @@ export class BuildingManager {
 
   private shiftKey?: Phaser.Input.Keyboard.Key
 
+  /** Regional looks, lazy variant bakes and yards (S13b C4). */
+  readonly looks: BuildingLooks
+
   constructor(private scene: GameScene) {
+    this.looks = new BuildingLooks(scene, () => this.buildings)
     this.panel = new BuildingPanel(scene, {
       upgrade: b => this.commitUpgrade(b),
       pickUnit: (b, key) => this.setTrains(b, key as SoldierKey),
@@ -154,7 +159,7 @@ export class BuildingManager {
   }
 
   private addPad(spec: PadSpec) {
-    const b = new Building(this.scene, spec)
+    const b = new Building(this.scene, spec, this.looks)
     // Later levels draw taller than the level-1 ghost, so the disc is generous.
     const r = Math.max(b.ghost.width, b.ghost.height) * 1.5
     this.scene.culler.add(b.sprite, b.x, b.y - b.ghost.height / 2, r)
@@ -506,6 +511,8 @@ export class BuildingManager {
     b.raiseT = 0
     b.raiseDur = b.level === 0 ? 1.0 : 0.7
     b.setFrameTexture()
+    // the next level's regional art bakes while the frame goes up
+    this.looks?.prebake(b, b.level + 1)
     b.sprite.setAlpha(0.92)
     this.scene.fx.dust(b.x, b.y, 10)
     this.scene.audio.play('build')
@@ -694,6 +701,7 @@ export class BuildingManager {
   // ---- main loop -------------------------------------------------------
   update(dt: number) {
     const player = this.scene.player
+    this.looks.update()
     this.grid.clear()
     let sig = `${this.scene.nav.version}:`
     for (const b of this.dropSites) sig += b.level > 0 && b.alive ? '1' : '0'
@@ -717,6 +725,8 @@ export class BuildingManager {
       // Anything already standing keeps working even if the hall is wrecked
       // back below the level that unlocked it.
       const usable = available || b.level > 0
+      // a pad the player can now raise gets its regional art baked ahead, in the idle slice
+      if (available && b.level === 0 && !this.looks.settled(b)) this.looks.prebake(b, 1)
 
       // cull far-away blueprints so the map is not a sea of ghost outlines.
       // Ramparts are the worst offender (dozens of segments), so they only

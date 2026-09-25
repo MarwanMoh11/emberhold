@@ -2,6 +2,7 @@ import type Phaser from 'phaser'
 import { PAL } from '../config/palette'
 import { BUILDINGS, type BuildingKey } from '../config/buildings'
 import { bake, css, fill, form, glow, line, lightOf, mix, P, paint, register, Rng, shade, shadowOf, INK, type Ctx, type PathFn } from './ink'
+import { BASE_LOOK, isBaseLook, STYLED, variantTextureKey, type Look, type Style, type YardProp } from './looks'
 
 /**
  * The settlement.
@@ -16,14 +17,18 @@ import { bake, css, fill, form, glow, line, lightOf, mix, P, paint, register, Rn
  * a stone footing, a second storey, a tower, banners, and gilt at the top.
  */
 
-const WOOD = 0x9a6a3e
-const WOOD_D = 0x6a4428
-const BEAM = 0x563620
-const PLASTER = 0xe8d8b2
-const STONE = 0xc4bcaa
-const THATCH = 0xd6b25e
-const TERRACOTTA = PAL.roofA
-const SLATE = 0x5a6a80
+// The palette is the bake's (S13b C4): `setLook` swaps it for a regional style
+// and puts it back after, so everything else paints in the hold's colours.
+let WOOD = 0x9a6a3e
+let WOOD_D = 0x6a4428
+let BEAM = 0x563620
+let PLASTER = 0xe8d8b2
+let STONE = 0xc4bcaa
+let THATCH = 0xd6b25e
+let TERRACOTTA = PAL.roofA
+let SLATE = 0x5a6a80
+let SHUTTER = 0x3c5a8a
+let GLASS: [number, number] = [0xffe6a0, 0xf0a040]
 const LAPIS_ROOF = 0x3c62a0
 const IRON = 0x5d6066
 
@@ -247,6 +252,13 @@ function roofPlane(x: Ctx, O: Pt, U: Pt, V: Pt, c: number, mat: RoofMat, lit: bo
       }
     }
   }
+  if (VL.snow) {
+    // highland snow lies on the upper half of every slope, a ragged edge where it thins
+    const k = Math.max(3, Math.round(len(U) / 6))
+    const edge: Pt[] = []
+    for (let i = 0; i <= k; i++) edge.push(add(add(O, mul(U, i / k)), mul(V, 0.42 + (i % 2 ? 0.1 : 0) + rng.range(-0.04, 0.04))))
+    fill(x, P.poly([add(O, V), ...edge, add(add(O, U), V)]), lit ? 0xf2f6fa : 0xc6d2e2, 0.94)
+  }
   x.restore()
   line(x, path, 1.1, INK, 0.8)
 }
@@ -316,12 +328,12 @@ function cone(x: Ctx, cx: number, baseY: number, r: number, h: number, c: number
 
 function windowAt(x: Ctx, cx: number, cy: number, w = 7, h = 8, shutters = true) {
   if (shutters) {
-    fill(x, P.rect(cx - w / 2 - 3, cy - h / 2, 3, h), 0x3c5a8a)
-    fill(x, P.rect(cx + w / 2, cy - h / 2, 3, h), 0x3c5a8a)
+    fill(x, P.rect(cx - w / 2 - 3, cy - h / 2, 3, h), SHUTTER)
+    fill(x, P.rect(cx + w / 2, cy - h / 2, 3, h), SHUTTER)
   }
   fill(x, P.round(cx - w / 2 - 1, cy - h / 2 - 1, w + 2, h + 2, 1), BEAM)
   const g = x.createLinearGradient(0, cy - h / 2, 0, cy + h / 2)
-  g.addColorStop(0, css(0xffe6a0)); g.addColorStop(1, css(0xf0a040))
+  g.addColorStop(0, css(GLASS[0])); g.addColorStop(1, css(GLASS[1]))
   x.fillStyle = g
   x.fillRect(cx - w / 2, cy - h / 2, w, h)
   line(x, x2 => { x2.moveTo(cx, cy - h / 2); x2.lineTo(cx, cy + h / 2); x2.moveTo(cx - w / 2, cy); x2.lineTo(cx + w / 2, cy) }, 0.9, BEAM, 1)
@@ -459,9 +471,41 @@ function contactShadow(x: Ctx, cx: number, by: number, w: number) {
  * roof colour (the pad's seeded tone) and roofing, and whether a mill is a
  * waterwheel. `paintBuilding` sets it; the default is the hold's timber.
  */
-interface VillageLook { wall: Mat; wallC: number; footing: number; roof: number; roofMat: RoofMat; wheel: boolean; touch: string }
-const TIMBER_LOOK: VillageLook = { wall: 'plaster', wallC: PLASTER, footing: 0, roof: THATCH, roofMat: 'thatch', wheel: false, touch: 'flowers' }
+interface VillageLook { wall: Mat; wallC: number; footing: number; roof: number; roofMat: RoofMat; wheel: boolean; snow: boolean; touch: string }
+const TIMBER_LOOK: VillageLook = { wall: 'plaster', wallC: PLASTER, footing: 0, roof: THATCH, roofMat: 'thatch', wheel: false, snow: false, touch: 'flowers' }
 let VL: VillageLook = TIMBER_LOOK
+
+/** A style's colours: the palette constants above, as each style paints them. */
+interface Palette { wood: number; woodD: number; beam: number; plaster: number; stone: number; thatch: number; terracotta: number; slate: number; shutter: number; glass: [number, number] }
+const HOLD_PAL: Palette = { wood: WOOD, woodD: WOOD_D, beam: BEAM, plaster: PLASTER, stone: STONE, thatch: THATCH, terracotta: TERRACOTTA, slate: SLATE, shutter: SHUTTER, glass: GLASS }
+const PALETTES: Record<Style, Palette> = {
+  timber: HOLD_PAL,
+  woodland: { wood: 0x7e5634, woodD: 0x4a301c, beam: 0x3a2414, plaster: 0xcfb78a, stone: 0xa49c86, thatch: 0x7e8a44, terracotta: 0x6e5236, slate: 0x4e5a48, shutter: 0x4a6a34, glass: GLASS },
+  fen: { wood: 0x6c604e, woodD: 0x383026, beam: 0x2a2420, plaster: 0xc4c0a8, stone: 0xa09c8c, thatch: 0xbca462, terracotta: 0x5e7040, slate: 0x363436, shutter: 0x6a4a36, glass: GLASS },
+  stone: { wood: 0x8a6e52, woodD: 0x584434, beam: 0x423428, plaster: 0xdad6ca, stone: 0xaea898, thatch: 0x7e8a9a, terracotta: 0x9a5a3a, slate: 0x56647a, shutter: 0x8a3a30, glass: GLASS },
+  ash: { wood: 0x5c4838, woodD: 0x382a22, beam: 0x281e18, plaster: 0x8c8682, stone: 0x6c6866, thatch: 0x5c5854, terracotta: 0x4e8a78, slate: 0x3a3a3e, shutter: 0x2a2624, glass: [0xffc070, 0xe8501c] },
+}
+
+/** A style's walls, its three seeded roofs (05 §Regional styles), and its touch. */
+interface StyleLook { wall: Mat; wallC: number; footing: number; roofs: [number, RoofMat][]; touch: string }
+const STYLE_LOOKS: Record<Style, StyleLook> = {
+  timber: { wall: 'plaster', wallC: PLASTER, footing: 0, roofs: [[THATCH, 'thatch'], [TERRACOTTA, 'shingle'], [0xa4483a, 'shingle']], touch: 'flowers' },
+  woodland: { wall: 'log', wallC: 0x8e6038, footing: 3, roofs: [[0x8c6a44, 'shingle'], [0x6a8a3c, 'thatch'], [0x5c4230, 'plank']], touch: 'antlers' },
+  fen: { wall: 'plank', wallC: 0x4c4439, footing: 5, roofs: [[0xc0a45e, 'thatch'], [0x6c8440, 'thatch'], [0x2e2a28, 'plank']], touch: 'nets' },
+  stone: { wall: 'stone', wallC: 0xb2aa98, footing: 0, roofs: [[0x56647a, 'slate'], [0x7e8c9e, 'slate'], [0x9a5a3a, 'plank']], touch: 'chimney' },
+  ash: { wall: 'stone', wallC: 0x4c484a, footing: 4, roofs: [[0x70767c, 'plank'], [0x2e2c2e, 'slate'], [0x4e8a78, 'slate']], touch: 'brazier' },
+}
+
+/** Put a look on the painter: the style's palette and walls, the pad's roof. The base look is the hold's. */
+function setLook(look: Look) {
+  const p = PALETTES[look.style]
+  WOOD = p.wood; WOOD_D = p.woodD; BEAM = p.beam; PLASTER = p.plaster; STONE = p.stone
+  THATCH = p.thatch; TERRACOTTA = p.terracotta; SLATE = p.slate; SHUTTER = p.shutter; GLASS = p.glass
+  if (isBaseLook(look)) { VL = TIMBER_LOOK; return }
+  const st = STYLE_LOOKS[look.style]
+  const [roof, roofMat] = st.roofs[look.tone % st.roofs.length]
+  VL = { wall: st.wall, wallC: st.wallC, footing: st.footing, roof, roofMat, wheel: look.wheel, snow: look.snow, touch: st.touch }
+}
 
 /** The style's small touch on a village wall: flower boxes, antlers, nets, braziers. */
 function villageTouch(x: Ctx, s: BoxSpec) {
@@ -481,6 +525,14 @@ function villageTouch(x: Ctx, s: BoxSpec) {
       x.save(); x.beginPath(); n(x); x.clip()
       for (let i = -12; i < 24; i += 3) line(x, x2 => { x2.moveTo(R - 16 + i, s.B - s.h + 4); x2.lineTo(R - 6 + i, s.B) }, 0.5, 0x6a5a3e, 0.8)
       x.restore()
+      break
+    }
+    case 'chimney': {
+      // stone country keeps a second stack at the gable end
+      const top = s.B - s.h - 3
+      form(x, P.rect(s.L + 3, top - 18, 6, 21), STONE, { rim: 0.6, core: 1.4 })
+      fill(x, P.rect(s.L + 2, top - 20, 8, 2.4), shade(STONE, -0.25))
+      smokeAt(x, s.L + 6, top - 22)
       break
     }
     case 'brazier':
@@ -848,16 +900,21 @@ const DRAW: Record<BuildingKey, Painter> = {
 
   house: ({ x, lvl, cx, by }) => {
     const w = 34 + lvl * 4
-    const s: BoxSpec = { L: cx - w / 2 - 6, B: by, w, h: lvl >= 3 ? 30 : 20, d: 18, mat: 'plaster', c: PLASTER, footing: lvl >= 2 ? 4 : 0 }
+    // the hold's house as it always was; out in the country, the region's walls and the pad's roof
+    const hold = VL === TIMBER_LOOK
+    const s: BoxSpec = { L: cx - w / 2 - 6, B: by, w, h: lvl >= 3 ? 30 : 20, d: 18, mat: hold ? 'plaster' : VL.wall, c: hold ? PLASTER : VL.wallC, footing: lvl >= 2 ? 4 : hold ? 0 : VL.footing }
     const smokeFrom = chimney(x, s.L + s.w - 6, by - s.h - 6, 14 + lvl * 2)
     box(x, s)
-    roofSide(x, s, 14 + lvl, 4, lvl >= 3 ? TERRACOTTA : THATCH, lvl >= 3 ? 'shingle' : 'thatch')
+    roofSide(x, s, 14 + lvl, 4, hold ? (lvl >= 3 ? TERRACOTTA : THATCH) : VL.roof, hold ? (lvl >= 3 ? 'shingle' : 'thatch') : VL.roofMat)
+    if (VL.touch !== 'flowers') villageTouch(x, { ...s, L: s.L + 12, w: s.w - 12 })
     doorAt(x, s.L + 10, by, 9, 13)
     windowAt(x, s.L + s.w - 11, by - (lvl >= 3 ? 20 : 11), 7, 7)
     if (lvl >= 3) windowAt(x, s.L + 10, by - 22, 6, 6)
     // flower box
-    fill(x, P.rect(s.L + s.w - 17, by - (lvl >= 3 ? 14 : 5), 12, 3), WOOD_D)
-    for (let i = 0; i < 4; i++) fill(x, P.circle(s.L + s.w - 15.5 + i * 3, by - (lvl >= 3 ? 15 : 6), 1.4), [0xe8485a, 0xf2c24e, 0xe8e0f0, 0xe8485a][i])
+    if (VL.touch === 'flowers') {
+      fill(x, P.rect(s.L + s.w - 17, by - (lvl >= 3 ? 14 : 5), 12, 3), WOOD_D)
+      for (let i = 0; i < 4; i++) fill(x, P.circle(s.L + s.w - 15.5 + i * 3, by - (lvl >= 3 ? 15 : 6), 1.4), [0xe8485a, 0xf2c24e, 0xe8e0f0, 0xe8485a][i])
+    }
     if (smokeFrom) smokeAt(x, smokeFrom[0], smokeFrom[1])
     if (lvl >= 3) banner(x, s.L - 3, by - s.h - 10, 14)
   },
@@ -1463,7 +1520,12 @@ export function pieceTextureKey(key: BuildingKey, lvl: number, piece: { part: 'r
 const FOOT = new Map<string, number>()
 export function textureFoot(texKey: string): number { return FOOT.get(texKey) ?? 16 }
 
-function paintBuilding(key: BuildingKey, lvl: number, w: number, h: number) {
+function paintBuilding(key: BuildingKey, lvl: number, w: number, h: number, look: Look = BASE_LOOK) {
+  setLook(STYLED.has(key) ? look : BASE_LOOK)
+  try { return paintBuildingNow(key, lvl, w, h) } finally { setLook(BASE_LOOK) }
+}
+
+function paintBuildingNow(key: BuildingKey, lvl: number, w: number, h: number) {
   const cx = w / 2, by = h - 16
   const def = BUILDINGS[key]
   rng = new Rng(key.length * 977 + lvl * 131)
@@ -1483,8 +1545,23 @@ function paintBuilding(key: BuildingKey, lvl: number, w: number, h: number) {
   })
 }
 
+/**
+ * A building's art in a regional look (S13b C4), baked now if it is missing,
+ * and its texture key. The base look is the boot texture. `BuildingLooks`
+ * calls this from its idle slice, never on the frame a player builds.
+ */
+export function ensureBuildingTexture(scene: Phaser.Scene, key: BuildingKey, lvl: number, look: Look): string {
+  const tex = variantTextureKey(key, lvl, STYLED.has(key) ? look : BASE_LOOK)
+  if (!scene.textures.exists(tex)) {
+    const { w, h } = texSize(key, lvl)
+    register(scene, tex, paintBuilding(key, lvl, w, h, look))
+  }
+  return tex
+}
+
 export function buildBuildingTextures(scene: Phaser.Scene) {
   buildWaystoneTexture(scene)
+  buildYardTextures(scene)
   for (const def of Object.values(BUILDINGS)) {
     for (let lvl = 1; lvl <= def.levels.length; lvl++) {
       const { w, h } = texSize(def.key, lvl)
@@ -1561,6 +1638,99 @@ export function buildBuildingTextures(scene: Phaser.Scene) {
 }
 
 
+
+// ---- yards (S13b C4) ---------------------------------------------------------------
+// The props a lived-in building gathers round it. One small texture each, shared
+// by every pad; `BuildingLooks` stands 1–2 beside a building, seeded by its pad.
+
+export const YARD = { w: 52, h: 48, foot: 8 }
+
+const YARD_DRAW: Record<YardProp, (x: Ctx, cx: number, B: number) => void> = {
+  woodpile: (x, cx, B) => {
+    logPile(x, cx - 15, B, 7)
+    form(x, P.poly([[cx + 12, B], [cx + 13, B - 12], [cx + 15, B - 12], [cx + 16, B]]), WOOD_D, { rim: 0.3, core: 0.6 })
+    form(x, P.poly([[cx + 9, B - 11], [cx + 19, B - 13], [cx + 18, B - 9]]), IRON, { rim: 0.4, core: 0.8 })
+  },
+  cart: (x, cx, B) => {
+    const bed = P.poly([[cx - 16, B - 9], [cx + 10, B - 9], [cx + 12, B - 17], [cx - 14, B - 17]])
+    form(x, bed, WOOD, { rim: 0.8, core: 1.6 })
+    for (let i = 1; i < 3; i++) line(x, x2 => { x2.moveTo(cx - 15 + i, B - 9 - i * 2.6); x2.lineTo(cx + 11 - i * 0.6, B - 9 - i * 2.6) }, 0.7, WOOD_D, 0.8)
+    line(x, x2 => { x2.moveTo(cx + 11, B - 12); x2.lineTo(cx + 22, B - 5) }, 1.8, WOOD_D, 1)
+    sack(x, cx - 6, B - 16, 0xe8c860)
+    sack(x, cx + 2, B - 16)
+    for (const wx of [cx - 9, cx + 5]) {
+      form(x, P.circle(wx, B - 5, 5), WOOD_D, { rim: 0.6, core: 1 })
+      line(x, P.circle(wx, B - 5, 5), 1, INK, 0.9)
+      fill(x, P.circle(wx, B - 5, 1.4), IRON)
+    }
+  },
+  barrels: (x, cx, B) => {
+    barrel(x, cx - 8, B, 1.1)
+    barrel(x, cx + 2, B + 1, 1)
+    barrel(x, cx - 3, B - 10, 0.9)
+    crate(x, cx + 8, B, 9)
+  },
+  laundry: (x, cx, B) => {
+    for (const px of [cx - 18, cx + 18]) form(x, P.rect(px - 1, B - 22, 2, 22), WOOD_D, { rim: 0.3, core: 0.6 })
+    line(x, x2 => { x2.moveTo(cx - 18, B - 20); x2.quadraticCurveTo(cx, B - 15, cx + 18, B - 20) }, 0.8, 0x5a4a3a, 1)
+    const cloth = [0xe8e0cc, 0x8a9ac8, 0xd8a0a0, 0xe8e0cc]
+    for (let i = 0; i < 4; i++) {
+      const px = cx - 13 + i * 7.5, py = B - 18.5 + Math.abs(i - 1.5) * -0.9 + 1.4
+      form(x, P.poly([[px - 3, py], [px + 3, py], [px + 3.4, py + 7 + (i % 2) * 2], [px - 3.2, py + 7]]), cloth[i], { rim: 0.6, core: 1 })
+    }
+  },
+  beehives: (x, cx, B) => {
+    form(x, P.rect(cx - 16, B - 4, 32, 3), WOOD_D, { rim: 0.3, core: 0.6 })
+    for (const hx of [cx - 9, cx + 7]) {
+      const skep = P.blob([[hx - 6, B - 4], [hx - 6, B - 9], [hx - 3, B - 14], [hx + 3, B - 14], [hx + 6, B - 9], [hx + 6, B - 4]], 1)
+      form(x, skep, 0xd8b460, { rim: 1, core: 1.6 })
+      for (let i = 1; i < 4; i++) line(x, x2 => { x2.moveTo(hx - 6 + i * 0.6, B - 4 - i * 2.6); x2.lineTo(hx + 6 - i * 0.6, B - 4 - i * 2.6) }, 0.8, 0x8a6a2a, 0.9)
+      fill(x, P.ellipse(hx, B - 6, 1.6, 1.2), 0x1c120c)
+    }
+  },
+  herbs: (x, cx, B) => {
+    form(x, P.poly([[cx - 17, B], [cx + 15, B], [cx + 19, B - 8], [cx - 13, B - 8]]), 0x5a4230, { rim: 0.4, core: 0.8 })
+    for (let i = 0; i < 14; i++) {
+      const px = cx - 14 + (i % 7) * 4.6 + (i >= 7 ? 3 : 0), py = B - 2.4 - (i >= 7 ? 3.6 : 0)
+      fill(x, P.circle(px, py, 1.9), [0x6a9a48, 0x88b058, 0x5a8a50][i % 3])
+      if (i % 5 === 2) fill(x, P.circle(px, py - 1, 0.9), [0xc8a0e8, 0xf2e070][i % 2])
+    }
+    fence(x, cx - 18, B + 2, 14, 7)
+  },
+  well: (x, cx, B) => {
+    const ring = P.poly([[cx - 10, B], [cx + 10, B], [cx + 10, B - 8], [cx - 10, B - 8]])
+    form(x, ring, STONE, { rim: 0.8, core: 1.6 })
+    x.save(); x.beginPath(); ring(x); x.clip(); x.translate(cx - 10, B - 8); wallMat(x, 20, 8, 'stone', STONE, false); x.restore()
+    fill(x, P.ellipse(cx, B - 8, 10, 3), 0x1c2430)
+    for (const px of [cx - 9, cx + 9]) form(x, P.rect(px - 1.2, B - 26, 2.4, 18), WOOD_D, { rim: 0.3, core: 0.6 })
+    form(x, P.poly([[cx - 14, B - 24], [cx, B - 32], [cx + 14, B - 24]]), shade(THATCH, -0.2), { rim: 0.8, core: 1.2 })
+    line(x, x2 => { x2.moveTo(cx + 2, B - 25); x2.lineTo(cx + 2, B - 15) }, 0.6, 0x5a4a3a, 1)
+    form(x, P.rect(cx - 0.5, B - 16, 5, 4), WOOD, { rim: 0.3, core: 0.6 })
+  },
+  hayrick: (x, cx, B) => {
+    const rick = P.blob([[cx - 15, B], [cx - 14, B - 10], [cx - 7, B - 20], [cx + 7, B - 20], [cx + 14, B - 10], [cx + 15, B]], 1)
+    form(x, rick, THATCH, { rim: 1.2, core: 2 })
+    for (let i = 1; i < 4; i++) line(x, x2 => { x2.moveTo(cx - 15 + i * 1.6, B - i * 5); x2.lineTo(cx + 15 - i * 1.6, B - i * 5) }, 0.7, shade(THATCH, -0.35), 0.8)
+    line(x, x2 => { x2.moveTo(cx - 6, B - 19); x2.lineTo(cx - 13, B); x2.moveTo(cx + 6, B - 19); x2.lineTo(cx + 13, B) }, 0.8, 0x6a4a2a, 0.9)
+  },
+}
+
+function buildYardTextures(scene: Phaser.Scene) {
+  const { w, h, foot } = YARD
+  for (const kind of Object.keys(YARD_DRAW) as YardProp[]) {
+    bake(scene, `yard_${kind}`, w, h, {
+      under: x => {
+        const g = x.createRadialGradient(w / 2 + 3, h - foot - 1, 1, w / 2 + 3, h - foot - 1, w * 0.4)
+        g.addColorStop(0, css(0x1a1008, 0.28)); g.addColorStop(1, css(0x1a1008, 0))
+        x.save(); x.translate(0, (h - foot) * 0.7); x.scale(1, 0.3); x.fillStyle = g; x.fillRect(0, 0, w, h * 2); x.restore()
+      },
+      body: x => { rng = new Rng(kind.length * 71); YARD_DRAW[kind](x, w / 2, h - foot) },
+      outline: 1.4,
+      grain: 0.06,
+    })
+    FOOT.set(`yard_${kind}`, foot)
+  }
+}
 
 // ---- wall pieces (S09b) --------------------------------------------------------------
 // A line of wall is laid as runs, posts and gates (world/wallLine.ts). Horizontal

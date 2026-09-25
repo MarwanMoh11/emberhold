@@ -32,6 +32,9 @@ import { DPR } from '../core/device'
  *   H.tap(x, y, holdS)   press the canvas at a CSS-pixel point (a real DOM mouse event), hold for holdS s of game time
  *   H.atlas(open?)       the atlas (S12): open or close it; view, explored regions, stones on screen, open ms, bake stats
  *   H.mini()             the minimap (S12): panel rect, window radius, marks draw ms
+ *   H.lvl('cottage1', 2) set a pad's level through the loader (S13b)
+ *   H.cottages('greyfall', 12)  twelve dev cottages by the hero in Greyfall's style: tones, yard layouts, textures
+ *   H.looks()            regional looks (S13b C4): bld_ textures against the cap, bakes and their ms
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -573,5 +576,35 @@ export function installHarness(game: Phaser.Game) {
     return b ? `${id}: ${b.key} Lv.${b.level}` : `no pad "${id}"`
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl }
+  /**
+   * Stand `n` dev pads of one key (default cottages) in rows of six near the
+   * hero, as if in `region` (so they wear its style), at `lvl`; wait for their
+   * variants to bake. Tones and yard layouts counted (S13b C4).
+   */
+  const cottages = (region = 'downs', n = 12, at?: [number, number], key = 'cottage', level = 1) => {
+    const g = gs(), p = g.player
+    const [ox, oy] = at ?? [p.x - 225, p.y + 120]
+    const ids: string[] = []
+    for (let i = 0; i < n; i++) {
+      const id = `dev.${key}.${region}.${i}`
+      if (!g.buildings.byPad.has(id)) g.buildings.addPad({ id, key, x: ox + (i % 6) * 90, y: oy + Math.floor(i / 6) * 90, region })
+      ids.push(id)
+    }
+    g.buildings.load(ids.map(padId => ({ padId, level, hp: 1e9, progress: {}, peakWorkers: 0 })))
+    for (let k = 0; k < 60 && (k < 2 || g.buildings.looks.stats().queued > 0); k++) pump(0.05)
+    const rows = ids.map(id => ({ id, ...g.buildings.looks.inspect(g.buildings.byPad.get(id)) }))
+    return {
+      style: rows[0]?.look.style, tones: new Set(rows.map(r => r.look.tone)).size,
+      layouts: new Set(rows.map(r => `${r.yard.join('+')}:${r.side}`)).size,
+      looks: rows.map(r => `${r.id.split('.').pop()} ${r.tex} ${r.yard.join('+')}${r.side < 0 ? ' L' : r.side > 0 ? ' R' : ''}`),
+      textures: g.buildings.looks.stats(),
+    }
+  }
+  /** Regional looks: texture counts against the cap, bakes and their ms; with an id, that pad's look and yard. */
+  const looks = (id?: string) => {
+    const g = gs()
+    return id ? g.buildings.looks.inspect(g.buildings.byPad.get(id)) : g.buildings.looks.stats()
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks }
 }

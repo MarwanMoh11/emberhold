@@ -233,7 +233,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S13b and S13c: a settled country
 
-*Status: S13b landed through C3 (keys, effects, art; `BuildingManager`, pure parts in [src/systems/village.ts](../../src/systems/village.ts)). C4 (styles, variants, lazy bakes) and S13c planned.*
+*Status: S13b landed (keys, effects, art; `BuildingManager`, pure parts in [src/systems/village.ts](../../src/systems/village.ts); looks in [src/art/looks.ts](../../src/art/looks.ts) and [src/systems/BuildingLooks.ts](../../src/systems/BuildingLooks.ts)). S13c planned.*
 
 - `BuildingKey` and `PadKey` gain `'cottage' | 'granary' | 'mill' | 'market' | 'chapel' | 'watchPost' | 'docks'` ([05 §A settled country](design/05-content.md#a-settled-country-s13b-s13c)). Stats: cottage `pop`; granary `reach`, Lv.2 `haul`; mill and docks `bonus`, `reach`; market `sell`; chapel `mend`, `radius`, `blessing` (never `heal`: that is the infirmary's aura); watchPost `light`, Lv.2 `dmg rate range splash`.
 - `VILLAGE` (config/balance): `cottagePopMax` (open decision; `Infinity`), `market { sells (open decision; true), floor 300, goodsPerCoin 3, perHome 0.05, homeMax 0.5, homeRadius 600 }`, `chapel.blessingMax` 0.5, `watchPost.warnEarly` 4, `docks { slots 1, slotRadius 800 }`.
@@ -242,7 +242,11 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - `buildings.haulMultiplier(home, res, x, y)`: mill × Lv.2 granary, applied to each delivery (and sheltered output). `slotsOf(b)` (worker slots; docks add to fisheries): use it, not `stats.workers`. `standing(key)`, `homesNear(x, y, r)`, `marketRateOf(b)`, `nightBlessing()` (WaveManager.endNight multiplies the reward), `watchCovers(routes)` (WaveManager rings the warning `warnEarly` s early; `beginWarning(extra)`).
 - `buildings.auras(dt)`: the infirmary, outpost Lv.2 and chapel heals; GameScene calls it after `army.update`.
 - Pure (`systems/village.ts`): `bestBonus(sources, x, y)`, `marketRate(sell, homes)`, `marketGood(food, wood)`, `blessingMultiplier(blessings)`, `routeNear(route, x, y, r)`.
-- Art: painters read `VL: VillageLook { wall, wallC, footing, roof, roofMat, wheel, touch }` in art/buildings.ts (timber by default). **C4 adds** `STYLE_BY_BIOME` (`'timber' | 'woodland' | 'fen' | 'stone' | 'ash'`) and `ensureBuildingTexture(key, lvl, style, variant) → string`, baked lazily; the variant is seeded from the pad id.
+- Art: painters read `VL: VillageLook { wall, wallC, footing, roof, roofMat, wheel, snow, touch }` and the palette `let`s (`WOOD … SLATE, SHUTTER, GLASS`) in art/buildings.ts; `setLook(look)` sets both per bake and restores the hold's after.
+- Looks (pure, art/looks.ts): `Style`, `STYLE_BY_BIOME`, `STYLED` (cottage house granary market chapel mill docks farm lumberCamp fishery tradingPost), `TONED` (cottage house granary market chapel), `Look { style, tone, wheel, snow }`, `lookFor(key, padId, biome, nearWater?)`, `variantTextureKey(key, lvl, look)` (`bld_${key}_${lvl}_${style}${tone}[w][s]`; base look = the boot key), `isVariantKey`, `yardFor(key, padId) → { props, mirror } | null`, `padSeed(id, salt)`, `BLD_TEXTURE_CAP` 160.
+- `ensureBuildingTexture(scene, key, lvl, look) → string` (art/buildings.ts): bakes now if missing. Only `BuildingLooks` calls it, from its idle slice. Yard textures `yard_${prop}` (8, boot), `YARD { w, h, foot }`.
+- `buildings.looks: BuildingLooks` (a `BuildingSkin`, passed to `new Building(scene, spec, skin?)`): `texture(b, lvl)` (the variant once baked, else base; queues), `dress(b)` (yard), `prebake(b, lvl)` (on reveal, and at `startRaise` for the next level), `update()` (idle slice, ≤4 ms after the first bake), `look(b)`, `stats()`, `inspect(b)`. Variants are refcounted and removed when no pad holds them; past the cap a pad takes tone 0, then the base.
+- Harness: `H.cottages(region, n, at?, key?, lvl?)`, `H.looks(id?)`.
 - Harness: `H.lvl(id, lvl)` sets a pad's level through the loader.
 - S13c adds pads only (about 238 in all). Pad ids are new; no existing id or position changes.
 
