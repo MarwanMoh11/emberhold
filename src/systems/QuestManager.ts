@@ -253,6 +253,7 @@ export class QuestManager {
       campsCleared: this.campsCleared,
       loreRead: s.pois?.count('lore') ?? 0,
       shrinesRestored: s.pois?.count('shrine') ?? 0,
+      relicsHeld: s.relics?.list().length ?? 0,
     }
   }
 

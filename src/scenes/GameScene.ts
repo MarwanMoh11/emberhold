@@ -42,6 +42,7 @@ import { SaveManager, type Settings } from '../systems/SaveManager'
 import { LightingManager } from '../systems/LightingManager'
 import { Modifiers } from '../systems/Modifiers'
 import { PoiManager } from '../systems/PoiManager'
+import { Relics } from '../systems/Relics'
 import { Building } from '../entities/Building'
 import { DPR } from '../core/device'
 import type { DockBands } from '../ui/dock'
@@ -95,6 +96,7 @@ export class GameScene extends Phaser.Scene {
   /** S14: shrine (and S15 relic) bonuses by stat */
   mods!: Modifiers
   pois!: PoiManager
+  relics!: Relics
   abilities!: AbilitySystem
   levels!: LevelSystem
   quests!: QuestManager
@@ -179,6 +181,9 @@ export class GameScene extends Phaser.Scene {
     this.res = new ResourceManager(this.bus)
     // before anything that reads a stat: walls and gates take `wall.hp` from here
     this.mods = new Modifiers()
+    this.res.mods = this.mods
+    // before the camps and barrows that grant them (`camp:burned`, a guardian's fall)
+    this.relics = new Relics(this)
     Building.hpMod = (key, hp) => (key === 'wall' || key === 'gate' ? this.mods.value('wall.hp', hp) : hp)
     this.combat = new CombatSystem(this)
     this.nodes = new NodeManager(this)
@@ -528,7 +533,7 @@ export class GameScene extends Phaser.Scene {
       const dmg = p.damage * bonus * (crit ? p.stats.critMult : 1)
       this.projectiles.fire(p.x, p.y - 16, baseAng + off, {
         tex: 'proj_wave', tint: p.level >= 11 ? PAL.gold : PAL.heroTrim,
-        damage: dmg, crit, knockback: p.stats.knockback, pierce: p.stats.pierce,
+        damage: dmg, crit, knockback: p.stats.knockback, pierce: this.mods.value('hero.pierce', p.stats.pierce),
         splash: p.stats.splash, speed: p.stats.projectileSpeed, faction: 'ally', fromPlayer: true,
         scale: 1 + p.stats.splash / 120,
       })

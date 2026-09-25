@@ -601,12 +601,18 @@ export class BuildingManager {
   }
 
   // ---- towers ----------------------------------------------------------
+  /** A tower's reach with the Warden's Aegis (`tower.range`, S15). */
+  towerRange(b: Building): number {
+    const base = b.stats.range ?? 250
+    return this.scene.mods?.value('tower.range', base) ?? base
+  }
+
   private tickTower(b: Building, dt: number) {
     const s = b.stats
     const rate = (s.rate ?? 1) * (1 + this.bonus.towerRate)
     b.towerCd -= dt
     if (b.towerCd > 0) return
-    const range = s.range ?? 250
+    const range = this.towerRange(b)
     const target = this.scene.enemies.grid.nearest(b.x, b.y, range, e => e.alive)
     if (!target) return
     b.towerCd = 1 / Math.max(0.1, rate)

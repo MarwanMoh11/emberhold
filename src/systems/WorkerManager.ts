@@ -52,6 +52,10 @@ export class WorkerManager {
 
   constructor(private scene: GameScene) {}
 
+  /** The Overseer's Lash (S15): crews walk (`worker.speed`) and gather (`worker.gather`) faster. */
+  speedMod(): number { return this.scene.mods?.value('worker.speed', 1) ?? 1 }
+  gatherMod(): number { return this.scene.mods?.value('worker.gather', 1) ?? 1 }
+
   get count() { return this.workers.length }
   get popUsed() {
     let p = 0
@@ -159,7 +163,7 @@ export class WorkerManager {
     if (w.def.yield > 0) {
       const rate = (home!.stats.rate ?? 1) * (1 + scene.buildings.bonus.prod) * SHELTER_RATE
       w.gatherT += dt
-      if (w.gatherT >= w.def.gatherTime / rate) {
+      if (w.gatherT >= w.def.gatherTime / (rate * this.gatherMod())) {
         w.gatherT = 0
         const yieldPer = NODE_YIELD[w.carryType] ?? 6
         const got = Math.max(1, Math.round(yieldPer * (w.def.yield / 6) * rate
@@ -287,7 +291,7 @@ export class WorkerManager {
             // camp level and settlement-wide output bonuses both speed the crew up
             const rate = (home && home.level > 0 ? (home.stats.rate ?? 1) : 1)
               * (1 + scene.buildings.bonus.prod)
-            if (w.gatherT >= w.def.gatherTime / rate) {
+            if (w.gatherT >= w.def.gatherTime / (rate * this.gatherMod())) {
               w.gatherT = 0
               const got = scene.nodes.strike(node, node.maxHp / 3)
               w.carrying += Math.max(1, Math.round(got * (w.def.yield / 6) * rate))
@@ -333,7 +337,7 @@ export class WorkerManager {
       if (moving && !steered) ({ x: tx, y: ty } = this.steer(w, tx, ty, dt))
       const dx = tx - w.x, dy = ty - w.y
       const d = Math.hypot(dx, dy)
-      const speed = w.def.speed * (w.fleeT > 0 ? 1.6 : 1)
+      const speed = w.def.speed * (w.fleeT > 0 ? 1.6 : 1) * this.speedMod()
       const wantsToMove = moving && d > 5
       if (wantsToMove) {
         const ux = dx / d, uy = dy / d
@@ -494,7 +498,7 @@ export class WorkerManager {
       const rate = (home.stats.rate ?? 1) * prod
       const mill = this.scene.buildings.localBonus('mill', home.x, home.y)
       const perCycle = nodeYield * (w.def.yield / 6) * rate
-      const cycle = w.def.gatherTime / rate
+      const cycle = w.def.gatherTime / (rate * this.gatherMod())
       // 0.62 accounts for walking between the node and the stockpile
       const perSec = (perCycle / cycle) * 0.62 * (home.key === 'farm' || home.key === 'lumberCamp' ? mill : 1)
         * this.scene.buildings.yieldMod(home)

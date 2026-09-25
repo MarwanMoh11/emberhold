@@ -36,6 +36,9 @@ import { DPR } from '../core/device'
  *   H.cottages('greyfall', 12)  twelve dev cottages by the hero in Greyfall's style: tones, yard layouts, textures
  *   H.looks()            regional looks (S13b C4): bld_ textures against the cap, bakes and their ms
  *   H.buildAll(1)        every blueprint pad (not walls) to a level, capped per key (S13c); drains the bakes
+ *   H.relics()           relics held (S15) and the readers their stats feed: carry, rally cooldown, pierce, tower range…
+ *   H.relic('gallowsBell')  grant a relic now
+ *   H.relicCheck()       grant each relic in turn: every reader's value before and after, and the ratio
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -633,5 +636,41 @@ export function installHarness(game: Phaser.Game) {
     return { id, state: g.pois.state(id), locked: g.pois.lockedBy(id), here: g.pois.here, hero: [Math.round(g.player.x), Math.round(g.player.y)] }
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi }
+  /** S15: what each relic's stats read through their real readers. */
+  const readers = () => {
+    const g = gs()
+    const all = [...g.buildings.byPad.values()] as any[]
+    const lumber = all.find(b => b.key === 'lumberCamp')
+    const tower = all.find(b => b.key === 'watchtower')
+    return {
+      'pack.size': g.res.carryCapacity,
+      'soldier.damage': g.army.damageOf({ damage: 100 }),
+      'army.speed': g.mods.value('army.speed', 100),
+      'rally.cooldown': g.abilities.cooldownOf('rally'),
+      'hero.pierce': g.mods.value('hero.pierce', g.player.stats.pierce),
+      'wood.yield': lumber ? g.buildings.yieldMod(lumber) : null,
+      'worker.speed': g.workers.speedMod(),
+      'worker.gather': g.workers.gatherMod(),
+      'tower.range': tower ? g.buildings.towerRange(tower) : null,
+    } as Record<string, number | null>
+  }
+  const relics = () => ({ held: gs().relics.list(), readers: readers(), pois: gs().pois.inspect().barrows })
+  const relic = (id: string) => gs().relics.grant(id)
+  const relicCheck = () => {
+    const g = gs()
+    const r3 = (v: number) => Math.round(v * 1000) / 1000
+    const out: Record<string, string> = {}
+    for (const id of ['barrowCrown', 'captainsHorn', 'gallowsBell', 'thornCrown', 'heartOakSeed', 'overseersLash', 'wardensAegis']) {
+      const before = readers()
+      const fresh = g.relics.grant(id)
+      const after = readers()
+      out[id] = (fresh ? '' : '(held) ') + Object.keys(after).filter(k => after[k] !== before[k]).map(k => {
+        const a0 = before[k] ?? 0, a1 = after[k] ?? 0
+        return `${k} ${r3(a0)}→${r3(a1)} (${k === 'hero.pierce' ? `+${a1 - a0}` : `×${r3(a1 / a0)}`})`
+      }).join('; ')
+    }
+    return out
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi, relics, relic, relicCheck }
 }

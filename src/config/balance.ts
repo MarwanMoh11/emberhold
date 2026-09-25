@@ -134,6 +134,17 @@ export const POI = {
   cache: { perTier: 0.75, coins: 140, wood: 70, stone: 45, metal: 20, crystal: 4 },
   /** how the coast is lit when the Saltmere Light is restored: one reveal per `step` px of shore */
   coastStep: 256,
+  /**
+   * Barrows (S15). `hp` × (1 + `hpPerTier` × (tier − 1)), struck every `strike` s by the
+   * hero's gathering blow (max(12, 0.6 × damage)): about 6 s at the level a region is reached.
+   * The guardian is an elite at hp × (1 + `guard.hp` × tier), damage × (1 + `guard.dmg` × tier),
+   * held within `leash` of the door. Grave goods: `bag` × (1 + `perTier` × tier); crystal from tier 3.
+   */
+  barrow: {
+    hp: 220, hpPerTier: 0.5, strike: 0.32, reach: 70, leash: 460,
+    guard: { hp: 0.8, dmg: 0.2 },
+    bag: { perTier: 0.75, coins: 220, stone: 60, metal: 40, crystal: 6 },
+  },
 }
 
 /**

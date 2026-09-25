@@ -8,6 +8,7 @@ import { SOLDIERS, WORKERS } from '../config/units'
 import { UPGRADE_BY_ID } from '../config/upgrades'
 import { QUESTS } from '../config/quests'
 import { FogMemory } from '../core/FogMemory'
+import { RELIC_BY_ID, RELICS } from './Relics'
 
 // v2 (the frontier) never reads, writes or deletes the v1 keys: see docs/world/design/07-save.md
 const KEY = 'emberhold.save.v2'
@@ -109,6 +110,8 @@ function validSave(v: unknown): v is SaveBlob {
     || !v.waystones.every(id => typeof id === 'string' && stoneIds.has(id)))) return false
   if (v.pois !== undefined && (!Array.isArray(v.pois) || v.pois.length > POIS.length
     || !v.pois.every(id => typeof id === 'string' && poiIds.has(id)))) return false
+  if (v.relics !== undefined && (!Array.isArray(v.relics) || v.relics.length > RELICS.length
+    || !v.relics.every(id => typeof id === 'string' && RELIC_BY_ID.has(id)))) return false
   if (v.campHealth !== undefined && (!record(v.campHealth)
     || !Object.entries(v.campHealth).every(([id, hp]) => CAMPS.some(c => c.id === id)
       && finite(hp) && hp > 0 && hp <= 100000))) return false
@@ -173,6 +176,8 @@ export interface SaveBlob {
   waystones?: string[]
   /** POIs done (S14): caches opened, lore read, shrines restored, survivors joined, landmarks reached. */
   pois?: string[]
+  /** Relics held (S15), ids from `RELICS`. */
+  relics?: string[]
   abilities: ReturnType<GameScene['abilities']['toJSON']>
   combat: { kills: number; bossKills: number }
   coreLost?: boolean
@@ -269,6 +274,7 @@ export class SaveManager {
       campGuards: s.camps.guardsJSON(),
       waystones: s.waystones.toJSON(),
       pois: s.pois.toJSON(),
+      relics: s.relics.toJSON(),
       abilities: s.abilities.toJSON(),
       combat: { kills: s.combat.kills, bossKills: s.combat.bossKills },
       coreLost: s.coreLost,
@@ -319,6 +325,8 @@ export class SaveManager {
     if (blob.exploredFog) s.regions.loadFog(blob.exploredFog)
     // before the buildings: a restored Shrine of the Mason sets wall hp as they load
     s.pois.load(blob.pois)
+    // a stronghold burned before relics existed still hands over its boss's
+    s.relics.load(blob.relics, blob.camps)
     s.buildings.load(blob.buildings)
     s.res.load(blob.res)
     s.player.level = blob.player.level

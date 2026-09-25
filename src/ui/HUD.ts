@@ -583,14 +583,14 @@ export class HUD {
         continue
       }
       const def = ABILITIES[slot.key]
-      this.drawButton(btn, ABILITY_ICON[slot.key], def.colour, slot.cd, def.cooldown, false)
+      this.drawButton(btn, ABILITY_ICON[slot.key], def.colour, slot.cd, g.abilities.cooldownOf(slot.key), false)
       btn.key.setText(keyName(ABILITY_KEYS[b] ?? ''))
       btn.zone.setSize(live ? btn.r * 2 : 1, live ? btn.r * 2 : 1)
     }
     if (g.abilities.ultimate.unlocked) {
       const def = ABILITIES[g.abilities.ultimate.key]
       this.drawButton(this.ultBtn, ABILITY_ICON[g.abilities.ultimate.key], def.colour,
-        g.abilities.ultimate.cd, def.cooldown, true)
+        g.abilities.ultimate.cd, g.abilities.cooldownOf(g.abilities.ultimate.key), true)
       this.ultBtn.key.setText('R')
       this.ultBtn.zone.setSize(live ? this.ultBtn.r * 2 : 1, live ? this.ultBtn.r * 2 : 1)
     } else {

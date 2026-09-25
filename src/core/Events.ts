@@ -33,6 +33,8 @@ export interface GameEvents {
   'poi:done': { id: string; kind: PoiKind }
   /** S14: a lore stone was read (each time); the HUD shows its line on a parchment page */
   'poi:lore': { id: string; name: string; text: string }
+  /** S15: a relic was won (a barrow's guardian fell, or a stronghold burned) */
+  'relic:granted': { id: string; name: string }
   'quest:complete': { id: string }
   'boss:spawned': { name: string }
   'boss:killed': { name: string }

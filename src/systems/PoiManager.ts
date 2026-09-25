@@ -4,14 +4,17 @@ import type { PoiBP, PoiKind } from '../config/world/blueprint'
 import { POI } from '../config/balance'
 import { BUILDINGS, type BuildingKey } from '../config/buildings'
 import { WORKER_FOR } from '../config/units'
+import { ENEMIES, type EnemyDef } from '../config/enemies'
 import { PAL } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceBag } from '../core/types'
-import { short } from '../core/math'
+import { rr, short } from '../core/math'
 import { T } from '../world/raster'
 import { landmarkKey, shrineKey, POI_FOOT } from '../art/pois'
 import { textStyle } from '../ui/theme'
 import type { Building } from '../entities/Building'
+import type { Enemy } from '../entities/Enemy'
 import type { Mod } from './Modifiers'
+import { BARROW_RELICS } from './Relics'
 import type { GameScene } from '../scenes/GameScene'
 
 export type PoiState = 'unseen' | 'seen' | 'done'
@@ -39,8 +42,8 @@ export const SURVIVORS: Record<string, { camp?: string; poi?: string; pop: numbe
   survSalt: { poi: 'shrineTide', pop: 4, workers: 1, prefer: ['fishery'] },
 }
 
-/** Kinds S14 builds and lets the hero use. Barrows and relics are S15's. */
-const LIVE = new Set<PoiKind>(['cache', 'lore', 'shrine', 'survivors', 'landmark'])
+/** Kinds with a sprite (S14; barrows and relic markers since S15). Relic markers are never used. */
+const LIVE = new Set<PoiKind>(['cache', 'lore', 'shrine', 'survivors', 'landmark', 'barrow', 'relic'])
 const DWELLINGS = new Set<BuildingKey>(['house', 'cottage'])
 
 interface View {
@@ -54,6 +57,9 @@ interface View {
 }
 
 export interface PoiDepths { fog: number; light: number; labels: number }
+
+/** A barrow the hero has struck: its hp, and its guardian once broken open. */
+interface BarrowRec { hp: number; max: number; guard: Enemy | null; def: EnemyDef | null }
 
 /**
  * Every point of interest (S14, design 05 §Points of interest). A POI is
@@ -76,6 +82,10 @@ export class PoiManager {
   private scanT = 0
   private cardId: string | null = null
   private loading = false
+  private barrows = new Map<string, BarrowRec>()
+  private strikeT = 0
+  /** the struck barrow's hp bar, made on first use */
+  private bar?: Phaser.GameObjects.Graphics
   /** the POI the hero stands on, or null */
   here: string | null = null
 
@@ -88,7 +98,8 @@ export class PoiManager {
     const s = this.scene
     const v: View = { poi }
     const tex = poi.kind === 'cache' ? 'chest' : poi.kind === 'lore' ? 'poi_lore' : poi.kind === 'shrine' ? 'poi_shrine_ruin'
-      : poi.kind === 'survivors' ? 'poi_survivors' : landmarkKey(poi.id)
+      : poi.kind === 'survivors' ? 'poi_survivors' : poi.kind === 'barrow' ? 'poi_barrow'
+      : poi.kind === 'relic' ? 'poi_relic' : landmarkKey(poi.id)
     const foot = poi.kind === 'cache' ? 5 : POI_FOOT
     const img = s.add.image(poi.x, poi.y, tex)
     img.setOrigin(0.5, 1 - foot / img.height).setDepth(poi.y)
@@ -186,6 +197,11 @@ export class PoiManager {
     const poi = POI_BY_ID.get(id)
     if (!poi || !LIVE.has(poi.kind) || this.done.has(id) || this.lockedBy(id)) return false
     switch (poi.kind) {
+      case 'barrow': {
+        if (this.barrows.get(id)?.guard) return false
+        this.breakOpen(poi)
+        return true
+      }
       case 'cache': this.openCache(poi); return true
       case 'lore': this.readLore(poi); return true
       case 'landmark': this.visit(poi); return true
@@ -285,6 +301,120 @@ export class PoiManager {
     return nearest(open.filter(c => prefer.includes(c.key)), x, y) ?? nearest(open, x, y)
   }
 
+  // ---- barrows and relic markers (S15) ---------------------------------------------
+
+  private barrowRec(poi: PoiBP): BarrowRec {
+    let b = this.barrows.get(poi.id)
+    if (!b) {
+      const c = POI.barrow
+      const max = Math.round(c.hp * (1 + c.hpPerTier * (tierOf(poi) - 1)))
+      b = { hp: max, max, guard: null, def: null }
+      this.barrows.set(poi.id, b)
+    }
+    return b
+  }
+
+  /** The hero's gathering blow (GameScene.tryHarvest's), every `POI.barrow.strike` s while in reach. */
+  private tickBarrow(poi: PoiBP, dt: number) {
+    const s = this.scene
+    const b = this.barrowRec(poi)
+    if (b.guard) return
+    this.strikeT -= dt
+    if (this.strikeT > 0) return
+    // keep the cadence whatever the frame rate
+    this.strikeT = Math.max(0, this.strikeT + POI.barrow.strike)
+    b.hp -= Math.max(12, s.player.stats.damage * 0.6)
+    const img = this.views.get(poi.id)?.img
+    if (img) {
+      s.tweens.killTweensOf(img)
+      img.x = poi.x
+      s.tweens.add({ targets: img, x: poi.x + rr(-3, 3), duration: 45, yoyo: true, onComplete: () => { img.x = poi.x } })
+    }
+    s.fx.slash(poi.x + rr(-16, 16), poi.y - 26, rr(-0.4, 0.4), 0.8, 0xffffff)
+    s.audio.playVaried('stone', 0.45)
+    if (b.hp <= 0) this.breakOpen(poi)
+    else this.drawBar(poi, b.hp / b.max)
+  }
+
+  private drawBar(poi: PoiBP, f: number) {
+    if (!this.bar) this.bar = this.scene.add.graphics().setDepth(this.depth.labels)
+    const g = this.bar.clear().setVisible(f > 0 && f < 1)
+    const w = 64, x = poi.x - w / 2, y = poi.y - 70
+    g.fillStyle(0x140c08, 0.85).fillRect(x - 1, y - 1, w + 2, 7)
+    g.fillStyle(0xd8c8a0, 1).fillRect(x, y, w * f, 5)
+  }
+
+  /** The slab gives: the guardian wakes at the door and keeps within its leash. */
+  private breakOpen(poi: PoiBP) {
+    const s = this.scene
+    const b = this.barrowRec(poi)
+    b.hp = 0
+    this.bar?.setVisible(false)
+    this.views.get(poi.id)?.img?.setTexture('poi_barrow_open')
+    const tier = tierOf(poi), g = POI.barrow.guard
+    const name = BARROW_RELICS[poi.id] ? poi.name.replace(/^the /, '').toUpperCase() : 'BARROW WIGHT'
+    const def: EnemyDef = { ...ENEMIES.elite, name }
+    const e = s.enemies.spawn('elite', poi.x, poi.y + 44, 1 + g.hp * tier, 1 + g.dmg * tier, def)
+    if (!e) { this.plunder(poi); return }   // the field is full: the dead stay down
+    e.guard = true
+    e.home = { id: poi.id, x: poi.x, y: poi.y + 44, leash: POI.barrow.leash, siege: 0 }
+    b.guard = e
+    b.def = e.def
+    s.fx.smoke(poi.x, poi.y - 20, 10)
+    s.fx.shake(0.012, 0.3)
+    s.fx.popup(poi.x, poi.y - 96, `${name} WAKES`, PAL.danger, 18)
+    s.audio.play('boom', 0.5, 0.8)
+  }
+
+  /** Guardians that fell hand over the grave goods; one taken off the field unbeaten reseals its barrow. */
+  private watchGuards() {
+    for (const [id, b] of this.barrows) {
+      const e = b.guard
+      if (!e || (e.def === b.def && e.alive)) continue
+      const poi = POI_BY_ID.get(id)
+      if (!poi) continue
+      b.guard = null
+      if (e.def === b.def && e.hp > 0) {
+        b.hp = b.max
+        this.views.get(id)?.img?.setTexture('poi_barrow')
+        continue
+      }
+      this.plunder(poi)
+    }
+  }
+
+  /** The grave goods, a tier-scaled bag at the door, and the relic its guardian carried. */
+  private plunder(poi: PoiBP) {
+    const s = this.scene
+    this.barrows.delete(poi.id)
+    this.finish(poi)
+    this.views.get(poi.id)?.img?.setTexture('poi_barrow_open')
+    if (this.loading) return
+    const c = POI.barrow.bag, tier = tierOf(poi), k = 1 + c.perTier * tier
+    const bag: [keyof ResourceBag, number][] = [['coins', c.coins * k], ['stone', c.stone * k], ['metal', c.metal * k]]
+    if (tier >= 3) bag.push(['crystal', c.crystal * k])
+    for (const [res, v] of bag) {
+      const n = Math.min(10, Math.max(2, Math.round(v / 30)))
+      for (let i = 0; i < n; i++) s.pickups.drop(res as never, Math.ceil(v / n), poi.x, poi.y + 20, 1.5)
+    }
+    s.fx.explosion(poi.x, poi.y, 110, PAL.gold)
+    s.fx.popup(poi.x, poi.y - 90, 'GRAVE GOODS', PAL.gold, 20)
+    s.audio.play('quest', 1.1)
+    const relic = BARROW_RELICS[poi.id]
+    if (relic) s.relics.grant(relic)
+  }
+
+  /** A relic was won: its marker lights (Relics.grant). Silent on load. */
+  relicHeld(markerId: string, silent = false) {
+    const poi = POI_BY_ID.get(markerId)
+    if (!poi || poi.kind !== 'relic') return
+    const was = this.loading
+    this.loading = was || silent
+    if (!this.done.has(poi.id)) this.finish(poi)
+    this.loading = was
+    this.views.get(poi.id)?.img?.setTexture('poi_relic_lit')
+  }
+
   /** The Saltmere Light: every stretch of shore comes out of the fog, and so onto the atlas. */
   private revealCoast() {
     const r = raster()
@@ -309,6 +439,7 @@ export class PoiManager {
   update(dt: number) {
     const s = this.scene
     const p = s.player
+    this.watchGuards()
     if (!p.alive) { this.leave(); return }
 
     // landmarks stand tall enough to be seen from afar, fog or not
@@ -328,7 +459,8 @@ export class PoiManager {
     let here: View | null = null
     let best = Infinity
     for (const v of this.views.values()) {
-      const reach = v.poi.kind === 'landmark' ? POI.landmarkTouch : POI.touch
+      if (v.poi.kind === 'relic') continue
+      const reach = v.poi.kind === 'landmark' ? POI.landmarkTouch : v.poi.kind === 'barrow' ? POI.barrow.reach : POI.touch
       const d = Math.hypot(v.poi.x - p.x, v.poi.y - p.y)
       if (d < reach && d < best) { best = d; here = v }
     }
@@ -342,6 +474,7 @@ export class PoiManager {
     }
     if (this.done.has(poi.id) || this.lockedBy(poi.id)) return
     if (poi.kind === 'shrine') this.tickRestore(poi, dt)
+    else if (poi.kind === 'barrow') this.tickBarrow(poi, dt)
     else this.interact(poi.id)
   }
 
@@ -380,6 +513,7 @@ export class PoiManager {
     this.dwell = 0
     this.read = false
     this.here = null
+    this.bar?.setVisible(false)
   }
 
   /** The nearest shrine or survivors within `POI.cardRange` shows its card: name, price or condition. */
@@ -425,6 +559,8 @@ export class PoiManager {
       if (poi.kind === 'shrine') this.restore(poi)
       else if (poi.kind === 'cache') this.openCache(poi)
       else if (poi.kind === 'survivors') this.join(poi)
+      else if (poi.kind === 'barrow') this.plunder(poi)
+      else if (poi.kind === 'relic') this.relicHeld(poi.id, true)
       else this.finish(poi)
     }
     this.loading = false
@@ -441,12 +577,15 @@ export class PoiManager {
     return {
       kinds, here: this.here, dwell: Math.round(this.dwell * 100) / 100, paid: this.paid,
       locked: Object.keys(SURVIVORS).filter(id => this.lockedBy(id)),
+      barrows: Object.fromEntries([...this.barrows].map(([id, b]) => [id, b.guard ? `guard ${Math.round(b.guard.hp)}/${b.guard.maxHp}` : `${Math.max(0, Math.round(b.hp))}/${b.max}`])),
       pop: this.popBonus(), mods: this.scene.mods.list().map(m => `${m.source}:${m.stat}${m.mult ? `×${m.mult}` : ''}${m.add ? `+${m.add}` : ''}`),
     }
   }
 }
 
 export const POI_BY_ID = new Map(POIS.map(p => [p.id, p]))
+
+const tierOf = (poi: PoiBP) => REGION_BY_ID.get(poi.region)?.tier ?? 1
 
 function nearest<B extends { x: number; y: number }>(list: B[], x: number, y: number): B | null {
   let best: B | null = null, bd = Infinity

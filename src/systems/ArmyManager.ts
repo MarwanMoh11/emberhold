@@ -117,6 +117,8 @@ export class ArmyManager {
     const heading = Math.atan2(player.vy, player.vx) || 0
     const anchorX = this.holding ? scene.buildings.townHall.x : player.x
     const anchorY = this.holding ? scene.buildings.townHall.y + 60 : player.y
+    // the Gallows Bell (S15)
+    const armySpeed = scene.mods?.value('army.speed', 1) ?? 1
 
     for (let i = 0; i < this.soldiers.length; i++) {
       const s = this.soldiers[i]
@@ -144,7 +146,7 @@ export class ArmyManager {
 
       const def = s.def
       let mx = 0, my = 0
-      let speed = def.speed
+      let speed = def.speed * armySpeed
 
       if (s.target) {
         s.state = 'engage'
@@ -176,7 +178,7 @@ export class ArmyManager {
           my = dy / dg
           // catch-up sprint so the formation does not string out forever; a detour is always behind
           const far = s.follower.active ? Math.max(d, 240) : d
-          speed = def.speed * (far > 220 ? 1.7 : far > 110 ? 1.25 : 1)
+          speed = def.speed * armySpeed * (far > 220 ? 1.7 : far > 110 ? 1.25 : 1)
           if (Math.abs(dx) > 4) s.facing = dx > 0 ? 1 : -1
         }
       }
@@ -268,10 +270,15 @@ export class ArmyManager {
     return { x: px, y: py }
   }
 
+  /** A soldier's base damage with its relics (`soldier.damage`, S15). */
+  damageOf(def: { damage: number }): number {
+    return this.scene.mods?.value('soldier.damage', def.damage) ?? def.damage
+  }
+
   private strike(s: Soldier, target: Enemy) {
     const def = s.def
     const bonus = 1 + this.scene.buildings.bonus.troopDmg
-    let dmg = def.damage * bonus * this.buffDamage * this.scene.player.stats.troopDamage
+    let dmg = this.damageOf(def) * bonus * this.buffDamage * this.scene.player.stats.troopDamage
     if (def.vsHeavy && target.radius >= 17) dmg *= def.vsHeavy
 
     const ang = Math.atan2(target.y - s.y, target.x - s.x)

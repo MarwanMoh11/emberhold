@@ -2,6 +2,7 @@ import type Phaser from 'phaser'
 import { POIS } from '../config/world'
 import { bake, fill, form, glow, line, P, shade, INK, type Ctx } from './ink'
 import { groundShadow } from './props'
+import { RELICS } from '../systems/Relics'
 
 /**
  * Points of interest (S14): shrines (one base, six emblems, and the ruin they
@@ -89,6 +90,100 @@ function shelter(x: Ctx, cx: number, by: number) {
   fill(x, P.rect(cx - 0.6, by - 12, 1.2, 12), INK, 0.6)
   fill(x, P.rect(cx + 22, by - 30, 2, 30), 0x5a4028)
   form(x, P.round(cx + 19, by - 34, 8, 8, 1.5), 0x3a3028, { rim: 0.5, core: 1 })
+}
+
+// ---- barrows and relics (S15) ----------------------------------------------------
+
+const TURF = 0x6f8a4a
+
+/** A turf mound over a stone door: sealed by its slab, or broken open on the dark. */
+function barrow(x: Ctx, cx: number, by: number, open: boolean) {
+  form(x, P.blob([[cx - 56, by], [cx - 44, by - 24], [cx - 16, by - 42], [cx + 16, by - 42], [cx + 44, by - 24], [cx + 56, by]], 0.9),
+    TURF, { rim: 1.4, core: 3, hatch: 0.14 })
+  for (const [dx, dy] of [[-34, -16], [-22, -30], [26, -28], [38, -12], [4, -40]]) line(x, x2 => { x2.moveTo(cx + dx, by + dy); x2.lineTo(cx + dx + 2, by + dy - 5) }, 1, 0x4a6a2a, 0.8)
+  if (open) fill(x, P.rect(cx - 11, by - 30, 22, 30), 0x150d08)
+  for (const sx of [cx - 17, cx + 11]) form(x, P.rect(sx, by - 31, 6, 31), STONE, { rim: 1, core: 2, hatch: 0.1 })
+  form(x, P.rect(cx - 21, by - 38, 42, 8), STONE_D, { rim: 1.1, core: 2 })
+  if (!open) {
+    form(x, P.rect(cx - 11, by - 30, 22, 30), 0x8a8474, { rim: 1, core: 2, hatch: 0.14 })
+    line(x, x2 => { x2.moveTo(cx - 4, by - 24); x2.lineTo(cx + 1, by - 17); x2.lineTo(cx - 2, by - 10) }, 1, INK, 0.6)
+  } else {
+    // the slab, fallen outward, and the rubble of the door
+    form(x, P.poly([[cx - 14, by + 2], [cx + 16, by - 2], [cx + 18, by + 5], [cx - 12, by + 9]]), 0x8a8474, { rim: 1, core: 2 })
+    for (const [dx, r] of [[-26, 3.2], [24, 2.6], [30, 2]]) form(x, P.circle(cx + dx, by - r, r), STONE_D, { rim: 0.6, core: 1 })
+  }
+}
+
+/** A reliquary plinth: an empty cradle until its relic is won, then a gilt casket. */
+function reliquary(x: Ctx, cx: number, by: number, lit: boolean) {
+  form(x, P.rect(cx - 17, by - 7, 34, 7), STONE_D, { rim: 1, core: 2, hatch: 0.12 })
+  form(x, P.rect(cx - 11, by - 28, 22, 21), STONE, { rim: 1, core: 2, hatch: 0.1 })
+  form(x, P.rect(cx - 15, by - 33, 30, 6), STONE_D, { rim: 1, core: 1.5 })
+  if (lit) {
+    form(x, P.round(cx - 9, by - 46, 18, 13, 2.5), 0xd8a83a, { rim: 1, core: 2 })
+    fill(x, P.rect(cx - 9, by - 41, 18, 1.6), 0x8a5a1a)
+    fill(x, P.circle(cx, by - 40, 1.8), 0xa3301c)
+  } else fill(x, P.ellipse(cx, by - 33, 9, 2.2), 0x2a2018, 0.8)
+}
+
+/** Each relic's mark, pressed into its seal (ink on wax, centred on cx, cy, about ±10 px). */
+const SEAL_MARK: Record<string, (x: Ctx, cx: number, cy: number, c: number) => void> = {
+  barrowCrown: (x, cx, cy, c) => fill(x, P.poly([[cx - 10, cy + 6], [cx - 10, cy - 6], [cx - 5, cy - 1], [cx, cy - 9], [cx + 5, cy - 1], [cx + 10, cy - 6], [cx + 10, cy + 6]]), c),
+  captainsHorn: (x, cx, cy, c) => {
+    line(x, x2 => { x2.moveTo(cx - 10, cy - 6); x2.quadraticCurveTo(cx - 6, cy + 9, cx + 9, cy + 2) }, 4.2, c, 1)
+    fill(x, P.ellipse(cx + 9, cy + 1, 2.4, 4.2, -0.4), c)
+  },
+  gallowsBell: (x, cx, cy, c) => {
+    fill(x, P.blob([[cx - 9, cy + 7], [cx - 6, cy - 2], [cx - 4, cy - 8], [cx + 4, cy - 8], [cx + 6, cy - 2], [cx + 9, cy + 7]], 0.7), c)
+    fill(x, P.circle(cx, cy + 9, 2.2), c)
+  },
+  thornCrown: (x, cx, cy, c) => {
+    line(x, P.ellipse(cx, cy + 1, 9, 5), 2.4, c, 1)
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI + (i / 5) * Math.PI
+      const px = cx + Math.cos(a) * 9, py = cy + 1 + Math.sin(a) * 5
+      fill(x, P.poly([[px - 1.6, py], [px + 1.6, py], [px + Math.cos(a) * 5, py + Math.sin(a) * 6 - 1]]), c)
+    }
+  },
+  heartOakSeed: (x, cx, cy, c) => {
+    fill(x, P.blob([[cx, cy + 10], [cx - 7, cy + 2], [cx - 6, cy - 3], [cx + 6, cy - 3], [cx + 7, cy + 2]], 0.9), c)
+    fill(x, P.round(cx - 8, cy - 7, 16, 5, 2), c)
+    fill(x, P.rect(cx - 0.8, cy - 11, 1.6, 4), c)
+  },
+  overseersLash: (x, cx, cy, c) => {
+    fill(x, P.rect(cx - 10, cy + 3, 7, 3), c)
+    line(x, x2 => { x2.moveTo(cx - 3, cy + 4); x2.bezierCurveTo(cx + 12, cy + 4, cx + 10, cy - 10, cx - 2, cy - 6); x2.quadraticCurveTo(cx - 8, cy - 3, cx - 4, cy - 1) }, 1.8, c, 1)
+  },
+  wardensAegis: (x, cx, cy, c) => {
+    fill(x, P.poly([[cx - 8, cy - 8], [cx + 8, cy - 8], [cx + 8, cy], [cx, cy + 10], [cx - 8, cy]]), c)
+    fill(x, P.rect(cx - 0.9, cy - 6, 1.8, 13), shade(c, 0.5))
+    fill(x, P.rect(cx - 6, cy - 3, 12, 1.8), shade(c, 0.5))
+  },
+}
+
+export const relicSealKey = (id: string) => `relic_seal_${id}`
+/** Seal textures are baked at this size and shown smaller, so they stay crisp on the pause page. */
+export const SEAL_PX = 64
+
+/** A lump of wax with a pressed rim and its relic's mark; `null` is the faded blank of one not yet won. */
+function seal(x: Ctx, cx: number, cy: number, r: number, c: number | null, mark?: (x: Ctx, cx: number, cy: number, c: number) => void) {
+  const pts: number[][] = []
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2
+    const rr = r * (i % 2 ? 1.04 : 0.95) + (i % 3 === 0 ? r * 0.04 : 0)
+    pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr])
+  }
+  if (c === null) {
+    fill(x, P.blob(pts, 0.9), 0x8a7a64, 0.28)
+    line(x, P.circle(cx, cy, r * 0.68), 1.6, 0x5a4a38, 0.45)
+    fill(x, P.circle(cx, cy, r * 0.12), 0x5a4a38, 0.4)
+    return
+  }
+  form(x, P.blob(pts, 0.9), c, { rim: 2.2, core: 4 })
+  line(x, P.circle(cx, cy, r * 0.7), 2, shade(c, -0.4), 0.85)
+  x.save(); x.translate(cx, cy); x.scale(r / 26, r / 26)
+  mark?.(x, 0, 0, shade(c, -0.5))
+  x.restore()
 }
 
 // ---- landmarks ------------------------------------------------------------------
@@ -179,6 +274,33 @@ export function buildPoiTextures(scene: Phaser.Scene) {
     over: x => glow(x, 53, by(56) - 30, 8, 0xffc060, 0.9),
     outline: 1.4,
   })
+  for (const open of [false, true]) {
+    const w = 124, h = 70
+    bake(scene, open ? 'poi_barrow_open' : 'poi_barrow', w, h, {
+      under: x => groundShadow(x, w / 2, by(h), 54, 8),
+      body: x => barrow(x, w / 2, by(h), open),
+      outline: 1.5,
+    })
+  }
+  for (const lit of [false, true]) {
+    const w = 44, h = 64
+    bake(scene, lit ? 'poi_relic_lit' : 'poi_relic', w, h, {
+      under: x => groundShadow(x, w / 2, by(h), 18, 4),
+      body: x => reliquary(x, w / 2, by(h), lit),
+      over: lit ? x => glow(x, w / 2, by(h) - 40, 20, 0xffc860, 0.55) : undefined,
+      outline: 1.3,
+    })
+  }
+  const S = SEAL_PX
+  bake(scene, relicSealKey('empty'), S, S, { body: x => seal(x, S / 2, S / 2, S * 0.4, null), outline: 0, grain: 0 })
+  for (const r of RELICS) {
+    bake(scene, relicSealKey(r.id), S, S, {
+      under: x => glow(x, S / 2, S / 2 + 2, S * 0.5, 0x2a1a0e, 0.25),
+      body: x => seal(x, S / 2, S / 2, S * 0.4, r.colour, SEAL_MARK[r.id]),
+      outline: 2,
+      grain: 0.1,
+    })
+  }
   for (const poi of POIS) {
     const lm = LANDMARKS[poi.id]
     if (poi.kind !== 'landmark' || !lm) continue

@@ -1,6 +1,7 @@
 import { RESOURCE_ORDER, type ResourceBag, type ResourceType } from '../core/types'
 import { STORAGE, PLAYER } from '../config/balance'
 import type { Bus } from '../core/Events'
+import type { Modifiers } from './Modifiers'
 
 const PLAYER_CARRY_MIN = PLAYER.carryCapacity
 
@@ -33,8 +34,12 @@ export class ResourceManager {
   heroCarryMult = 1
   storageCapacity = STORAGE.base
 
+  /** relics that widen the pack (`pack.size`, S15); set by GameScene */
+  mods?: Modifiers
+
   get carryCapacity(): number {
-    return Math.round((PLAYER_CARRY_MIN + this.buildingCarry) * this.heroCarryMult)
+    const base = (PLAYER_CARRY_MIN + this.buildingCarry) * this.heroCarryMult
+    return Math.round(this.mods ? this.mods.value('pack.size', base) : base)
   }
 
   /** resources the player has seen at least once — drives progressive HUD reveal */
