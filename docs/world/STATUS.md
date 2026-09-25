@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S16** ([card](sessions/S16-new-walkers.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S17** ([card](sessions/S17-bosses.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -27,6 +27,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S16 · New walkers: done (2026-09-25)
+- C1 (`3d77721`) defs and behaviours, C2 (`c519264`) art, C3 (`9425f46`) wiring. bogWretch (hits slow the hero and soldiers to ×0.7 for 1.5 s), thornling (pack 5, splinter burst), ashPriest (ranged 200, aura 220 px: +25% dmg, 10 hp/s to the others), cinderHound (3 s burning patch, 56 px, 14 dps). Pure rules in `systems/walkers.ts`; API in CONTRACTS §S16.
+- Blueprint placeholders resolved (campDrowned, campThornmother, campStairwarden, campForges); `resolveSpawnKey` removed; tests reject any bracket.
+- **Wave mix for S20** (`WALKER_MIX`, dealt by `mixHand` in WaveManager): the camp's own walker is `CAMP_MIX` 0.3 of its approach; bogWretch tops up to 1 in 4 at Saltmere and Barrowmoor musters; cinderHound 1 in 5 at tier 5+; ashPriest 1 in 12 at tier 4+ and capped there (own share included); thornlings only as the Thornmother's own, each card opening into 5.
+- Verify (harness, one run): woke each camp, 13 s: Drowned 2 wretches, Thornmother 5 thornlings, Stairwarden 1 priest, Forges 3 hounds. Wretch hit: hero slow t 1.5, ×0.7, refreshed per hit, lifted after. Priest: grunt 5.7 → 15.6 hp in 1 s, auraDamage 1.25; grunt 600 px off untouched; priest heals 0 itself. Hound death: patch r 56, 14 dps, gone after 3 s. Gallery: all four `enm_` textures (1 screenshot, plus one retaken at a smaller zoom). User saves restored byte-identical.
+- Deviations: overlapping auras now take the strongest of each effect (before: the last writer won), which also applies to warlord and commander auras. The priest's aura reuses `aura` with `heal`/`tint` added.
+- For S17: a Stairwarden guard stand-in is still `elite`, beside the priests; S15's barrow guardian is also a renamed `elite`.
+- Not measured: wave-mix counts over real nights (unit test only), the slow on soldiers in play, hound patches on soldiers, thornling splinters by eye. No blueprint moves, no new open decisions.
+
 ### S15 · Points of interest II: done (2026-09-25)
 - C1–C2 (`3ac9f3e`), C3 (`48f0cb3`). `Relics` (`scene.relics`: grant/has/list, save `relics`, `relic:granted`), seven relics per 05 with `BOSS_RELICS` on `camp:burned` and `BARROW_RELICS`; relic markers are plinths lit when held. Barrows: hp 220 × tier step, struck by the hero's gathering blow within 70 px, open to a leashed `elite` guardian (tier-scaled), whose fall drops the grave goods (and the relic). Deed a11 Reliquary. Pause page: a Relics strip of wax seals with tooltips. API in CONTRACTS §S15.
 - **Every `MOD_STATS` stat now has a reader** (pack.size, soldier.damage, army.speed, rally.cooldown, worker.speed, worker.gather, tower.range, hero.pierce new; wood.yield was S14's).
@@ -46,13 +55,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - Not measured: delivery counts with the shrine (60 s windows crossed dusk), loot per tier in play, landmark art at night, the coast reveal on the atlas by eye. No blueprint moves, no new open decisions.
 
 ### S13c · A settled country: done (2026-09-25)
-- C1 (`7b2779f`): `render.mjs --free <region> [--near] [--key] [--n]` (`freeSpots`): greedy spots passing every pad rule, plus road 70 px, claim stones 120 px and camp siege 600 px (CONTRACTS §S13b). C2–C4: pads 101 → **244**, every one from `--free`, lint 0/0. Built vs 05: hold 34/34, downs 16/16, whisperwood 12/12, hollow 17/16, greyfall 12/12, ferrow 18/18, frostmere 16/15, saltmere 16/16, irontooth 14/14, barrowmoor 13/12, kettle 12/12, deepwood 11/10, deepvein 12/12, rim 11/10, ashgate 12/12, crown 9/8, cinderfall 9/9. About a third open at the next hall. Tests pin the targets (±2) and the village rule. Props 1018 → 975. `H.buildAll(lvl)` added.
-- Villages stand at the claim stones (the card's rule: 6+ pads within 600 px), so the West Gate green runs on into Hollow's and Whisperwood's hamlets. 05's named villages at the outposts get the outlying pads (Rimewatch, the harbour market and docks, Rustgate). **Ashgate and Cinderfall:** the maws at their pass mouths leave 4 and 1 spots near the stones, so their villages stand round Ashfall and Slagwatch.
-- Snapshot for S21 (harness, all 17 claimed, all 244 pads Lv.1, 60 s from dawn; the last seconds crossed dusk): 244 standing, 26 workers, Culler 2969 static (349 shown), harness step p50 1.3 ms / p95 5.1 ms (CPU per step in the desktop pane, not fps), paths 53 searches, 0 failed, worst 0.4 ms; 784 nodes (farms add fields).
-- Texture cap: 52 variants at Lv.1 and at max in one run, **0 fallbacks**, 148 of 160 `bld_`. Cap unchanged, so no new memory; 12 slots of headroom.
-- Trips: the lint lets a cottage stand 450 px from a camp, but `CAMP_SIEGE` is 600, and 2 first-pass pads fell in 60 s; `--free` keeps non-tower pads 600 px off camps the region doesn't need burned (6 moved). `cottageR1`/`chapelR` stand 456 px from campFerrow, which Rim needs burned. Deepvein's and Ashgate's granaries (05 asks for them) have no farms in reach (S20).
-- Not measured: fps with the pane visible or on a phone, the texture peak during ordinary upgrades, loading a real save with the new pads (load skips pads it doesn't list). 2 screenshots (Downs village; Ferrow's east farmstead and windmill); map.svg redrawn, not shot. User saves restored byte-identical.
-- No moves of existing pads, no new open decisions.
+- Pads 101 → 244 via `render.mjs --free` (`freeSpots`), villages at the claim stones, lint 0/0; `H.buildAll(lvl)`; texture cap 160 holds with 0 fallbacks.
 
 ### S13b · Village buildings: done (2026-09-25)
 - Seven village keys (`cottage`, `granary`, `mill`, `market`, `chapel`, `watchPost`, `docks`) and their effects, regional looks (`art/looks.ts`, `systems/BuildingLooks.ts`, cap 160 `bld_` textures); CONTRACTS §S13b.

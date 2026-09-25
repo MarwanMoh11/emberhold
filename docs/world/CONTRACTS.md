@@ -71,7 +71,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `WORLD = { width, height, centerX, centerY, tile }` (:20). `centerX/Y` is the map's middle, **not** home: use `HALL`. (`balance.ts` no longer re-exports it: S05.)
   - `HALL = { x, y }` (:40, from the `hall` pad), `REGIONS: RegionDef[]` (:34, `RegionBP & { index }`), `REGION_BY_ID`, and `type RegionId, Biome`.
   - `PADS: PadSpec[]` (:75; `region`, `requiresTownHall` from `hall`, `startLevel`) (every blueprint pad since S13; `FUTURE_PADS` was deleted in S13).
-  - `CAMPS: CampSpec[]` (:146; `region`, `reward: ResourceBag`, bracketed spawn keys resolved by `resolveSpawnKey`), `NODE_CLUSTERS: NodeCluster[]` (:167; `region`; fish fields since S13), `NODE_DEFS`.
+  - `CAMPS: CampSpec[]` (:146; `region`, `reward: ResourceBag`; `spawns.key` is a real `EnemyKey` since S16, `resolveSpawnKey` removed), `NODE_CLUSTERS: NodeCluster[]` (:167; `region`; fish fields since S13), `NODE_DEFS`.
   - `WALL_LINES: WallLineSpec[]` (`WallLineBP & { active }`; every line active since S10). `WALL_RING` was removed in S10 (the minimap strokes `WALL_LINES`).
   - `SPAWN_GATES`, `GATE_BY_ID`: removed by S09 (see §S09).
   - `APPROACHES`, `MAWS`, `CROSSINGS`, `ROADS`, `POIS`, `THRONE`, `FEATURES`, passed through from the blueprint.
@@ -278,12 +278,13 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S16 and S17: enemies
 
-*Status: planned.*
+*Status: S16 landed (walkers); S17 (bosses) planned.*
 
-- `EnemyKey` gains:
-  - the walkers `'bogWretch' | 'thornling' | 'ashPriest' | 'cinderHound'`;
-  - the bosses `'gallowsKnight' | 'thornmother' | 'seamOverseer' | 'stairwarden'`.
-- The blueprint's bracketed placeholder spawns (such as `'bogWretch[shield]'`) are resolved in S16.
+- `EnemyKey` gains the walkers `'bogWretch' | 'thornling' | 'ashPriest' | 'cinderHound'` (S16), and the bosses `'gallowsKnight' | 'thornmother' | 'seamOverseer' | 'stairwarden'` (S17).
+- `EnemyDef` (S16) gains `slows { mult, seconds }`, `pack`, `deathFx: 'splinters'`, `deathPatch { radius, dps, seconds }`, `projectileTex/Tint`, and `aura.heal` (hp/s to the others) / `aura.tint`.
+- `systems/walkers.ts` (pure): `Slow`, `noSlow`, `applySlow(s, mult, sec)` (never stacks: strongest holds, clock refreshes), `tickSlow`, `slowMult`; `mergeAura(fx, src, self)` (each effect takes the strongest source; no self-heal), `auraHealed`; `WALKER_MIX`, `mixHand(hand, {own, region, tier}, campMix, packs)`.
+- `Player.slow`, `Soldier.slow` (a `Slow`); `Enemy.auraHeal`. `EnemyManager.addPatch(x, y, deathPatch)`, `enemies.patches` (hound embers, 0.5 s bites on the hero and soldiers).
+- Camp spawns are the real keys: campDrowned `bogWretch`, campThornmother `thornling` (5 a band), campStairwarden `ashPriest`, campForges `cinderHound`. Textures `enm_<key>`.
 
 ## S18: campaign
 
