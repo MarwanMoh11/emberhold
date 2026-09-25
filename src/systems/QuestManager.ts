@@ -1,11 +1,15 @@
-import { QUESTS, ACHIEVEMENTS, type QuestDef } from '../config/quests'
+import { QUESTS, ACHIEVEMENTS, ACTS, actOf, type QuestDef } from '../config/quests'
 import { PAL } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
-import { dist } from '../core/math'
+import { dist, short } from '../core/math'
 import type { BuildingKey } from '../config/buildings'
 import type { Building } from '../entities/Building'
-import { CAMPS } from '../config/world'
+import { CAMPS, POIS, REGIONS, REGION_BY_ID, THRONE, raster, type RegionId } from '../config/world'
+import { BARROW_RELICS } from './Relics'
+import { NOT_SETTLED, bossCamp } from './questAnchors'
 import type { GameScene } from '../scenes/GameScene'
+
+const QUEST_IDS = new Set(QUESTS.map(q => q.id))
 
 export interface QuestView {
   title: string
@@ -50,6 +54,14 @@ export class QuestManager {
   private bossKills = 0
   private campsCleared = 0
   private zonesClaimed = 0
+  /** waystone journeys this session (`travel` goals); not saved: the quest lands the frame it happens */
+  private travels = 0
+  /** the last act whose banner played; a load sets it, so only a new act (or a new game) plays one */
+  private announcedAct = 0
+  /** a save from before Campaign 2.0: walk the new chain past what the world already shows, silently */
+  private catchUp = false
+  private regionsSeen = 0
+  private seenTick = 0
 
   constructor(private scene: GameScene) {
     const bus = scene.bus
@@ -64,6 +76,7 @@ export class QuestManager {
     })
     bus.on('camp:burned', () => { this.campsCleared++ })
     bus.on('region:claimed', () => { this.zonesClaimed++ })
+    bus.on('waystone:travelled', () => { this.travels++ })
   }
 
   get current(): QuestDef | null {
@@ -80,16 +93,53 @@ export class QuestManager {
     switch (g.type) {
       case 'kill': return { have: this.kills, need: g.amount }
       case 'collect': return { have: s.res.totalGathered[g.resource as ResourceType], need: g.amount }
-      case 'build': return { have: s.buildings.countBuilt(g.building as BuildingKey), need: g.amount ?? 1 }
+      case 'build': return {
+        have: g.region ? this.builtIn(g.building, g.region) : s.buildings.countBuilt(g.building as BuildingKey),
+        need: g.amount ?? 1,
+      }
       case 'upgrade': return { have: s.buildings.highestLevel(g.building as BuildingKey), need: g.level }
       case 'recruit': return { have: s.army.count, need: g.amount }
       case 'workers': return { have: s.workers.count, need: g.amount }
       case 'survive': return { have: s.waves.wavesCleared, need: g.wave }
       case 'camp': return { have: this.campsCleared, need: g.amount }
-      case 'zone': return { have: this.zonesClaimed, need: g.amount }
+      case 'zone': return { have: s.regions.claimedCount, need: g.amount }
       case 'level': return { have: s.player.level, need: g.amount }
-      case 'boss': return { have: this.defeatedBosses.has(g.key) ? 1 : 0, need: 1 }
+      case 'boss': return { have: this.bossDown(g.key) ? 1 : 0, need: 1 }
+      case 'claim': return { have: s.regions.claimed(g.region) ? 1 : 0, need: 1 }
+      case 'burn': return { have: s.camps.isBurned(g.camp) ? 1 : 0, need: 1 }
+      case 'restore': return { have: s.pois?.count('shrine') ?? 0, need: g.amount }
+      case 'relic': return { have: s.relics?.list().length ?? 0, need: g.amount }
+      case 'reach': return { have: s.pois?.state(g.poi) === 'done' ? 1 : 0, need: 1 }
+      case 'travel': return { have: Math.min(1, this.travels), need: 1 }
+      case 'line': {
+        const pads = s.buildings.linePads(g.line)
+        return { have: pads.filter(b => b.level > 0 && b.alive).length, need: pads.length || 1 }
+      }
+      case 'settle': return { have: this.settled(g.region), need: g.count }
     }
+  }
+
+  private builtIn(key: BuildingKey, region: RegionId) {
+    let n = 0
+    for (const b of this.scene.buildings.buildings) if (b.key === key && b.region === region && b.level > 0) n++
+    return n
+  }
+
+  /** Buildings standing in a region; walls and gates are fortification, not a village. */
+  private settled(region: RegionId) {
+    let n = 0
+    for (const b of this.scene.buildings.buildings) {
+      if (b.region === region && b.level > 0 && b.alive && !NOT_SETTLED.has(b.key)) n++
+    }
+    return n
+  }
+
+  /** Killed, or known dead: a stronghold burned (never while warded) or its boss's guard slot down. */
+  private bossDown(key: string) {
+    if (this.defeatedBosses.has(key)) return true
+    const c = bossCamp(key)
+    const camps = this.scene.camps
+    return !!c && (camps.isBurned(c.id) || !!camps.guardsDown?.has(`${c.id}.boss`))
   }
 
   /**
@@ -118,71 +168,159 @@ export class QuestManager {
     return { x: b.x, y: b.y }
   }
 
-  private nearestCamp(list: { spec: { x: number; y: number } }[]) {
+  /** The nearest of `list` to the hero; `bias` adds px to push some back (gated, unclaimed…). */
+  private nearest<T extends { x: number; y: number }>(list: T[], bias: (t: T) => number = () => 0): T | null {
     const p = this.scene.player
-    let best: { spec: { x: number; y: number } } | null = null
+    let best: T | null = null
     let bestD = Infinity
-    for (const c of list) {
-      const d = dist(p.x, p.y, c.spec.x, c.spec.y)
-      if (d < bestD) { bestD = d; best = c }
+    for (const t of list) {
+      const d = dist(p.x, p.y, t.x, t.y) + bias(t)
+      if (d < bestD) { bestD = d; best = t }
     }
     return best
+  }
+
+  /** Unbuilt pads: an open one nearest, else the one gated the least (lowest hall, claimed ground first). */
+  private padTarget(pads: Building[]): Guidance | null {
+    const s = this.scene
+    const open = this.nearest(pads.filter(b => s.buildings.isPadAvailable(b)))
+    if (open) return { x: open.x, y: open.y }
+    const gate = (b: Building) => Math.max(b.requiresTownHall, b.def.requiresTownHall ?? 0) * 1e6
+      + (s.regions.claimed(b.region) ? 0 : 5e5)
+    const b = this.nearest(pads, gate)
+    return b ? this.gatedTarget(b) : null
+  }
+
+  /** The border stone, or whatever stands before it: the hall, the region it is claimed from, a camp, the price. */
+  private claimTarget(id: RegionId, depth = 0): Guidance | null {
+    const s = this.scene
+    const z = REGION_BY_ID.get(id)
+    const chk = s.regions.canClaim(id)
+    if (!z || chk.reason === null) return null
+    if (chk.reason === 'hall') {
+      const hall = s.buildings.townHall
+      return { x: hall.x, y: hall.y, hint: `Command Hall Lv.${z.hall} first` }
+    }
+    if (chk.reason === 'adjacent' && depth < 8) {
+      const from = this.claimTarget(z.claim.from, depth + 1)
+      if (from) return { ...from, hint: from.hint ?? chk.why }
+    }
+    if (chk.reason === 'camps') {
+      const c = CAMPS.find(k => z.requiresCamps?.includes(k.id) && !s.camps.isBurned(k.id))
+      if (c) { const t = this.throughZone(c.x, c.y); return { ...t, hint: t.hint ?? chk.why } }
+    }
+    if (chk.reason === 'cost') {
+      const price = RESOURCE_ORDER.filter(k => z.cost[k]).map(k => `${short(z.cost[k] ?? 0)} ${k}`).join(', ')
+      return { x: z.claim.x, y: z.claim.y, hint: `Save for ${z.name}: ${price}` }
+    }
+    return { x: z.claim.x, y: z.claim.y }
+  }
+
+  /** Nearest of the points, claimed ground first, through the claim that opens it. */
+  private placeTarget(pts: { x: number; y: number; region?: RegionId }[]): Guidance | null {
+    const s = this.scene
+    const t = this.nearest(pts, p => (!p.region || s.regions.claimed(p.region) ? 0 : 1e6))
+    return t ? this.throughZone(t.x, t.y) : null
+  }
+
+  private campTarget(id: string, hint?: string): Guidance | null {
+    const c = CAMPS.find(k => k.id === id)
+    if (!c || this.scene.camps.isBurned(id)) return null
+    const t = this.throughZone(c.x, c.y)
+    return hint && !t.hint ? { ...t, hint } : t
   }
 
   /** Where to point the guidance arrow for the active objective. */
   private targetFor(q: QuestDef): Guidance | null {
     const s = this.scene
     const g = q.goal
-    if (g.type === 'build') {
-      const pads = s.buildings.buildings.filter(b => b.key === g.building && b.level === 0)
-      const open = pads.find(b => s.buildings.isPadAvailable(b))
-      if (open) return { x: open.x, y: open.y }
-      if (pads.length) return this.gatedTarget(pads[0])
-    }
-    if (g.type === 'upgrade') {
-      const pads = s.buildings.buildings.filter(b => b.key === g.building && b.level < g.level)
-      const open = pads.find(b => s.regions.claimed(b.region))
-      if (open) return { x: open.x, y: open.y }
-      if (pads.length) return this.gatedTarget(pads[0])
-    }
-    if (g.type === 'workers') {
-      const pad = s.buildings.buildings.find(b =>
-        b.level > 0 && (b.stats.workers ?? 0) > b.workers.length && s.regions.claimed(b.region))
-      if (pad) return { x: pad.x, y: pad.y }
-    }
-    if (g.type === 'recruit') {
-      const pad = s.buildings.buildings.find(b =>
-        b.level > 0 && (b.key === 'barracks' || b.key === 'archeryRange') && s.regions.claimed(b.region))
-      if (pad) return { x: pad.x, y: pad.y }
-    }
-    if (g.type === 'collect') {
-      if (g.resource === 'coins') {
-        // enemies inside a locked zone are behind the barrier: ignore them
-        const e = s.enemies.grid.nearest(s.player.x, s.player.y, 1400, en =>
-          en.alive && !en.def.structure && !s.regions.unclaimedAt(en.x, en.y))
-        if (e) return { x: e.x, y: e.y }
+    switch (g.type) {
+      case 'build':
+        return this.padTarget(s.buildings.buildings.filter(b =>
+          b.key === g.building && b.level === 0 && (!g.region || b.region === g.region)))
+      case 'settle':
+        return this.padTarget(s.buildings.buildings.filter(b =>
+          b.region === g.region && b.level === 0 && !NOT_SETTLED.has(b.key) && !b.padId.includes('.')))
+      case 'upgrade': {
+        const pads = s.buildings.buildings.filter(b => b.key === g.building && b.level < g.level)
+        const open = pads.find(b => s.regions.claimed(b.region))
+        if (open) return { x: open.x, y: open.y }
+        return pads.length ? this.gatedTarget(pads[0]) : null
       }
-      const node = s.nodes.findFor(g.resource as ResourceType, s.player.x, s.player.y, 1600, 0)
-      if (node) return { x: node.x, y: node.y }
+      case 'workers': {
+        const pad = s.buildings.buildings.find(b =>
+          b.level > 0 && (b.stats.workers ?? 0) > b.workers.length && s.regions.claimed(b.region))
+        return pad ? { x: pad.x, y: pad.y } : null
+      }
+      case 'recruit': {
+        const pad = s.buildings.buildings.find(b =>
+          b.level > 0 && (b.key === 'barracks' || b.key === 'archeryRange') && s.regions.claimed(b.region))
+        return pad ? { x: pad.x, y: pad.y } : null
+      }
+      case 'collect': {
+        if (g.resource === 'coins') {
+          // enemies inside a locked zone are behind the barrier: ignore them
+          const e = s.enemies.grid.nearest(s.player.x, s.player.y, 1400, en =>
+            en.alive && !en.def.structure && !s.regions.unclaimedAt(en.x, en.y))
+          if (e) return { x: e.x, y: e.y }
+        }
+        const node = s.nodes.findFor(g.resource as ResourceType, s.player.x, s.player.y, 1600, 0)
+        return node ? { x: node.x, y: node.y } : null
+      }
+      case 'camp': {
+        // prefer one you can walk to; fall back to naming the border in the way
+        const live = CAMPS.filter(c => !s.camps.isBurned(c.id))
+        return this.placeTarget(live)
+      }
+      case 'boss': {
+        const boss = s.enemies.list.find(e => e.active && e.alive && e.key === g.key)
+        if (boss) return { x: boss.x, y: boss.y }
+        if (g.key === THRONE.boss) {
+          return this.campTarget('campAshgate', 'Burn Ashgate Fortress first') ?? this.throughZone(THRONE.x, THRONE.y)
+        }
+        const c = bossCamp(g.key)
+        return c ? this.campTarget(c.id) : null
+      }
+      case 'zone': return s.zonesNextTarget()
+      case 'claim': return this.claimTarget(g.region)
+      case 'burn': return this.campTarget(g.camp)
+      case 'restore':
+        return this.placeTarget(POIS.filter(p => p.kind === 'shrine' && s.pois?.state(p.id) !== 'done'))
+      case 'relic': {
+        const barrows = POIS.filter(p => p.id in BARROW_RELICS && s.pois?.state(p.id) !== 'done')
+        const holds = CAMPS.filter(c => c.boss && !this.bossDown(c.boss))
+        return this.placeTarget([...barrows, ...holds])
+      }
+      case 'reach': {
+        const poi = POIS.find(p => p.id === g.poi)
+        if (!poi) return null
+        const lock = s.pois?.lockedBy(poi.id)
+        const camp = lock ? CAMPS.find(c => c.id === lock) : null
+        if (camp) return this.campTarget(camp.id, `Burn ${camp.name} first`)
+        return this.throughZone(poi.x, poi.y)
+      }
+      case 'travel': {
+        const w = s.waystones
+        if (!w) return null
+        const stones = w.list()
+        const here = w.here ? stones.find(t => t.id === w.here) : null
+        if (here) return { x: here.x, y: here.y, hint: 'Open the map and pick a lit stone' }
+        const lit = stones.filter(t => t.active)
+        if (lit.length < 2) {
+          const unlit = this.nearest(stones.filter(t => !t.active))
+          if (unlit) return { x: unlit.x, y: unlit.y, hint: `Touch the stone at ${unlit.name}` }
+        }
+        const near = this.nearest(lit)
+        return near ? { x: near.x, y: near.y, hint: 'Stand on a lit waystone and travel' } : null
+      }
+      case 'line': {
+        const b = s.buildings.linePads(g.line).find(p => !(p.level > 0 && p.alive))
+        if (!b) return null
+        return b.level === 0 ? this.gatedTarget(b) : { x: b.x, y: b.y, hint: 'Rebuild the broken piece' }
+      }
+      case 'kill': case 'survive': case 'level':
+        return null
     }
-    if (g.type === 'camp') {
-      const live = s.camps.camps.filter(c => !c.destroyed)
-      // prefer one you can walk to; fall back to naming the border in the way
-      const c = this.nearestCamp(live.filter(x => s.regions.claimed(x.spec.region)))
-        ?? this.nearestCamp(live)
-      if (c) return this.throughZone(c.spec.x, c.spec.y)
-    }
-    if (g.type === 'boss') {
-      const boss = s.enemies.list.find(e => e.active && e.alive && e.key === g.key)
-      if (boss) return { x: boss.x, y: boss.y }
-      const fortress = CAMPS.find(c => c.id === 'campAshgate')
-      if (fortress) return this.throughZone(fortress.x, fortress.y)
-    }
-    if (g.type === 'zone') {
-      const locked = s.zonesNextTarget()
-      if (locked) return locked
-    }
-    return null
   }
 
   view(): QuestView | null {
@@ -197,8 +335,10 @@ export class QuestManager {
   }
 
   update() {
+    if (this.catchUp) this.fastForward()
     const q = this.current
     if (q) {
+      this.announce(q)
       const p = this.progress(q)
       if (p.have >= p.need) this.complete(q)
     }
@@ -206,6 +346,27 @@ export class QuestManager {
     // quest are exactly where the 1,000- and 5,000-kill marks get passed, and
     // an early return here meant those could never be earned.
     this.checkAchievements()
+  }
+
+  /** The act banner, once, as the chain enters an act (a new game plays Act I's). */
+  private announce(q: QuestDef) {
+    const act = actOf(q)
+    if (act <= this.announcedAct) return
+    this.announcedAct = act
+    const a = ACTS[act - 1]
+    if (a) this.scene.bus.emit('act:begun', { act, roman: a.roman, name: a.name, blurb: a.blurb })
+  }
+
+  /** Past every quest the world already shows done, with no rewards and no banners (a pre-2.0 save). */
+  private fastForward() {
+    this.catchUp = false
+    for (let q = this.current; q; q = this.current) {
+      const p = this.progress(q)
+      if (p.have < p.need) break
+      this.done.add(q.id)
+      this.index++
+    }
+    this.announcedAct = this.current ? actOf(this.current) : ACTS.length
   }
 
   private complete(q: QuestDef) {
@@ -260,7 +421,23 @@ export class QuestManager {
       loreRead: s.pois?.count('lore') ?? 0,
       shrinesRestored: s.pois?.count('shrine') ?? 0,
       relicsHeld: s.relics?.list().length ?? 0,
+      thornmother: this.bossDown('thornmother') ? 1 : 0,
+      forges: s.camps.isBurned('campForges') ? 1 : 0,
+      regionsSeen: this.seen(),
+      waystonesLit: s.waystones?.toJSON().length ?? 0,
     }
+  }
+
+  /** Regions with any explored ground; a scan of the fog every ~90 frames until all are seen. */
+  private seen() {
+    if (this.regionsSeen >= REGIONS.length || this.seenTick++ % 90) return this.regionsSeen
+    const r = raster()
+    const found = new Set<number>()
+    this.scene.regions.forEachExplored((x, y) => {
+      const i = r.cell(x, y)
+      if (i >= 0 && r.region[i] >= 0) found.add(r.region[i])
+    })
+    return (this.regionsSeen = found.size)
   }
 
   private checkAchievements() {
@@ -309,19 +486,15 @@ export class QuestManager {
     this.victoryAt = d.victoryAt ?? 0
     this.victoryWave = d.victoryWave ?? 0
     this.victoryPlaytime = d.victoryPlaytime ?? 0
-    // Before the Regent was added, q20 was the ending. Older saves may also
-    // predate victory timestamps; the new defeatedBosses field distinguishes
-    // them from a current save waiting at q21.
-    if (!Array.isArray(d.defeatedBosses) && this.index === QUESTS.length - 1 && this.done.has('q20')) {
-      this.index = QUESTS.length
-      this.done.add('q21')
-      this.defeatedBosses.add('cinderRegent')
-      this.finalBossHp = 0
-      if (!this.victoryAt) {
-        this.victoryAt = Date.now()
-        this.victoryWave = this.scene.waves.wave
-        this.victoryPlaytime = this.scene.saves.playtime
-      }
+    // Campaign 2.0 (S18) renamed every quest. A save from the old chain
+    // restarts the new one and walks it, silently, past what the world
+    // already shows done; the walk waits for the first update (the scene
+    // is still loading here).
+    if (this.index > QUESTS.length || [...this.done].some(id => !QUEST_IDS.has(id))) {
+      this.index = 0
+      this.done = new Set()
+      this.catchUp = true
     }
+    this.announcedAct = this.current ? actOf(this.current) : ACTS.length
   }
 }

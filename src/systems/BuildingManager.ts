@@ -200,6 +200,11 @@ export class BuildingManager {
     return !!ids && ids.every(id => { const b = this.byPad.get(id); return !!b && b.level > 0 && b.alive })
   }
 
+  /** A wall line's pads in order along it, gates included (S18's `line` quests). Unknown ids: []. */
+  linePads(lineId: string): Building[] {
+    return (this.lines.get(lineId) ?? []).map(id => this.byPad.get(id)).filter((b): b is Building => !!b)
+  }
+
   // ---- queries ---------------------------------------------------------
   /** True while a build-site card is on screen; other world panels defer to it. */
   get panelShown() { return this.panel.isShown }

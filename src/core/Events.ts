@@ -41,6 +41,8 @@ export interface GameEvents {
   'achievement': { id: string; title: string }
   /** The last quest in the chain just landed. Not an ending — a milestone. */
   'campaign:complete': { wave: number }
+  /** S18: the quest chain entered an act (a new game plays Act I's); the HUD's banner */
+  'act:begun': { act: number; roman: string; name: string; blurb: string }
 }
 
 /** Thin typed wrapper so systems can talk without importing each other. */

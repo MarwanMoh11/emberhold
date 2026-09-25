@@ -4,6 +4,7 @@ import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { ABILITIES, ABILITY_KEYS, ABILITY_SLOTS } from '../config/abilities'
 import { PLAYER, POI } from '../config/balance'
 import { POIS, REGION_BY_ID } from '../config/world'
+import { CAMP_BANNERS } from '../config/quests'
 import { clamp, short } from '../core/math'
 import { DPR, IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
 import { ABILITY_ICON } from '../art/icons'
@@ -123,6 +124,7 @@ export class HUD {
   private padL = 16
   private padR = 16
   private toastT = 0
+  private toastQueue: [string, string, number][] = []
   /** S14: a lore stone's line, on a parchment page under the ribbon */
   private lorePanel: SkinPanel
   private loreTitle: Phaser.GameObjects.Text
@@ -241,6 +243,12 @@ export class HUD {
     this.game.bus.on('crossing:opened', ({ id }) => {
       if (id === 'calderaCauseway') this.toast('The fire on the causeway dies.', '', 4.6)
     })
+    // Campaign 2.0 (S18): an act's banner, and the camps whose burning changes the nights
+    this.game.bus.on('act:begun', ({ roman, name, blurb }) => this.toast(`Act ${roman} · ${name}`, blurb, 5.2))
+    this.game.bus.on('camp:burned', ({ id }) => {
+      const b = CAMP_BANNERS[id]
+      if (b) this.toast(b[0], b[1], 4.6)
+    })
 
     this.layout()
     ui.scale.on('resize', () => this.layout())
@@ -282,7 +290,15 @@ export class HUD {
   private get medalR() { return this.W < 720 ? 20 : 22 }
   private get plateW() { return this.medalR * 2 + 16 + this.barW + 12 }
 
+  /**
+   * The ribbon. News that lands while one is up waits its turn (an act's
+   * banner and the causeway's, say, come in the same frame), up to three.
+   */
   toast(msg: string, sub = '', secs = 3.2) {
+    if (this.toastT > 0.6) {
+      if (this.toastQueue.length < 3) this.toastQueue.push([msg, sub, secs])
+      return
+    }
     this.toastText.setText(msg)
     this.toastSub.setText(sub)
     this.toastT = this.toastDur = secs
@@ -660,6 +676,9 @@ export class HUD {
         this.toastSub.setWordWrapWidth(Math.min(this.W - 32, 460), true)
         this.toastSub.setVisible(true).setAlpha(a).setPosition(this.W / 2, ty + th / 2 + 6)
       } else this.toastSub.setVisible(false)
+    } else if (this.toastQueue.length) {
+      const [msg, sub, secs] = this.toastQueue.shift()!
+      this.toast(msg, sub, secs)
     } else {
       this.toastRibbon.setVisible(false)
       this.toastText.setVisible(false)
