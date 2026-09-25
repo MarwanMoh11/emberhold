@@ -35,6 +35,7 @@ import { DPR } from '../core/device'
  *   H.lvl('cottage1', 2) set a pad's level through the loader (S13b)
  *   H.cottages('greyfall', 12)  twelve dev cottages by the hero in Greyfall's style: tones, yard layouts, textures
  *   H.looks()            regional looks (S13b C4): bld_ textures against the cap, bakes and their ms
+ *   H.buildAll(1)        every blueprint pad (not walls) to a level, capped per key (S13c); drains the bakes
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -606,5 +607,19 @@ export function installHarness(game: Phaser.Game) {
     return id ? g.buildings.looks.inspect(g.buildings.byPad.get(id)) : g.buildings.looks.stats()
   }
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks }
+  /**
+   * Raise every blueprint pad (not wall pieces or gates) to `level`, capped at
+   * each key's top level, through the save loader (S13c): the dense-country
+   * snapshot. `level` 0 razes them. Pumps until the variant bakes drain.
+   */
+  const buildAll = (level = 1) => {
+    const g = gs()
+    const gates = new Set(WALL_LINES.flatMap(l => l.gates.map(q => q.id)))
+    const bs = ([...g.buildings.byPad.values()] as any[]).filter(b => !b.padId.includes('.') && !gates.has(b.padId))
+    g.buildings.load(bs.map(b => ({ padId: b.padId, level: Math.min(level, b.def.levels.length), hp: 1e9, progress: {}, peakWorkers: 0 })))
+    for (let k = 0; k < 400 && (k < 2 || g.buildings.looks.stats().queued > 0); k++) pump(0.05)
+    return { pads: bs.length, standing: bs.filter(b => b.alive).length, textures: g.buildings.looks.stats() }
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll }
 }

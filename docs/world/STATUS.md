@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S13c** ([card](sessions/S13c-settled-country.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S14** ([card](sessions/S14-poi-one.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -27,6 +27,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S13c · A settled country: done (2026-09-25)
+- C1 (`7b2779f`): `render.mjs --free <region> [--near] [--key] [--n]` (`freeSpots`): greedy spots passing every pad rule, plus road 70 px, claim stones 120 px and camp siege 600 px (CONTRACTS §S13b). C2–C4: pads 101 → **244**, every one from `--free`, lint 0/0. Built vs 05: hold 34/34, downs 16/16, whisperwood 12/12, hollow 17/16, greyfall 12/12, ferrow 18/18, frostmere 16/15, saltmere 16/16, irontooth 14/14, barrowmoor 13/12, kettle 12/12, deepwood 11/10, deepvein 12/12, rim 11/10, ashgate 12/12, crown 9/8, cinderfall 9/9. About a third open at the next hall. Tests pin the targets (±2) and the village rule. Props 1018 → 975. `H.buildAll(lvl)` added.
+- Villages stand at the claim stones (the card's rule: 6+ pads within 600 px), so the West Gate green runs on into Hollow's and Whisperwood's hamlets. 05's named villages at the outposts get the outlying pads (Rimewatch, the harbour market and docks, Rustgate). **Ashgate and Cinderfall:** the maws at their pass mouths leave 4 and 1 spots near the stones, so their villages stand round Ashfall and Slagwatch.
+- Snapshot for S21 (harness, all 17 claimed, all 244 pads Lv.1, 60 s from dawn; the last seconds crossed dusk): 244 standing, 26 workers, Culler 2969 static (349 shown), harness step p50 1.3 ms / p95 5.1 ms (CPU per step in the desktop pane, not fps), paths 53 searches, 0 failed, worst 0.4 ms; 784 nodes (farms add fields).
+- Texture cap: 52 variants at Lv.1 and at max in one run, **0 fallbacks**, 148 of 160 `bld_`. Cap unchanged, so no new memory; 12 slots of headroom.
+- Trips: the lint lets a cottage stand 450 px from a camp, but `CAMP_SIEGE` is 600, and 2 first-pass pads fell in 60 s; `--free` keeps non-tower pads 600 px off camps the region doesn't need burned (6 moved). `cottageR1`/`chapelR` stand 456 px from campFerrow, which Rim needs burned. Deepvein's and Ashgate's granaries (05 asks for them) have no farms in reach (S20).
+- Not measured: fps with the pane visible or on a phone, the texture peak during ordinary upgrades, loading a real save with the new pads (load skips pads it doesn't list). 2 screenshots (Downs village; Ferrow's east farmstead and windmill); map.svg redrawn, not shot. User saves restored byte-identical.
+- No moves of existing pads, no new open decisions.
+
 ### S13b · Village buildings: done (2026-09-25)
 - C1–C3 (`dbf7794`): the seven keys, defs, first-pass costs and `VILLAGE`; 7 pads (101 now: the West Gate green in the hold, `watchDowns`, `docks1`); effects per CONTRACTS §S13b (`dropoffFor(x, y, res?)`, `localBonus`, `haulMultiplier`, `slotsOf`, `marketRateOf`, `nightBlessing`, `watchCovers`); ink art for all seven; healing auras moved to `buildings.auras(dt)`. Each type verified in the harness (numbers in `30d4a7b`).
 - C4 (`f6acc67`): `art/looks.ts` (`STYLE_BY_BIOME`, `STYLED`, `TONED`, `lookFor`, `yardFor`, cap 160); palette `let`s set per bake by `setLook`: five styles' walls, three roofs and touch, ember windows (ash), snow (highland), a waterwheel mill within 200 px of river water; houses wear the look outside the hold's timber. `systems/BuildingLooks.ts`: variants baked lazily in an idle slice (on reveal, and at `startRaise` for the next level), refcounted and removed when unused, falling back to tone 0 then the base at the cap; yards of 1–2 of 8 `yard_*` props on non-military pads, seeded side, off roads and other pads, depth by y, culled.
@@ -46,14 +55,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - No blueprint moves, no new open decisions.
 
 ### S12 · Minimap and atlas: done (2026-09-25)
-- C1: `Minimap` is a local 2400 px window, north up: crops of `atlas_bake` and the world's own fog page (`fog_live`, saved by RegionManager), marks at 9 Hz (pads, seen camps/POIs, stones, bodies, tonight's routes, hero). Seen ground is `ChartMemory` (256 px), shared with the atlas.
-- C2: `AtlasBake` paints the world at 1/16 (640 × 576) through `paintAtlasRect` (low detail) after the visible chunks, ≤2.5 ms a frame; a claim re-queues its box (9 blocks for Downs). **Bake: 79–93 ms of painting over ~100–116 ms wall, worst frame 3–4 ms.**
-- C3: `Atlas` (full screen, pauses the game): explored borders and names (≥6 seen cells), claim state, camps (burned crossed), POIs, outposts, stones, routes, the quest walk, the hero; drag, pinch, wheel. Tap a lit stone to travel; controller Back opens, d-pad cycles, A travels, B closes. `TravelList` deleted; a Travel chip opens the atlas from a stone. The quest arrow follows `questRoute` (nav path) off screen. API in CONTRACTS §S12.
-- Verify (harness, one run each): atlas opens in 0.9–3.9 ms; desktop click wsHall → wsIsle travelled; mobile (375×812) synthetic touch: pinch ×2.3, drag pans, tap on wsIsle started the channel and closed the atlas; gamepad Back/right/A travelled wsIsle → wsHall, B and ESC close. Minimap marks rebuild 0.1–0.3 ms (at 9 Hz; the old per-tick RT bake is gone). Fog crop checked by pixel sample (clear at the hero, vellum at the edge). User saves restored byte-identical. 2 screenshots (the game with its minimap at 1280×800; the mobile atlas zoomed out), not the card's 3: the README caps it at 2.
-- Deviations: the Map chip opens the atlas (the minimap no longer folds away; on a phone it is 127 px). The old world's footprint (optional) is not drawn. Region names show after 6 seen cells, so the hold's neighbours are named once looked into, not at boot.
-- Trips: a render-texture crop in Phaser 3.90 is top-down like any texture (don't mirror y). `DockBands.card` has no writer now. After a waystone arrival `here` was sometimes null on the phone run (S11 arrival ring vs `touch` 56; not investigated). S14: set `POI_GLYPH[kind]` and add `gs.pois` (`poiState` picks it up).
-- Not measured: old-vs-new minimap frame cost side by side, a river-bending quest route by eye, landscape phone layout.
-- No blueprint moves, no new open decisions.
+- Local `Minimap` (2400 px, `ChartMemory`), `AtlasBake` (1/16), full-screen `Atlas` with travel from lit stones; API in CONTRACTS §S12.
 
 ### S11 · Outposts and waystones: done (2026-09-24)
 - `outpost` building, `dropoffFor` to the nearest outpost by path, `respawnPoint`, `Waystones` (save `waystones`), fog light; CONTRACTS §S11.

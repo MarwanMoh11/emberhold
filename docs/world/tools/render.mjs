@@ -45,6 +45,7 @@ export const RULES = {
   campToClaim: 800,
   campToCamp: 900,
   spawnClamp: 2400,
+  campSiege: 600,
 }
 
 const PRODUCTION = new Set(['lumberCamp', 'farm', 'quarry', 'mine', 'fishery', 'tradingPost'])
@@ -402,8 +403,10 @@ function describePoint(bp, r, x, y) {
 /**
  * `--free <region> [--near x,y] [--key k] [--n 12]` (S13c): spots, nearest
  * first, where a pad of `key` passes every pad rule of the lint, plus 70px
- * (or half the road + 40) off any road's centre line and 120px off any claim
- * stone. Picked greedily: each spot counts as a pad for the next, so the whole
+ * (or half the road + 40) off any road's centre line, 120px off any claim
+ * stone, and outside every camp's siege radius (campSiege, the game's
+ * CAMP_SIEGE: its walkers go for any structure that near), bar towers and the
+ * camps the region needs burned before it can be claimed. Picked greedily: each spot counts as a pad for the next, so the whole
  * list can go in together.
  */
 export function freeSpots(bp, r, id, { near, key = 'cottage', n = 12, step = 10 } = {}) {
@@ -418,6 +421,8 @@ export function freeSpots(bp, r, id, { near, key = 'cottage', n = 12, step = 10 
     : PRODUCTION.has(key) ? RULES.campClear.production
     : DEFENCE.has(key) ? RULES.campClear.defence : RULES.campClear.other
   const threats = [...bp.CAMPS, ...bp.MAWS]
+  const besiege = key === 'watchtower' || key === 'cannonTower' ? []
+    : bp.CAMPS.filter(c => !(g.requiresCamps ?? []).includes(c.id))
   const stones = bp.REGIONS.filter(x => x.id !== 'hold').map(x => x.claim)
   const pois = bp.POIS.filter(p => p.kind !== 'relic')
   const fields = bp.NODES.filter(f => f.type !== 'fish')
@@ -430,6 +435,7 @@ export function freeSpots(bp, r, id, { near, key = 'cottage', n = 12, step = 10 
     if (c < 0 || reach[c] === Infinity) return false
     if (bp.WALLS.some(w => distToPolyline(x, y, w.pts, w.ring) < RULES.padWallClear)) return false
     if (threats.some(t => hyp(x, y, t.x, t.y) < need)) return false
+    if (besiege.some(c => hyp(x, y, c.x, c.y) < RULES.campSiege)) return false
     if (fields.some(f => hyp(x, y, f.x, f.y) < f.r + 60)) return false
     if (pois.some(p => hyp(x, y, p.x, p.y) < 90)) return false
     if (stones.some(s => hyp(x, y, s.x, s.y) < 120)) return false

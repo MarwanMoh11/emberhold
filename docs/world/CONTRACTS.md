@@ -233,7 +233,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S13b and S13c: a settled country
 
-*Status: S13b landed (keys, effects, art; `BuildingManager`, pure parts in [src/systems/village.ts](../../src/systems/village.ts); looks in [src/art/looks.ts](../../src/art/looks.ts) and [src/systems/BuildingLooks.ts](../../src/systems/BuildingLooks.ts)). S13c planned.*
+*Status: S13b landed (keys, effects, art; `BuildingManager`, pure parts in [src/systems/village.ts](../../src/systems/village.ts); looks in [src/art/looks.ts](../../src/art/looks.ts) and [src/systems/BuildingLooks.ts](../../src/systems/BuildingLooks.ts)). S13c landed (244 pads).*
 
 - `BuildingKey` and `PadKey` gain `'cottage' | 'granary' | 'mill' | 'market' | 'chapel' | 'watchPost' | 'docks'` ([05 §A settled country](design/05-content.md#a-settled-country-s13b-s13c)). Stats: cottage `pop`; granary `reach`, Lv.2 `haul`; mill and docks `bonus`, `reach`; market `sell`; chapel `mend`, `radius`, `blessing` (never `heal`: that is the infirmary's aura); watchPost `light`, Lv.2 `dmg rate range splash`.
 - `VILLAGE` (config/balance): `cottagePopMax` (open decision; `Infinity`), `market { sells (open decision; true), floor 300, goodsPerCoin 3, perHome 0.05, homeMax 0.5, homeRadius 600 }`, `chapel.blessingMax` 0.5, `watchPost.warnEarly` 4, `docks { slots 1, slotRadius 800 }`.
@@ -248,7 +248,9 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - `buildings.looks: BuildingLooks` (a `BuildingSkin`, passed to `new Building(scene, spec, skin?)`): `texture(b, lvl)` (the variant once baked, else base; queues), `dress(b)` (yard), `prebake(b, lvl)` (on reveal, and at `startRaise` for the next level), `update()` (idle slice, ≤4 ms after the first bake), `look(b)`, `stats()`, `inspect(b)`. Variants are refcounted and removed when no pad holds them; past the cap a pad takes tone 0, then the base.
 - Harness: `H.cottages(region, n, at?, key?, lvl?)`, `H.looks(id?)`.
 - Harness: `H.lvl(id, lvl)` sets a pad's level through the loader.
-- S13c adds pads only (about 238 in all). Pad ids are new; no existing id or position changes.
+- S13c added pads only (101 → 244). Pad ids are new; no existing id or position changes.
+- `render.mjs --free <region> [--near x,y] [--key k] [--n 12]` and `freeSpots(bp, r, region, { near, key, n }) → { near, key, spots: { x, y, d, road }[] }`: spots that pass every pad rule, plus 70 px (or half the road + 40) off roads, 120 px off claim stones and `RULES.campSiege` (600, the game's `CAMP_SIEGE`) off camps the region doesn't need burned (towers exempt); greedy, so a whole list can go in.
+- Harness: `H.buildAll(lvl)` raises every blueprint pad (not wall pieces or gates) to `lvl`, capped per key, through the loader, and drains the variant bakes; returns `{ pads, standing, textures }`.
 
 ## S14: points of interest
 

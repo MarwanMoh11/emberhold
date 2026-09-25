@@ -72,3 +72,29 @@ test('--free (S13c): every spot it offers, added as a pad, keeps the lint at 0 e
   const bad = lint(b, r).map(i => `${i.level} ${i.what}: ${i.msg}`)
   assert.deepEqual(bad, [])
 })
+
+// 05 §A settled country: pads per region by the endgame (S13c).
+const PAD_TARGETS = {
+  hold: 34, downs: 16, whisperwood: 12, hollow: 16, greyfall: 12, ferrow: 18, frostmere: 15, saltmere: 16, irontooth: 14,
+  barrowmoor: 12, kettle: 12, deepwood: 10, deepvein: 12, rim: 10, ashgate: 12, crown: 8, cinderfall: 9,
+}
+
+test('a settled country (S13c): about 238 pads, every region within 2 of its target', () => {
+  assert.ok(Math.abs(bp.PADS.length - 238) <= 23.8, `${bp.PADS.length} pads`)
+  for (const [id, want] of Object.entries(PAD_TARGETS)) {
+    const got = bp.PADS.filter(p => p.region === id).length
+    assert.ok(Math.abs(got - want) <= 2, `${id}: ${got} pads, target ${want}`)
+  }
+})
+
+test('a settled country (S13c): a village of 6+ pads within 600 px of every claim stone', () => {
+  // Ashgate's and Cinderfall's stones stand at pass mouths whose maws leave no room;
+  // their villages stand round Ashfall and Slagwatch, the outposts.
+  const at = { ashgate: 'outAsh', cinderfall: 'outSlag' }
+  for (const g of bp.REGIONS) {
+    if (g.id === 'hold') continue
+    const c = at[g.id] ? bp.PADS.find(p => p.id === at[g.id]) : g.claim
+    const n = bp.PADS.filter(p => p.region === g.id && Math.hypot(p.x - c.x, p.y - c.y) <= 600).length
+    assert.ok(n >= 6, `${g.id}: ${n} pads within 600 px`)
+  }
+})
