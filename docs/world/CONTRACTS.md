@@ -233,12 +233,17 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S13b and S13c: a settled country
 
-*Status: planned.*
+*Status: S13b landed through C3 (keys, effects, art; `BuildingManager`, pure parts in [src/systems/village.ts](../../src/systems/village.ts)). C4 (styles, variants, lazy bakes) and S13c planned.*
 
-- `BuildingKey` and `PadKey` gain `'cottage' | 'granary' | 'mill' | 'market' | 'chapel' | 'watchPost' | 'docks'` ([05 §A settled country](design/05-content.md#a-settled-country-s13b-s13c)).
-- `buildings.dropoffFor(x, y, res?)`: with `res` of food or fish, the nearest standing granary within 900 px comes first.
-- `buildings.localBonus(key, x, y) → number`: 1 plus the best in-range mill bonus (docks use the same shape for the trading post).
-- Art: `STYLE_BY_BIOME` (`'timber' | 'woodland' | 'fen' | 'stone' | 'ash'`) and `ensureBuildingTexture(key, lvl, style, variant) → string`, baked lazily; the variant is seeded from the pad id.
+- `BuildingKey` and `PadKey` gain `'cottage' | 'granary' | 'mill' | 'market' | 'chapel' | 'watchPost' | 'docks'` ([05 §A settled country](design/05-content.md#a-settled-country-s13b-s13c)). Stats: cottage `pop`; granary `reach`, Lv.2 `haul`; mill and docks `bonus`, `reach`; market `sell`; chapel `mend`, `radius`, `blessing` (never `heal`: that is the infirmary's aura); watchPost `light`, Lv.2 `dmg rate range splash`.
+- `VILLAGE` (config/balance): `cottagePopMax` (open decision; `Infinity`), `market { sells (open decision; true), floor 300, goodsPerCoin 3, perHome 0.05, homeMax 0.5, homeRadius 600 }`, `chapel.blessingMax` 0.5, `watchPost.warnEarly` 4, `docks { slots 1, slotRadius 800 }`.
+- `buildings.dropoffFor(x, y, res?)`: with `res` `'food'` (farm and fishery crews), the nearest standing granary whose `reach` (straight line) covers (x, y) comes first. `granaryFor(x, y) → Building | null`.
+- `buildings.localBonus(key, x, y) → number`: 1 + the best `bonus` among standing `key` buildings whose `reach` covers (x, y); never stacks. Mills on farm and lumber camp crews, docks on `tradeRateOf`.
+- `buildings.haulMultiplier(home, res, x, y)`: mill × Lv.2 granary, applied to each delivery (and sheltered output). `slotsOf(b)` (worker slots; docks add to fisheries): use it, not `stats.workers`. `standing(key)`, `homesNear(x, y, r)`, `marketRateOf(b)`, `nightBlessing()` (WaveManager.endNight multiplies the reward), `watchCovers(routes)` (WaveManager rings the warning `warnEarly` s early; `beginWarning(extra)`).
+- `buildings.auras(dt)`: the infirmary, outpost Lv.2 and chapel heals; GameScene calls it after `army.update`.
+- Pure (`systems/village.ts`): `bestBonus(sources, x, y)`, `marketRate(sell, homes)`, `marketGood(food, wood)`, `blessingMultiplier(blessings)`, `routeNear(route, x, y, r)`.
+- Art: painters read `VL: VillageLook { wall, wallC, footing, roof, roofMat, wheel, touch }` in art/buildings.ts (timber by default). **C4 adds** `STYLE_BY_BIOME` (`'timber' | 'woodland' | 'fen' | 'stone' | 'ash'`) and `ensureBuildingTexture(key, lvl, style, variant) → string`, baked lazily; the variant is seeded from the pad id.
+- Harness: `H.lvl(id, lvl)` sets a pad's level through the loader.
 - S13c adds pads only (about 238 in all). Pad ids are new; no existing id or position changes.
 
 ## S14: points of interest

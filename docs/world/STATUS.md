@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S13b** ([card](sessions/S13b-village-buildings.md)), then S13c · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S13b, resume at C4** ([card](sessions/S13b-village-buildings.md)), then S13c · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -21,9 +21,20 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 - **v1 saves** ([07-save.md §Migration](design/07-save.md#migration)): the options are the Veteran's charter (default), a clean slate, or keeping v1 playable. Blocks S19 only. Until then, S04's guard keeps v1 saves untouched and starts v2 fresh.
 - **Worker drop-off** (raised by S06): v1 crews stocked their own camp ("the short loop makes the settlement look busy"); design 04 §S06, the blueprint's depot and S06's card send every haul to the depot. Default (landed): the depot, via `buildings.dropoffFor`. Hold crews now walk ~500 px each way; Ferrow farmers ~1,550 px over the bridge until `outFerrow` stands (S11: `dropoffFor` takes the nearest outpost by path). Returning to v1 is a one-line change in `dropoffFor` (take the worker's camp). Tune in S20 either way.
+- **Cottage population cap** (raised 2026-09-25, orchestrator): default (landed) none. `VILLAGE.cottagePopMax` in `config/balance.ts` (`Infinity`); a number there caps all cottages together.
+- **Markets sell surplus for coins** (raised 2026-09-25, orchestrator): default (landed) yes, above 300 food and wood, 3 goods a coin. `VILLAGE.market.sells` (and `floor`, `goodsPerCoin`) in `config/balance.ts`; `false` idles every market.
 - **Day length** ([03 §Day and night](design/03-nights-and-camps.md#day-and-night)): default `day = 60 + 10 × claimed regions`, capped at 180 s (landed in S09 as `dayLength` in `config/balance.ts`). Tuned in S20.
 
 ## Log
+
+### S13b · Village buildings: partial, done through C3 (2026-09-25)
+- C1–C3 (`dbf7794`, one commit): keys, defs and first-pass costs for `cottage granary mill market chapel watchPost docks` (05's Lv.1 costs; later levels, hp and footprints mine). `VILLAGE` in balance: radii, caps, the two open decisions. Pads (101 now): `market1 chapel1 cottage1 granary1 mill1` on the West Gate green (hold, outside the palisade where the West and Wood Roads part), `watchDowns` on the King's Road, `docks1` by `fishery1`. Lint: `watchPost` in `DEFENCE`, `NEEDS.docks = 'fish'`; 0/0.
+- Effects (CONTRACTS §S13b): `dropoffFor(x, y, res?)` (granary within its `reach` 900 straight line, first), `localBonus`, `haulMultiplier` (applied at delivery and to sheltered output), `slotsOf`, `marketRateOf`, `nightBlessing`, `watchCovers`; WaveManager rings the warning early (`beginWarning(extra)`). Dock hints via `villageHint`. Ink art for all seven (a `wheel` look for mills, unused until C4 sets it). Harness `H.lvl(id, lvl)`.
+- Fix: healing auras (infirmary, outpost Lv.2, chapels) moved to `buildings.auras(dt)`, called after `army.update`: `healAllies` inside `update` only ever found the hero.
+- Verify (harness, one run each, day held): cottage +2/+3 pop; `farm1`'s 2 farmers unload at `granary1` (4380, 3434), mean haul 422 → 330 px, 16 → 23 deliveries in 120 s; mill credited/raw ×1.167 at Lv.1 (want 1.15), ×1.333 at Lv.3, granary Lv.2 ×1.111; market 18 coins in 60 s at 0.3/s, stopped at food 300 / wood 301; night reward 140 → 154 → 168 (chapel Lv.1, Lv.2); swordsman 10 → 18 hp in 4 s by the chapel, none without; `watchDowns` lit (reveal disc 200 = 600 px) and `night:warning` at 11.99 s left vs 8.00 without (routes south + north); docks: `fishery1` slots 2 → 3. 1 screenshot (the green). User saves restored byte-identical.
+- **C4 left for the resumed session**: `STYLE_BY_BIOME`, palette per bake, roof tones, yard props, lazy `ensureBuildingTexture`, the 12-cottage dev helper, the `bld_` count, and the card's other 2 screenshots (styles; the docks). The painters read `VL` (`VillageLook` in `art/buildings.ts`), which C4 sets per bake; everything else still uses the `const` palette.
+- Trips: the green's granary sits outside the palisade, farm1 inside: with the West wall built, farm1's haulers still pick it (straight-line reach) and walk round by the West Gate. Mill rounding is per delivery (±0.5 of ~18). `waves.skipToDay` from the warning leaves `phase` as `warning` (harness only).
+- For S20: every cost past Lv.1, the market's 3 goods a coin, chapel mend 2/4 hp/s.
 
 ### S13 · Fish and trade: done (2026-09-25)
 - C1+C2 (`e08d5a6`, one commit; a cut-off session never logged it): `world/fish.ts` `placeFish` puts shoals on water/sea cells (never a deck), each with a bank gather point `gx, gy` reachable from its fishery; every node has `gx, gy`. `NODE_DEFS.fish` (food), `fishery` (3 levels, 100c 80w, the farm's rates and hp), `fisher` crew (a farmer's numbers, `fishes: true`); fish fields and fishery pads joined the game.
@@ -45,13 +56,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - No blueprint moves, no new open decisions.
 
 ### S11 · Outposts and waystones: done (2026-09-24)
-- C1: `outpost` building (150c 100w; Lv.2 300c 150 stone, 800 → 1200 hp): log blockhouse, lantern pole, standing stone; `ws_stone` for the lone stones. The 17 outpost pads left `FUTURE_PADS`. `dropoffFor` = depot or nearest standing outpost by path (cached per 256 px block). The hero banks the pack at an outpost.
-- C2: `scene.respawnPoint()`; outposts clear ~600 px of fog; Lv.2 heals 5/s within 220 px while no enemy is within 420 (`OUTPOST.heal`, for S14).
-- C3: `Waystones` (`scene.waystones`, save `waystones`), travel list `ui/TravelList.ts` in `UIScene` (**S12 replaces it**; see CONTRACTS §S11). Harness `H.stones()`, `H.travel()`.
-- Verify (harness, one run, 294×714 pane): lumber2's crew dropped at the depot (5120, 3344) before `outDowns`, at `outDowns` (5000, 1514) after, 8 deliveries in 60 s. Night: outDowns → wsIsle refused ("Night: only the Hall Stone"), → wsHall ok. Day: outDowns → wsHall with 4 of 4 soldiers in 500 px (a 5th at 900 px stayed). Died by outDowns: woke there; with a grunt pinned 220 px from it: woke at the hall. Save → `H.start(true)` kept `[wsHall, outDowns, wsIsle]`. User saves restored byte-identical. 3 screenshots (one over budget: the first two had the list covering the outpost, which led to the fix below).
-- Deviations: the Hall Stone starts lit (the night rush home must work before you walk past it). Respawn picks the nearest *safe* outpost, and only if nearer than the hall. "Burning" = struck in the last 6 s (`damageT`) or down. Outpost stones are named after their region. Warning (dusk) still counts as day for travel. The channel also breaks on stepping off the stone. On a narrow screen the list sets `uiBands.card` and the camera frames the hero below it, keeping 150 px, so a 714 px tall pane shows 1 row and "+k more".
-- Trips: `dropoffFor` runs a sync `findPath` on each cache miss (only once an outpost stands); cost with many crews far out is S21's. The pickup sweep (`PickupManager`) still only pulls toward the depot. Not measured: the Lv.2 art and aura in play, landscape list placement, travel with a big army.
-- No blueprint moves, no new open decisions.
+- `outpost` building, `dropoffFor` to the nearest outpost by path, `respawnPoint`, `Waystones` (save `waystones`), fog light; CONTRACTS §S11.
 
 ### S10 · Camps 2.0 and fortification lines: done (2026-09-24)
 - `CampSpec.tier/leash/wakeRadius/siegeRadius/boss`, patrols and stand-in bosses (`CampManager.spawnGuard`, **S17 swaps them**), `CausewayFire`, every `WALLS` line laid, `buildings.lineComplete(id)`; save `campGuards`.
