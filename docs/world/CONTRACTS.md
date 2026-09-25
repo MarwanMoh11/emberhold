@@ -188,7 +188,7 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - `CampSpec` adds `tier: CampTier` (`'warcamp' | 'stronghold' | 'fortress'`), `leash` (`CAMP_LEASH` 700), `wakeRadius` (`CAMP_WAKE` 900), `siegeRadius` (`CAMP_SIEGE` 600), `boss?` (blueprint key). `WAKE_RADIUS` = `CAMP_WAKE`.
 - `Enemy.home: CampHome { id, x, y, leash, siege } | null` (patrols and guards), `returning`, `wanderX/Y/T`, `guard` (skipped by `clearWalkers`), `shielded` (`applyDamage` and burn ticks do nothing; `damageEnemy` pops WARDED), `path/pathX/pathY/pathI`. A patrol targets the hero within its leash and 520 px, allies inside the leash, else (melee only) `nearestStructure(camp, siege)`; with nothing, it strolls inside 0.45 × leash; past leash + 60 it walks home. No line of sight: `nav.requestPath`, never the hall field.
 - `CampManager`: `CampRec.patrols` (≤ 2 × `spawns.count`), `CampRec.guards`, `CampRec.home`; `guardIds(spec)` (`['boss']` for a stronghold with a boss, `brazier0..2` for the fortress), `guardsUp(id)`, `guardsDown: Set<'${campId}.${guardId}'>`, `guardsJSON()`, `load(burned, awake?, guardsDown?)`. `BRAZIERS { count 3, ring 260, hp 2000 }`; `STAND_IN { hp ×8, dmg ×1.6, leash 420, dy 90 }`; `bossName(key)`.
-  - **S17 swap point:** `CampManager.spawnGuard`, the `gid === 'boss'` branch: it spawns `'elite'` with a renamed def at `(camp.x, camp.y + 90)`. Spawn the boss's own `EnemyKey` there instead; keep `e.guard = true` and `e.home`.
+  - **Swapped in S17:** `spawnGuard` stands `spec.boss` (its own `EnemyKey`) at `(camp.x, camp.y + BOSS_POST.dy)`, leash `BOSS_POST.leash` 420; `STAND_IN` is gone.
 - `EnemyManager.spawn(key, x, y, hpMult?, dmgMult?, def = ENEMIES[key])`. New `EnemyKey` `'brazier'` (structure, texture `enm_brazier`).
 - Events: `camp:burned { id, tier?, boss? }` (the boss key is for S15's relic); new `crossing:opened { id }` (the HUD banners "The fire on the causeway dies.").
 - `CausewayFire` (scene field `causeway`): `sync()` at boot after load (sealed unless `campAshgate` burned), `douse()`, `lit`, `update(dt)`. `CAUSEWAY`, `CAUSEWAY_KEEPER`. `nav.setSealed` / `isSealed` are S05's.
@@ -278,13 +278,18 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S16 and S17: enemies
 
-*Status: S16 landed (walkers); S17 (bosses) planned.*
+*Status: S16 landed (walkers); S17 landed (bosses, the finale). Kits in [src/systems/bosses.ts](../../src/systems/bosses.ts) (pure) and [src/systems/BossKits.ts](../../src/systems/BossKits.ts); art in [src/art/bosses.ts](../../src/art/bosses.ts).*
 
 - `EnemyKey` gains the walkers `'bogWretch' | 'thornling' | 'ashPriest' | 'cinderHound'` (S16), and the bosses `'gallowsKnight' | 'thornmother' | 'seamOverseer' | 'stairwarden'` (S17).
 - `EnemyDef` (S16) gains `slows { mult, seconds }`, `pack`, `deathFx: 'splinters'`, `deathPatch { radius, dps, seconds }`, `projectileTex/Tint`, and `aura.heal` (hp/s to the others) / `aura.tint`.
 - `systems/walkers.ts` (pure): `Slow`, `noSlow`, `applySlow(s, mult, sec)` (never stacks: strongest holds, clock refreshes), `tickSlow`, `slowMult`; `mergeAura(fx, src, self)` (each effect takes the strongest source; no self-heal), `auraHealed`; `WALKER_MIX`, `mixHand(hand, {own, region, tier}, campMix, packs)`.
 - `Player.slow`, `Soldier.slow` (a `Slow`); `Enemy.auraHeal`. `EnemyManager.addPatch(x, y, deathPatch)`, `enemies.patches` (hound embers, 0.5 s bites on the hero and soldiers).
 - Camp spawns are the real keys: campDrowned `bogWretch`, campThornmother `thornling` (5 a band), campStairwarden `ashPriest`, campForges `cinderHound`. Textures `enm_<key>`.
+- S17 bosses (`boss: true`): gallowsKnight 3500, thornmother 3000, seamOverseer 4200 (range 180, aura speed ×1.2 at 280), stairwarden 5000. `bosses.ts`: `STRONGHOLD_BOSSES`, `isStrongholdBoss`, `BOSS_POST { dy 90, leash 420 }`, `BOSS_BAR_RANGE` 1100, `KITS` (S20's numbers), `crossed(prev, now, at)`, `due(s, dt, every)`, `newBinding / tickBinding(b, alive, dt) / wardenImmune(alive)`, `nearSegment`, `inArc`, `KitState`, `newKit`.
+- `Enemy.kit: KitState | null`; `bossAttack` adds `'cleave' | 'rootLash' | 'whipcrack' | 'bash'`. `enemies.kits: BossKits` (`handles/tick/choose/release/onStrike`), `enemies.telegraphCharge(e)` (the warlord's, shared). Summons take the boss's `home`; bound priests are `guard`s.
+- A boss with a `home` takes the HUD bar only within `BOSS_BAR_RANGE` of the hero. `CampManager.bossHp: Map<bossKey, hp>` (hurt standing bosses; saved in `campHealth` under the key). `CombatSystem.god` (dev).
+- `Relics` also grants `BOSS_RELICS[key]` on `enemy:killed` with `boss` (the camp's burning still grants too).
+- The finale: `onCauseway(x, y)` in `CausewayFire.ts`; `GameScene.updateFinale` raises the Regent at `THRONE` (guard, home `throne`, leash 820) once the causeway is unsealed and the hero stands on it; risen = `quests.finalBossHp > 0` after load. `ApproachWorld.ended?()` (GameScene: `quests.finalBossDefeated`): `muster` is null for every non-raid approach. `QuestManager.stampVictory()` on her fall emits `campaign:complete` once.
 
 ## S18: campaign
 
@@ -312,6 +317,7 @@ Each session that adds persistent state lists its field here: the owner, then a 
 | `regions` | S04, S08 | unchanged shape; S08 owns the rules (`RegionManager.toJSON`, in `REGIONS` order) |
 | `campAwake` | S08 | `string[]` of camp ids awake and standing (optional; every id in `CAMPS`). Load also wakes any camp with a `campHealth` entry |
 | `buildings[].padId` | S09b | wall pieces are `${line}.${k}` (`palisade.0`–`palisade.87`), gates their blueprint ids. Old `wall\d+` still validates; on load each new palisade piece the save does not name takes the level and hp of the nearest old pad within 72 px (128 px within 130 px of a gate). The next save writes the new ids |
+| `campHealth` | S04, S17 | `Record<id, hp>`: camp ids (a standing camp's hp) and, from S17, stronghold boss keys (a hurt boss's hp). Validated against `CAMPS` ids and `boss` keys |
 | `campGuards` | S10 | `string[]` of fallen camp guards, `${campId}.boss` or `${campId}.brazier${k}` (optional; ≤ 64; camp ids from `CAMPS`). Guards not listed respawn at full hp on an awake camp |
 | `waystones` | S11 | `string[]` of lit waystone ids: outpost pad ids, `wsHall`, `wsIsle` (optional; ≤ 64; unknown ids refuse the save). `wsHall` is lit whether listed or not |
 | `pois` | S14 | `string[]` of done POI ids (optional; ≤ `POIS.length`; unknown ids refuse the save). Seen is not saved: it is rebuilt from `exploredFog` |

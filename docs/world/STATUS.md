@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S17** ([card](sessions/S17-bosses.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S18** ([card](sessions/S18-campaign.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -27,6 +27,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S17 · Bosses and the finale: done (2026-09-25)
+- C1 (`67220cc`) kits, C2 (`cc4b308`) art, C3 (`76adce6`) finale. Real bosses stand at the strongholds (S10's elite stand-ins gone): gallowsKnight 3500 hp / 30 dmg (every swing cleaves ±66°; telegraphed cleave 150 px ×1.6; 4 grunts at 50%, once), thornmother 3000 / 22, speed 14 (5 thornlings every 6 s, cap 15; root lash 460×64 px ×1.5 + snare ×0.4 1.4 s), seamOverseer 4200 / 24 (whip 180 px, aura +20% speed at 280; whipcrack 180 px ×1.3), stairwarden 5000 / 34 (immune while a bound ash priest lives; the pair rises once, 12 s after the last falls; charge from >180 px, shield bash 120 px ×1.2 up close). All numbers in `KITS` (`systems/bosses.ts`) for S20. Every boss keeps the generic ENRAGED flip at 50%.
+- Boss hp persists in `campHealth` under the boss key; the relic drops on the boss's fall (camp burning still grants). The HUD bar takes a boss at its post only within 1100 px of the hero.
+- Finale: Ashgate's burning no longer summons the Regent. She rises at `THRONE` when the hero first stands on the unsealed causeway, leashed to the island (820 px), a guard; a reload stands her again with her hp. Her fall: "The maws close", every main approach ends (raids still muster), the victory card plays (`stampVictory`), then free play.
+- Verify (harness, one run each): `H.boss` on all four: bar on, camp warded then open, kit move seen (cleave, root lash, whipcrack; bash, and a charge from 300 px), hanged rose, packs 5 → 10 by 8 s, warden 5000 → 5000 while bound, 4500 once broken, rebound 2 after 13 s, not after; relics gallowsBell, thornCrown + heartOakSeed, overseersLash, wardensAegis. `H.regent`: sealed, hero stopped at y 7473; after the burn she rose (hp 9400, bar); fell → `defeated`, live approaches [] (was south), tonight empty, victory card open. Reload: knight 1900 and Regent 6400 hp kept. 2 screenshots (gallery, Regent risen; the second a stale frame, state checked in JSON). User saves restored byte-identical.
+- Deviations: the Regent's leash and a risen-flag derived from `finalBossHp` (no new save field). The warden's binding resets on reload (priests rise again). The warden's shield bash is not in the design (it gave the charge a set-up in melee). Relic on the boss's fall, not only the camp's burning. Maws have no sprite, so "closing" is logic and a banner.
+- Trips: the victory card pauses the Game scene, so pump nothing after `H.regent` without closing it (`H.ui().closeScreen()`). Unclaimed ground's soft barrier walks the hero out of any fight there; `H.boss`/`H.regent` claim the region first.
+- Not measured: fights without god mode, boss damage vs a real army, the knight's cleave on soldiers, art at night. No blueprint moves, no new open decisions.
+
 ### S16 · New walkers: done (2026-09-25)
 - C1 (`3d77721`) defs and behaviours, C2 (`c519264`) art, C3 (`9425f46`) wiring. bogWretch (hits slow the hero and soldiers to ×0.7 for 1.5 s), thornling (pack 5, splinter burst), ashPriest (ranged 200, aura 220 px: +25% dmg, 10 hp/s to the others), cinderHound (3 s burning patch, 56 px, 14 dps). Pure rules in `systems/walkers.ts`; API in CONTRACTS §S16.
 - Blueprint placeholders resolved (campDrowned, campThornmother, campStairwarden, campForges); `resolveSpawnKey` removed; tests reject any bracket.
@@ -46,13 +55,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - Not measured: guardian fights by tier, grave-goods values in play, the strip on a landscape phone (compact layout computed, not shot). No blueprint moves, no new open decisions.
 
 ### S14 · Points of interest I: done (2026-09-25)
-- C1–C3 in one commit (`66fd6fd`) plus the lore page's placement. `PoiManager` (`scene.pois`): seen when fog clears within `POI.seeR` 420 (hook in `RegionManager.eraseFog`; landmarks also within 1300 of the hero), done on use, save `pois` (done ids; seen rebuilt from fog). `Modifiers` (`scene.mods`). Atlas glyph per kind; names under seen landmarks and shrines. Deeds a9 Loremaster, a10 Pilgrim. Art in `art/pois.ts`. Harness `H.pois()`, `H.poi(id, s)`.
-- **Wired stats:** food.yield (farm, fishery) and wood.yield (lumber camp) in `haulMultiplier` after mill × granary, and in `incomePerSecond`; trade.income (`tradeIncome`); wall.hp (`Building.hpMod`, set by GameScene; `refreshWallHp` on restore); hero.xp; hero.regen; soldier.hp (new recruits; standing soldiers bumped on restore); infirmary.heal; outpost.heal. **Pending for S15:** hero.pierce, soldier.damage, army.speed, rally.cooldown, worker.speed, worker.gather, pack.size, tower.range.
-- Verify (harness, one run): Harvest restored by standing (drip): farm1 income 3.444 → 3.961 food/s (×1.150), haul ×1.00 → ×1.15. survHollow locked (`campRotwood`) until the burn, then +6 pop; survFerrow put 2 free farmers on farm1; survSalt waited on the Light. Cache, lore, landmark (Vents), Springs, Light all done; saved and reloaded: same counts, 3 mods, pop +10, trade ×1.2. 2 screenshots (lore page; Light restored); user saves restored byte-identical.
-- Deviations: a landmark is **done** when the hero reaches its foot (220 px) — the card wants every kind doable. Lore: stand 1 s (05), the page stays 5.5 s (a 1 s toast is unreadable). **survSalt's "free trader"**: no trader crew exists, so the lamp-keeper takes a crew slot (fishery first). Free crew need a camp with room, else they are lost (popup). Kettle Springs adds the infirmary Lv.1 heal (9) to every outpost, Lv.1 included. A half-paid shrine refunds on stepping off; its drip (~1.5 s) is not saved.
-- Barrows and relics: tracked (seen, atlas glyph) but no sprite or verb; S15 adds them to `LIVE` in PoiManager.
-- Trips: right after `H.start`, the Game scene can sit paused (the hidden pane's auto-pause), so `H.poi` pumps nothing; unpause (`H.ui().togglePause()`) or call `gs().pois.update(dt)`. Card's third screenshot (a landmark through the fog) not taken (README cap): the silhouette's state was checked in JSON; the portrait pane's view (~900 × 630 world px) barely holds a fogged landmark, since the hero's brush clears ~480 px.
-- Not measured: delivery counts with the shrine (60 s windows crossed dusk), loot per tier in play, landmark art at night, the coast reveal on the atlas by eye. No blueprint moves, no new open decisions.
+- `PoiManager` (`scene.pois`, save `pois`), `Modifiers` (`scene.mods`), caches, lore, shrines, landmarks, survivors; deeds a9, a10; CONTRACTS §S14.
 
 ### S13c · A settled country: done (2026-09-25)
 - Pads 101 → 244 via `render.mjs --free` (`freeSpots`), villages at the claim stones, lint 0/0; `H.buildAll(lvl)`; texture cap 160 holds with 0 fallbacks.
