@@ -749,6 +749,7 @@ export class GameScene extends Phaser.Scene {
     this.buildings.update(dt)
     this.workers.update(dt)
     this.army.update(dt)
+    this.buildings.auras(dt)
     this.enemies.update(dt)
     this.camps.update(dt)
     this.causeway.update(dt)

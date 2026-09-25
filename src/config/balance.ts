@@ -111,6 +111,40 @@ export const WAYSTONE = {
   hallStone: 'wsHall',
 }
 
+/**
+ * Village buildings (S13b, design 05 §New building types): what does not
+ * change with a building's level. Per-level numbers are the defs' stats in
+ * config/buildings.ts. First pass; S20 tunes them.
+ */
+export const VILLAGE = {
+  /**
+   * Population from every cottage together, at most. Open question to the
+   * human (2026-09-25); the design's default is no cap. A number here caps it.
+   */
+  cottagePopMax: Infinity,
+  market: {
+    /**
+     * Whether markets sell surplus for coins at all. Open question to the
+     * human (2026-09-25); the design's default is yes. `false` idles them.
+     */
+    sells: true,
+    /** food and wood are sold only above this much of each in store */
+    floor: 300,
+    /** goods sold for each coin earned */
+    goodsPerCoin: 3,
+    /** +this per cottage or longhouse within `homeRadius`, at most `homeMax` */
+    perHome: 0.05,
+    homeMax: 0.5,
+    homeRadius: 600,
+  },
+  /** every chapel's `blessing` on the night's reward together, at most */
+  chapel: { blessingMax: 0.5 },
+  /** seconds earlier tonight's warning comes when a route passes within a post's light */
+  watchPost: { warnEarly: 4 },
+  /** worker slots docks lend each fishery within `slotRadius` (docks don't stack) */
+  docks: { slots: 1, slotRadius: 800 },
+}
+
 export const POP = {
   base: 8,
   perHouse: 6,

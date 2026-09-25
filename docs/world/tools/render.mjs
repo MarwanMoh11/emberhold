@@ -46,8 +46,8 @@ export const RULES = {
 }
 
 const PRODUCTION = new Set(['lumberCamp', 'farm', 'quarry', 'mine', 'fishery', 'tradingPost'])
-const DEFENCE = new Set(['watchtower', 'cannonTower'])
-const NEEDS = { lumberCamp: 'tree', quarry: 'rock', mine: 'ore', crystalDelve: 'crystal', fishery: 'fish' }
+const DEFENCE = new Set(['watchtower', 'cannonTower', 'watchPost'])
+const NEEDS = { lumberCamp: 'tree', quarry: 'rock', mine: 'ore', crystalDelve: 'crystal', fishery: 'fish', docks: 'fish' }
 
 // ---------------------------------------------------------------------------
 // Loading

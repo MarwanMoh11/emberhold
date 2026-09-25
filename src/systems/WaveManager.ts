@@ -1,7 +1,7 @@
 import { waveDef, directorAdjust, type WaveDef } from '../config/waves'
 import { WORLD } from '../config/world'
 import type { Pt } from '../config/world/blueprint'
-import { DAYNIGHT, dayLength } from '../config/balance'
+import { DAYNIGHT, VILLAGE, dayLength } from '../config/balance'
 import { PAL } from '../config/palette'
 import { rr, ri, shuffled, clamp } from '../core/math'
 import { ENEMIES, type EnemyKey } from '../config/enemies'
@@ -54,6 +54,8 @@ export class WaveManager {
   /** tonight's approaches: chosen at the warning, re-resolved at dusk */
   plan: NightPlan | null = null
   tonight: TonightRoute[] = []
+  /** whether a watch post covers tonight's routes, asked once as the early window opens (S13b); null until then */
+  private watched: boolean | null = null
 
   private queue: SpawnOrder[] = []
   private queueHead = 0
@@ -96,9 +98,16 @@ export class WaveManager {
     this.phaseT -= dt
 
     switch (this.phase) {
-      case 'day':
-        if (this.phaseT <= DAYNIGHT.warningSeconds) this.beginWarning()
+      case 'day': {
+        // a watch post over tonight's road sounds the warning early (S13b)
+        const early = VILLAGE.watchPost.warnEarly
+        if (this.watched === null && this.phaseT <= DAYNIGHT.warningSeconds + early) {
+          const plan = this.scene.approaches.tonight(this.wave + 1, this.peekNext().approaches)
+          this.watched = this.scene.buildings.watchCovers(this.routesFor(plan).map(t => t.route))
+        }
+        if (this.phaseT <= DAYNIGHT.warningSeconds || this.watched) this.beginWarning(this.watched ? Math.max(0, this.phaseT - DAYNIGHT.warningSeconds) : 0)
         break
+      }
       case 'warning':
         if (this.phaseT <= 0) this.beginNight()
         break
@@ -120,14 +129,15 @@ export class WaveManager {
     // warning, and the night itself is dark enough that the hearths matter.
     const dusk = DAYNIGHT.warningSeconds + 10
     const target = this.phase === 'night' ? 1
-      : this.phase === 'warning' ? 0.45 + 0.35 * (1 - this.phaseT / DAYNIGHT.warningSeconds)
+      : this.phase === 'warning' ? 0.45 + 0.35 * Math.max(0, 1 - this.phaseT / DAYNIGHT.warningSeconds)
         : this.phaseT < dusk ? 0.45 * (1 - (this.phaseT - DAYNIGHT.warningSeconds) / 10) : 0
     this.darkness += (target - this.darkness) * Math.min(1, dt * 1.2)
   }
 
-  private beginWarning() {
+  private beginWarning(extra = 0) {
     this.phase = 'warning'
-    this.phaseT = DAYNIGHT.warningSeconds
+    this.phaseT = DAYNIGHT.warningSeconds + extra
+    this.watched = null
     const def = this.peekNext()
     const plan = this.scene.approaches.tonight(this.wave + 1, def.approaches)
     this.plan = plan
@@ -311,7 +321,8 @@ export class WaveManager {
     this.fighting = false
     this.wavesCleared++
     this.bannerText = ''
-    const reward = 40 + this.wave * 25
+    // each standing chapel blesses the reward, +50% at most in all (S13b)
+    const reward = Math.round((40 + this.wave * 25) * this.scene.buildings.nightBlessing())
     this.scene.res.addStored('coins', reward, false)
     this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 120, `NIGHT ${this.wave} HELD`, PAL.good, 30)
     this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 84, `+${reward} coins`, PAL.coins, 18)

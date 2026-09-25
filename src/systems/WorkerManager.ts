@@ -162,7 +162,8 @@ export class WorkerManager {
       if (w.gatherT >= w.def.gatherTime / rate) {
         w.gatherT = 0
         const yieldPer = NODE_YIELD[w.carryType] ?? 6
-        const got = Math.max(1, Math.round(yieldPer * (w.def.yield / 6) * rate))
+        const got = Math.max(1, Math.round(yieldPer * (w.def.yield / 6) * rate
+          * scene.buildings.haulMultiplier(home, w.carryType, home!.x, home!.y)))
         scene.res.addStored(w.carryType, got)
         scene.fx.damage(dropX, dropY - 40, got, false, '#9ff07a')
       }
@@ -296,7 +297,7 @@ export class WorkerManager {
             break
           }
           case 'carry': {
-            const drop = scene.buildings.dropoffFor(w.x, w.y)
+            const drop = scene.buildings.dropoffFor(w.x, w.y, w.carryType)
             tx = drop.x; ty = drop.y
             if (Math.hypot(tx - w.x, ty - w.y) < 44) w.state = 'deposit'
             break
@@ -309,8 +310,10 @@ export class WorkerManager {
             break
           case 'deposit': {
             moving = false
-            const drop = scene.buildings.dropoffFor(w.x, w.y)
-            const added = scene.res.addStored(w.carryType, w.carrying)
+            const drop = scene.buildings.dropoffFor(w.x, w.y, w.carryType)
+            // a mill by the camp and a Lv.2 granary at the drop add to the haul (S13b)
+            const haul = Math.round(w.carrying * scene.buildings.haulMultiplier(home, w.carryType, w.x, w.y))
+            const added = scene.res.addStored(w.carryType, haul)
             if (added > 0) {
               scene.fx.flyResource(w.x, w.y - 18, drop.x, drop.y - 22, TEX[w.carryType], 0, undefined, 0.8)
               scene.fx.damage(drop.x, drop.y - 40, added, false, '#9ff07a')
@@ -489,10 +492,11 @@ export class WorkerManager {
       if (!home || home.level === 0) continue
       const nodeYield = NODE_YIELD[w.carryType] ?? 6
       const rate = (home.stats.rate ?? 1) * prod
+      const mill = this.scene.buildings.localBonus('mill', home.x, home.y)
       const perCycle = nodeYield * (w.def.yield / 6) * rate
       const cycle = w.def.gatherTime / rate
       // 0.62 accounts for walking between the node and the stockpile
-      const perSec = (perCycle / cycle) * 0.62
+      const perSec = (perCycle / cycle) * 0.62 * (home.key === 'farm' || home.key === 'lumberCamp' ? mill : 1)
       out[w.carryType] = (out[w.carryType] ?? 0) + perSec
     }
     return out

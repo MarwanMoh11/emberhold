@@ -565,5 +565,13 @@ export function installHarness(game: Phaser.Game) {
   }
   const mini = () => ui().minimap.inspect()
 
-  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini }
+  /** Set a pad's level outright through the loader (S13b): raises or razes, full hp. */
+  const lvl = (id: string, level: number) => {
+    gs().buildings.load([{ padId: id, level, hp: 1e9, progress: {}, peakWorkers: 0 }])
+    pump(0.05)
+    const b = pad(id)
+    return b ? `${id}: ${b.key} Lv.${b.level}` : `no pad "${id}"`
+  }
+
+  ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl }
 }

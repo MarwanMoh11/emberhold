@@ -441,6 +441,7 @@ export type PadKey =
   | 'blacksmith' | 'workshop' | 'healingTent'
   | 'watchtower' | 'cannonTower'
   | 'outpost' | 'fishery' | 'tradingPost'
+  | 'cottage' | 'granary' | 'mill' | 'market' | 'chapel' | 'watchPost' | 'docks'
 
 export interface PadBP {
   id: string
@@ -480,6 +481,12 @@ export const PADS: PadBP[] = [
   P('bombardE', 'cannonTower', 5610, 3470, 'hold', 2),
   P('bridgeTowerW', 'watchtower', 4930, 3830, 'hold', 2, 'Behind the bridgehead wall, crossing fire over the landing.'),
   P('bridgeTowerE', 'watchtower', 5310, 3830, 'hold', 2, 'Behind the bridgehead wall, crossing fire over the landing.'),
+  // The West Gate green (S13b): the hold's market square, where the West Road and the Wood Road part.
+  P('market1', 'market', 4300, 3120, 'hold', 1, 'On the green between the two western roads, the first thing a caravan meets.'),
+  P('chapel1', 'chapel', 4190, 2960, 'hold', 1, 'At the green\'s north end, its bell heard over the Wood Road.'),
+  P('cottage1', 'cottage', 4170, 3240, 'hold', 1, 'The first home outside the palisade, facing the market.'),
+  P('granary1', 'granary', 4380, 3420, 'hold', 1, 'Below the West Road, a short carry from the farm under the wall.'),
+  P('mill1', 'mill', 4410, 3580, 'hold', 1, 'On the Rise\'s south-west shoulder, catching the river wind; the hold farm is in its reach.'),
 
   // ---- the Barrow Downs ---------------------------------------------------------------
   P('outDowns', 'outpost', 5000, 1500, 'downs', 1, 'Kingsbarrow Cross, where the King\'s Road meets the Highroad.'),
@@ -487,6 +494,7 @@ export const PADS: PadBP[] = [
   P('farm3', 'farm', 5500, 1780, 'downs', 1, 'Deep loam east of the King\'s Road.'),
   P('lumber2', 'lumberCamp', 4180, 1180, 'downs', 1, 'On the Barrow Copse, facing the open downs.'),
   P('towerDowns', 'watchtower', 5250, 1300, 'downs', 2, 'Watches the Highroad junction for the north-east raids.'),
+  P('watchDowns', 'watchPost', 5130, 2050, 'downs', 1, 'A lantern on the King\'s Road, halfway from the North Gate to the barrow country.'),
 
   // ---- Whisperwood ------------------------------------------------------------------------
   P('outWood', 'outpost', 3300, 2150, 'whisperwood', 1, 'Woodcutters\' Rest, a clearing on the Wood Road.'),
@@ -502,6 +510,7 @@ export const PADS: PadBP[] = [
   P('fishery1', 'fishery', 3700, 4270, 'hollow', 2, 'On the Emberflow\'s bank below the village.'),
   P('towerMillW', 'watchtower', 2960, 4300, 'hollow', 2, 'Over Millford: the west approach wades into it.'),
   P('towerMillE', 'watchtower', 3340, 4280, 'hollow', 2, 'Over Millford.'),
+  P('docks1', 'docks', 3900, 4230, 'hollow', 2, 'Moorings on the Emberflow beside the fishery, where the bank shelves into the shoals.'),
 
   // ---- Greyfall Scarp -----------------------------------------------------------------------
   P('outGreyfall', 'outpost', 6800, 2650, 'greyfall', 2, 'Scarpfoot, where the East Road turns for the gorge.'),
