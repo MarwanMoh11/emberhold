@@ -313,6 +313,16 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - `GAME_VERSION = 'Beta 1'` (`config/version.ts`): the only place the build's name lives. The title shows it top right; every save writes `meta: { version }`.
 - v1: no key named `*.v1` for saves is ever read, written or deleted (settings stay `emberhold.settings.v1`).
 
+## S20: balance
+
+*Status: landed (S20). [src/config/waves.ts](../../src/config/waves.ts), [src/config/balance.ts](../../src/config/balance.ts), [src/dev/probe.ts](../../src/dev/probe.ts).*
+
+- `WAVE_PACE = 1.5`; `waveDef(n)`: night n threatens like first-pass night n / 1.5 (scripted `WAVES` land on 1, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18; between them counts are interpolated, no banner or boss; procedural past 18, a boss every 8 nights, a Warlord every 16).
+- `NIGHT_REWARD { base, perWave }`, `nightReward(wave) → coins` before chapels bless it; `WaveManager.endNight` reads it.
+- `OPENS` (8 / 12 / 17) and `frontsFor` (1 / 2 / 3 / all from 1 / 8 / 15 / 30) in `systems/Approaches.ts`.
+- `VILLAGE.cottagePopMax = 150`, `VILLAGE.market.sells = true`, `goodsPerCoin = 4`.
+- Dev: `H.probe.start(opts?) / run(untilWave, wallMs) / report()`; `H.pump(s, stepMs, headless)` steps without drawing. `run` returns `{ paused }` if the Game scene stops (the hall's fall).
+
 ## Save fields
 
 `SaveBlobV2` in `SaveManager.ts`, consolidated by S19. "Ids" means unknown ones are dropped by `tolerate` (one warning), not refused; a wrong type or range still refuses the whole save. A session that adds persistent state adds a row here, the field to `SaveBlobV2`, `validShape`, `tolerate` (if it holds ids) and `load`, a row in design 07 §Schema, and a round trip in `tests/save-portability.test.mjs`.

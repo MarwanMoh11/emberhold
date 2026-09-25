@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S20** ([card](sessions/S20-balance.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S21** ([card](sessions/S21-performance.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -15,16 +15,25 @@ These bind every session. Add a line when one is made, with the date and who dec
 - 2026-09-24 (human): slow the macro pace to about 1.5× (acts end near waves 8, 18, 33 and 45; the Regent near wave 50, about 2.5–3 h of game clock), but keep the micro loop tight: a reward every 30–60 s, a quest or milestone every 3–5 min, and every night a clear win with a reward. Targets are in [01 §Pacing](design/01-world.md#pacing-targets); S18 and S20 honour them.
 - 2026-09-24 (human): by the endgame every region, the hold included, is dense with buildings and reads as one settled country. Seven village building types, regional styles, and pads from 94 to ~238 ([05 §A settled country](design/05-content.md#a-settled-country-s13b-s13c)); S13c may add pads, and `world:lint` must stay clean.
 - 2026-09-25 (human): **let go of v1 completely.** v2 is the main game. There is no migration, no Veteran's charter and no "old frontier": v2 ignores every v1 key (it never reads, migrates or deletes them) and every player starts fresh. S19 drops design 07's migration options and keeps the schema consolidation and portability. When the work is complete, the game ships as **Beta 1**: a version label on the title screen and in the save's metadata, landed by S19 and shipped by S22. **Landed (S19):** v1 keys untouched (tested), design 07 §Migration closed, `GAME_VERSION` on the title and in `meta.version`.
-- 2026-09-25 (human): run length stays as landed: more waves, the Regent near wave 50, and `day = 60 + 10 × claimed` capped at 180 s. Longer days were declined.
-- 2026-09-25 (human): worker drop-off (depot, outpost or granary), the cottage population cap (`VILLAGE.cottagePopMax`, none today) and markets selling surplus (`VILLAGE.market.sells`, on today) are **S20's call**. Choose whatever balances best against the pacing decision above, and record the choice in S20's entry.
+- 2026-09-25 (human): run length stays as landed: more waves, the Regent near wave 50, and `day = 60 + 10 × claimed` capped at 180 s. Longer days were declined. This settles S20's C3 (day length): no new formula proposed.
+- 2026-09-25 (human): worker drop-off (depot, outpost or granary), the cottage population cap (`VILLAGE.cottagePopMax`, none today) and markets selling surplus (`VILLAGE.market.sells`, on today) are **S20's call**. Choose whatever balances best against the pacing decision above, and record the choice in S20's entry. **Landed (S20):** depot/outpost/granary drop-off kept; `cottagePopMax` 150; markets sell, as a trickle.
 
 ## Open decisions
 
 These need the human. Don't guess them. Use the default and flag it in your handoff.
 
-_(none open)_
+- **Survive gates in the chain** (raised by S20): b8 "survive night 14" and c8 "survive night 30" leave the probe 13 min without a quest or milestone (01 wants ≤ 6). Options: keep them (POIs and deeds fill the gap in real play), lower them, or swap them for goals that do something. Default (landed): keep.
 
 ## Log
+
+### S20 · Balance and pacing: done (2026-09-25)
+- C1 (`3f3e090`) `H.probe` (`src/dev/probe.ts`): a quest-following player (pays costs, pop caps; walking shortcut, camps burn by army strength), per-wave rows, reward gaps per act; the harness pumps headless (~50× real time). C2 (`c8a4cf6`) the tune, C3 settled by the human's 2026-09-25 decision (day formula unchanged).
+- Tuned: region and hall costs ~1.6× (downs 200 … crown 6400; hall 500 … 6700); camp hp 1.5× (rewards kept); nights stretch by `WAVE_PACE` 1.5 (night 45 = old 30; siege beast 8, Krahn 15, a boss every 8 after); `OPENS` 8/12/17; fronts 1/2/3/all from 1/8/15/30; `nightReward = 50 + 17 × wave` (config, was hardcoded 40 + 25w). Market sell 0.2/0.4/0.6 c/s at 4 goods a coin.
+- **Village calls:** drop-off stays depot / nearest outpost / granary (outposts and granaries earn their build and shorten the long hauls the slower pace makes). `cottagePopMax` 150 (binds only late; total pop ~320 < the ~340 workers where saves shed places). Markets sell (wood and food pile up by the thousand from act I; the trickle rate keeps claims paced by cost).
+- Probe, before → after (wave of claim): downs 1 → 1 (target 3), whisperwood 1 → 1 (6), hollow 1 → 2 (9), greyfall 2 → 5 (12), ferrow 4 → **14** (16 ✓), first tier-3 4 → **18** (21 ✓); act II from w2 → w2 (target w9); act III from — → **w19** (18 ✓) at 57.9 min (42: +38% ✗); the hold fell night 10 → held to 20 (hall knocked a level on 19).
+- Micro (after): reward gaps p50 1 s, p90 19 s, max 109 s ✓; every night's reward ≥ the cheapest open build (20/20) ✓; **quest/milestone drought 13 min in act II** (b8 "survive 14" waits; the probe visits no POIs) ✗.
+- Outliers for S22 / the human: (1) act I ends ~6 waves early: a1–a8 pay ~980 coins in a cascade, so early claims are instant; next lever is act I–II quest coin rewards (unchanged). (2) b8/c8 survive gates make 6+ min quest gaps (see Open decisions). (3) Nights run ~85 s, not the ~50 s design 01's clock assumes, so clock minutes run ~35% over at the right waves.
+- Not measured: waves 21–50 (acts III–V, the Regent), boss hp (`KITS` unchanged), fishery/trade yields and outpost costs (unchanged), real play time. Tests: `tests/pacing.test.mjs`; approaches and village tests follow the new numbers. No blueprint moves (costs and camp hp only).
 
 ### S19 · Save v2: done (2026-09-25)
 - C1 (`6765c87`) schema, limits, tests; C2 (`21636cb`) Beta 1 on the title, docs. **Implemented the decision: v1 let go** (no migration, charter, chest or old frontier; the card's C2 dropped). v1 keys are never read, written or deleted; a test holds it.
@@ -45,13 +54,7 @@ _(none open)_
 - Not measured: real-play pacing per act (S20), the arrow over long routes by eye, the quest log on a phone. No blueprint moves, no new open decisions.
 
 ### S17 · Bosses and the finale: done (2026-09-25)
-- C1 (`67220cc`) kits, C2 (`cc4b308`) art, C3 (`76adce6`) finale. Real bosses stand at the strongholds (S10's elite stand-ins gone): gallowsKnight 3500 hp / 30 dmg (every swing cleaves ±66°; telegraphed cleave 150 px ×1.6; 4 grunts at 50%, once), thornmother 3000 / 22, speed 14 (5 thornlings every 6 s, cap 15; root lash 460×64 px ×1.5 + snare ×0.4 1.4 s), seamOverseer 4200 / 24 (whip 180 px, aura +20% speed at 280; whipcrack 180 px ×1.3), stairwarden 5000 / 34 (immune while a bound ash priest lives; the pair rises once, 12 s after the last falls; charge from >180 px, shield bash 120 px ×1.2 up close). All numbers in `KITS` (`systems/bosses.ts`) for S20. Every boss keeps the generic ENRAGED flip at 50%.
-- Boss hp persists in `campHealth` under the boss key; the relic drops on the boss's fall (camp burning still grants). The HUD bar takes a boss at its post only within 1100 px of the hero.
-- Finale: Ashgate's burning no longer summons the Regent. She rises at `THRONE` when the hero first stands on the unsealed causeway, leashed to the island (820 px), a guard; a reload stands her again with her hp. Her fall: "The maws close", every main approach ends (raids still muster), the victory card plays (`stampVictory`), then free play.
-- Verify (harness, one run each): `H.boss` on all four: bar on, camp warded then open, kit move seen (cleave, root lash, whipcrack; bash, and a charge from 300 px), hanged rose, packs 5 → 10 by 8 s, warden 5000 → 5000 while bound, 4500 once broken, rebound 2 after 13 s, not after; relics gallowsBell, thornCrown + heartOakSeed, overseersLash, wardensAegis. `H.regent`: sealed, hero stopped at y 7473; after the burn she rose (hp 9400, bar); fell → `defeated`, live approaches [] (was south), tonight empty, victory card open. Reload: knight 1900 and Regent 6400 hp kept. 2 screenshots (gallery, Regent risen; the second a stale frame, state checked in JSON). User saves restored byte-identical.
-- Deviations: the Regent's leash and a risen-flag derived from `finalBossHp` (no new save field). The warden's binding resets on reload (priests rise again). The warden's shield bash is not in the design (it gave the charge a set-up in melee). Relic on the boss's fall, not only the camp's burning. Maws have no sprite, so "closing" is logic and a banner.
-- Trips: the victory card pauses the Game scene, so pump nothing after `H.regent` without closing it (`H.ui().closeScreen()`). Unclaimed ground's soft barrier walks the hero out of any fight there; `H.boss`/`H.regent` claim the region first.
-- Not measured: fights without god mode, boss damage vs a real army, the knight's cleave on soldiers, art at night. No blueprint moves, no new open decisions.
+- Stronghold bosses (`KITS` in `systems/bosses.ts`, hp in `campHealth`), the Regent at `THRONE` on the unsealed causeway, victory card, maws close; CONTRACTS §S16 and S17.
 
 ### S16 · New walkers: done (2026-09-25)
 - bogWretch, thornling, ashPriest, cinderHound (`systems/walkers.ts`), wave mix `WALKER_MIX`/`CAMP_MIX` for S20; overlapping auras take the strongest of each effect; CONTRACTS §S16.
