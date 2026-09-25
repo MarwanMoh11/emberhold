@@ -254,20 +254,23 @@ Each entry has a status line that reads *planned* until its session lands it; th
 
 ## S14: points of interest
 
-*Status: planned.*
+*Status: landed (S14). [src/systems/PoiManager.ts](../../src/systems/PoiManager.ts), [src/systems/Modifiers.ts](../../src/systems/Modifiers.ts), art in [src/art/pois.ts](../../src/art/pois.ts).*
 
-- `src/systems/PoiManager.ts`:
-  - `state(id) → 'unseen' | 'seen' | 'done'` and `interact(id)`.
-  - Events: `poi:seen` and `poi:done`.
-- `src/systems/Modifiers.ts`:
-  - `mods.add(sourceId, { stat, mult?, add? })` and `mods.value(stat, base)`.
-  - Stats are listed in [05-content.md §Modifiers](design/05-content.md#modifiers).
+- `scene.pois: PoiManager`: `state(id) → 'unseen' | 'seen' | 'done'`, `interact(id) → boolean` (use it now: false when done, locked, unaffordable, or a kind not in `LIVE`), `lockedBy(id) → campId | poiId | null`, `count(kind)`, `popBonus()` (added in `recomputeBonuses`), `revealAt(x, y)` (called by `RegionManager.eraseFog`), `here`, `toJSON() → string[]` (done ids, blueprint order), `load(ids?)` (silent; shrines re-register; call before `buildings.load`), `inspect()`. `LIVE` = cache, lore, shrine, survivors, landmark; **S15 adds barrow (and relic markers)**. `POI_BY_ID`, `SHRINE_MODS`, `SURVIVORS` exported.
+- Constants `POI { seeR 420, landmarkSeeR 1300, touch 50, landmarkTouch 220, loreDwell 1, loreShow 5.5, cardRange 280, cache { perTier, coins, wood, stone, metal, crystal }, coastStep 256 }` (config/balance).
+- Events: `poi:seen { id, kind }`, `poi:done { id, kind }`, `poi:lore { id, name, text }` (every read; the HUD's parchment page).
+- `scene.mods: Modifiers` (built before BuildingManager): `add(sourceId, ...mods: Mod[])` (replaces that source), `remove(id)`, `has(id)`, `value(stat, base)` = (base + Σadd) × Πmult (`mult` is a factor: +15% is 1.15), `list()`, `version`. `MOD_STATS`, `ModStat`, `Mod { stat, mult?, add? }`.
+- Wired readers: `buildings.haulMultiplier` × `buildings.yieldMod(home)` (food.yield on farm/fishery, wood.yield on lumberCamp), `tradeIncome()`, `Building.hpMod(key, hp)` static (wall.hp on wall/gate; `levelHp(lvl?)`, `buildings.refreshWallHp()`), `Player.addXp` (hero.xp), Player regen (hero.regen), `ArmyManager` spawn hpMult (soldier.hp), infirmary aura (infirmary.heal), outpost aura (outpost.heal: base `OUTPOST.heal` at Lv.2, else 0). **Unwired (S15):** hero.pierce, soldier.damage, army.speed, rally.cooldown, worker.speed, worker.gather, pack.size, tower.range.
+- `scene.openChest(x, y, regionTier?)`: with a tier, the cache table (`POI.cache`), else the wave's.
+- Deeds `a9` Loremaster (`loreRead` 12), `a10` Pilgrim (`shrinesRestored` 6) in `achievementStats()`.
+- Charts: `POI_GLYPH` draws a shape per kind; `poiState` answers from `gs.pois`. Atlas names seen landmarks and shrines; `inspect()` adds `pois`, `named`.
+- `FogMemory.anyWithin(x, y, r)`, `regions.exploredNear(x, y, r)`. Harness: `H.pois()`, `H.poi(id, seconds = 2)`.
 
 ## S15: relics
 
 *Status: planned.*
 
-- `relics.grant(id)`, `relics.has(id)` and `relics.list()`. Each relic registers its modifiers through `Modifiers`.
+- `relics.grant(id)`, `relics.has(id)` and `relics.list()`. Each relic registers its modifiers through `Modifiers` (`scene.mods.add(relicId, ...)`), and wires the readers of the stats S14 left unwired.
 
 ## S16 and S17: enemies
 
@@ -306,4 +309,5 @@ Each session that adds persistent state lists its field here: the owner, then a 
 | `buildings[].padId` | S09b | wall pieces are `${line}.${k}` (`palisade.0`–`palisade.87`), gates their blueprint ids. Old `wall\d+` still validates; on load each new palisade piece the save does not name takes the level and hp of the nearest old pad within 72 px (128 px within 130 px of a gate). The next save writes the new ids |
 | `campGuards` | S10 | `string[]` of fallen camp guards, `${campId}.boss` or `${campId}.brazier${k}` (optional; ≤ 64; camp ids from `CAMPS`). Guards not listed respawn at full hp on an awake camp |
 | `waystones` | S11 | `string[]` of lit waystone ids: outpost pad ids, `wsHall`, `wsIsle` (optional; ≤ 64; unknown ids refuse the save). `wsHall` is lit whether listed or not |
+| `pois` | S14 | `string[]` of done POI ids (optional; ≤ `POIS.length`; unknown ids refuse the save). Seen is not saved: it is rebuilt from `exploredFog` |
 | _(add rows as they land)_ | | |

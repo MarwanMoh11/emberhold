@@ -672,7 +672,8 @@ export class HUD {
       const pw = Math.min(this.W - 32, 440)
       this.loreText.setWordWrapWidth(pw - 48, true)
       const ph = Math.ceil(this.loreText.height) + 58
-      const py = Math.max(this.H * 0.2 + 44, g.uiBands.top + 56)
+      // low on the view, clear of the hero, the ribbon and the quest card
+      const py = Math.max(g.uiBands.top + 8, this.floorY() - ph - 6)
       this.lorePanel.setVisible(true).setAlpha(a).place(this.W / 2 - pw / 2, py, pw, ph)
       this.loreTitle.setVisible(true).setAlpha(a).setPosition(this.W / 2, py + 16)
       this.loreText.setVisible(true).setAlpha(a).setPosition(this.W / 2, py + 38)

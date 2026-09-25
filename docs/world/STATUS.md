@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S14** ([card](sessions/S14-poi-one.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S15** ([card](sessions/S15-poi-two.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -27,6 +27,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 
 ## Log
 
+### S14 · Points of interest I: done (2026-09-25)
+- C1–C3 in one commit (`66fd6fd`) plus the lore page's placement. `PoiManager` (`scene.pois`): seen when fog clears within `POI.seeR` 420 (hook in `RegionManager.eraseFog`; landmarks also within 1300 of the hero), done on use, save `pois` (done ids; seen rebuilt from fog). `Modifiers` (`scene.mods`). Atlas glyph per kind; names under seen landmarks and shrines. Deeds a9 Loremaster, a10 Pilgrim. Art in `art/pois.ts`. Harness `H.pois()`, `H.poi(id, s)`.
+- **Wired stats:** food.yield (farm, fishery) and wood.yield (lumber camp) in `haulMultiplier` after mill × granary, and in `incomePerSecond`; trade.income (`tradeIncome`); wall.hp (`Building.hpMod`, set by GameScene; `refreshWallHp` on restore); hero.xp; hero.regen; soldier.hp (new recruits; standing soldiers bumped on restore); infirmary.heal; outpost.heal. **Pending for S15:** hero.pierce, soldier.damage, army.speed, rally.cooldown, worker.speed, worker.gather, pack.size, tower.range.
+- Verify (harness, one run): Harvest restored by standing (drip): farm1 income 3.444 → 3.961 food/s (×1.150), haul ×1.00 → ×1.15. survHollow locked (`campRotwood`) until the burn, then +6 pop; survFerrow put 2 free farmers on farm1; survSalt waited on the Light. Cache, lore, landmark (Vents), Springs, Light all done; saved and reloaded: same counts, 3 mods, pop +10, trade ×1.2. 2 screenshots (lore page; Light restored); user saves restored byte-identical.
+- Deviations: a landmark is **done** when the hero reaches its foot (220 px) — the card wants every kind doable. Lore: stand 1 s (05), the page stays 5.5 s (a 1 s toast is unreadable). **survSalt's "free trader"**: no trader crew exists, so the lamp-keeper takes a crew slot (fishery first). Free crew need a camp with room, else they are lost (popup). Kettle Springs adds the infirmary Lv.1 heal (9) to every outpost, Lv.1 included. A half-paid shrine refunds on stepping off; its drip (~1.5 s) is not saved.
+- Barrows and relics: tracked (seen, atlas glyph) but no sprite or verb; S15 adds them to `LIVE` in PoiManager.
+- Trips: right after `H.start`, the Game scene can sit paused (the hidden pane's auto-pause), so `H.poi` pumps nothing; unpause (`H.ui().togglePause()`) or call `gs().pois.update(dt)`. Card's third screenshot (a landmark through the fog) not taken (README cap): the silhouette's state was checked in JSON; the portrait pane's view (~900 × 630 world px) barely holds a fogged landmark, since the hero's brush clears ~480 px.
+- Not measured: delivery counts with the shrine (60 s windows crossed dusk), loot per tier in play, landmark art at night, the coast reveal on the atlas by eye. No blueprint moves, no new open decisions.
+
 ### S13c · A settled country: done (2026-09-25)
 - C1 (`7b2779f`): `render.mjs --free <region> [--near] [--key] [--n]` (`freeSpots`): greedy spots passing every pad rule, plus road 70 px, claim stones 120 px and camp siege 600 px (CONTRACTS §S13b). C2–C4: pads 101 → **244**, every one from `--free`, lint 0/0. Built vs 05: hold 34/34, downs 16/16, whisperwood 12/12, hollow 17/16, greyfall 12/12, ferrow 18/18, frostmere 16/15, saltmere 16/16, irontooth 14/14, barrowmoor 13/12, kettle 12/12, deepwood 11/10, deepvein 12/12, rim 11/10, ashgate 12/12, crown 9/8, cinderfall 9/9. About a third open at the next hall. Tests pin the targets (±2) and the village rule. Props 1018 → 975. `H.buildAll(lvl)` added.
 - Villages stand at the claim stones (the card's rule: 6+ pads within 600 px), so the West Gate green runs on into Hollow's and Whisperwood's hamlets. 05's named villages at the outposts get the outlying pads (Rimewatch, the harbour market and docks, Rustgate). **Ashgate and Cinderfall:** the maws at their pass mouths leave 4 and 1 spots near the stones, so their villages stand round Ashfall and Slagwatch.
@@ -46,13 +55,7 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - For S20: every cost past Lv.1, the market's 3 goods a coin, chapel mend 2/4 hp/s. Trips: granary reach is straight-line (farm1's haulers walk round the West wall); `waves.skipToDay` from the warning leaves `phase` as `warning` (harness only).
 
 ### S13 · Fish and trade: done (2026-09-25)
-- C1+C2 (`e08d5a6`, one commit; a cut-off session never logged it): `world/fish.ts` `placeFish` puts shoals on water/sea cells (never a deck), each with a bank gather point `gx, gy` reachable from its fishery; every node has `gx, gy`. `NODE_DEFS.fish` (food), `fishery` (3 levels, 100c 80w, the farm's rates and hp), `fisher` crew (a farmer's numbers, `fishes: true`); fish fields and fishery pads joined the game.
-- C3 (`5bcd635`): `tradingPost` (0.6 / 1.2 / 2.0 coins/s; costs 400c 300w 120s → 900c 500w 300s → 2000c 700s 200m), quay warehouse art with a lit lamp; `buildings.tradeIncome()` (1; **S14 wires `trade.income` there**), `tradeRateOf`, `tradeRate`; panel hint and Coins/s upgrade line. `FUTURE_PADS` deleted; `check.ts` pins every `PadKey`.
-- Verify (harness, one run each): Hollow claimed, `fishery1` Lv.1, 2 fishers: +72 food and 4 deliveries in 60 s of day, 0 of 120 samples on water, gathering at (3691, 4320) and (3775, 4302) on the bank. Saltmere claimed, `trade1`: exactly 18 / 36 / 60 coins in 30 s at Lv.1 / 2 / 3 (counted at `tickTrade`); panel read "+2.0 coins a second". 2 screenshots (one behind the auto-pause menu; one of the jetty with both fishers on the bank). User saves restored byte-identical.
-- S20: fisheries haul to the depot until an outpost stands (`fishery1` → depot is ~1,700 px; ~1 delivery per fisher a minute), so food per fisher is well under a farmer's; trade 2.0/s at Lv.3 against its 2000c cost, and the 6 s coin popup.
-- Trips: claiming a far region on day 1 by harness (`H.claim`) makes night 1 take the hall of an idle hero (baseline without claims holds); pump in day windows. The auto-pause on a hidden pane opens the pause menu: `H.ui().togglePause()`.
-- Not measured: a fishery on the lake or harbour fields in play, the Lv.2–3 art in play, trade with the hall down.
-- No blueprint moves, no new open decisions.
+- `world/fish.ts` shoals and bank points, `fishery` + `fisher`, `tradingPost` (`tradeIncome`, `tradeRateOf`, `tradeRate`); CONTRACTS §S13.
 
 ### S12 · Minimap and atlas: done (2026-09-25)
 - Local `Minimap` (2400 px, `ChartMemory`), `AtlasBake` (1/16), full-screen `Atlas` with travel from lit stones; API in CONTRACTS §S12.
