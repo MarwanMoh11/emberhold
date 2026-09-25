@@ -64,20 +64,14 @@ export interface PadSpec {
   piece?: Pick<WallPiece, 'part' | 'dir' | 'len' | 'ux' | 'uy' | 'cap'>
 }
 
-/** Pads whose buildings arrive later: the trading post (S13 C3). Outposts landed in S11, fisheries in S13. */
-const FUTURE_KEYS = new Set<BP.PadKey>(['tradingPost'])
-
 const toPad = (p: BP.PadBP): PadSpec => ({
   id: p.id, key: p.key as BuildingKey, x: p.x, y: p.y, region: p.region,
   ...(p.startLevel ? { startLevel: p.startLevel } : {}),
   ...(p.hall ? { requiresTownHall: p.hall } : {}),
 })
 
-/** Every construction site the game builds today. Empty pads show a blueprint. */
-export const PADS: PadSpec[] = BP.PADS.filter(p => !FUTURE_KEYS.has(p.key)).map(toPad)
-
-/** Blueprint pads held back until their building type exists. */
-export const FUTURE_PADS: BP.PadBP[] = BP.PADS.filter(p => FUTURE_KEYS.has(p.key))
+/** Every construction site in the blueprint (all of them since S13). Empty pads show a blueprint. */
+export const PADS: PadSpec[] = BP.PADS.map(toPad)
 
 // ---------------------------------------------------------------------------
 // Walls

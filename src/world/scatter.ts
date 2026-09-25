@@ -1,5 +1,5 @@
 import type Phaser from 'phaser'
-import { WORLD, HALL, REGIONS, PADS, FUTURE_PADS, CAMPS, NODE_CLUSTERS, POIS, MAWS, THRONE, CROSSINGS, raster, type Biome } from '../config/world'
+import { WORLD, HALL, REGIONS, PADS, CAMPS, NODE_CLUSTERS, POIS, MAWS, THRONE, CROSSINGS, raster, type Biome } from '../config/world'
 import { T, blockedWithin, segProj } from './raster'
 import { hash32, Mulberry } from './noise'
 import type { Culler } from '../systems/Culler'
@@ -54,7 +54,7 @@ export function scatterProps(): PropSpot[] {
   if (memo) return memo
   const r = raster()
   const C = PROP_CLEAR
-  const pads = [...PADS, ...FUTURE_PADS]
+  const pads = PADS
   const points: [number, number, number][] = [
     ...pads.map(p => [p.x, p.y, C.pad] as [number, number, number]),
     ...NODE_CLUSTERS.map(n => [n.x, n.y, n.radius + C.node] as [number, number, number]),

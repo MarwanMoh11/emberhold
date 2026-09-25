@@ -630,6 +630,42 @@ const DRAW: Record<BuildingKey, Painter> = {
     }
   },
 
+  tradingPost: ({ x, lvl, cx, by }) => {
+    // the quay warehouse: a stone ground floor, planked loft, hoist beam
+    const s: BoxSpec = { L: cx - 36, B: by, w: 50, h: 22, d: 22, mat: 'stone', c: STONE, footing: 4 }
+    box(x, s)
+    const u: BoxSpec = { L: s.L, B: by - s.h, w: s.w, h: lvl >= 2 ? 16 : 12, d: 22, mat: 'plank', c: WOOD }
+    box(x, u)
+    roofSide(x, u, 14, 4, lvl >= 3 ? SLATE : TERRACOTTA, lvl >= 3 ? 'slate' : 'shingle')
+    // wide arched door, a loft door with the hoist above it
+    const dL = s.L + 8
+    form(x, P.round(dL, by - 16, 16, 16, 6), WOOD_D, { rim: 0.8, core: 2 })
+    line(x, x2 => { x2.moveTo(dL + 8, by - 16); x2.lineTo(dL + 8, by) }, 0.9, INK, 0.6)
+    line(x, P.round(dL, by - 16, 16, 16, 6), 1.1, INK, 0.8)
+    windowAt(x, s.L + 38, by - 13, 7, 7)
+    const hx = s.L + 16, top = u.B - u.h
+    fill(x, P.rect(hx - 4, top + 3, 9, u.h - 5), 0x1c120c)
+    form(x, P.rect(hx - 1.5, top - 7, 3, 9), WOOD_D, { rim: 0.4, core: 1 })
+    form(x, P.rect(hx - 1.5, top - 7, 12, 3), BEAM, { rim: 0.4, core: 0.8 })
+    line(x, x2 => { x2.moveTo(hx + 9, top - 4); x2.lineTo(hx + 9, top + 12) }, 0.8, INK, 0.9)
+    sack(x, hx + 9, top + 17)
+    if (lvl >= 3) windowAt(x, s.L + 36, top + 8, 6, 6)
+    // goods on the quay
+    crate(x, s.L + s.w + 2, by + 6, 10)
+    barrel(x, s.L + s.w + 16, by + 7)
+    sack(x, s.L - 4, by + 6, 0xe8c860)
+    if (lvl >= 2) { crate(x, s.L + s.w + 4, by - 4, 8); barrel(x, s.L + s.w + 26, by + 3, 0.8) }
+    // the lamp the ships look for, on an iron post
+    const px = cx + 36, lt = by - 50
+    form(x, P.round(px - 1.6, lt, 3.2, by - lt + 2, 1.2), IRON, { rim: 0.5, core: 1 })
+    form(x, P.rect(px - 1.6, lt, 10, 2.6), IRON, { rim: 0.3, core: 0.6 })
+    const lamp = P.poly([[px + 4, lt + 5], [px + 10, lt + 5], [px + 9.5, lt + 14], [px + 4.5, lt + 14]])
+    fill(x, lamp, 0xffd27a)
+    line(x, lamp, 1, INK, 0.9)
+    fill(x, P.poly([[px + 3, lt + 5], [px + 7, lt + 1.5], [px + 11, lt + 5]]), IRON)
+    if (lvl >= 2) banner(x, s.L + s.w - 6, top - 20, 16, lvl >= 3 ? 0x8a2438 : PAL.lapis)
+  },
+
   quarry: ({ x, lvl, cx, by }) => {
     // stepped cut in the rock
     for (let t = 0; t < 3; t++) {
@@ -1072,6 +1108,9 @@ const GLOW: Partial<Record<BuildingKey, Glow>> = {
   },
   healingTent: ({ x, lvl, cx, by }) => {
     if (lvl >= 3) glow(x, cx - 6, by - 14, 30, PAL.good, 0.28)
+  },
+  tradingPost: ({ x, cx, by }) => {
+    glow(x, cx + 43, by - 40, 13, 0xffb050, 0.85)
   },
   outpost: ({ x, lvl, cx, by }) => {
     glow(x, cx - 29, by - 59, 14, 0xffb050, 0.85)

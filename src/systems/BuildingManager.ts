@@ -28,6 +28,8 @@ const cap = (w: string) => w.charAt(0) + w.slice(1).toLowerCase()
 
 /** Seconds the hero must stand on a pad before it starts drawing resources. */
 const DWELL = 0.3
+/** A trading post shows what it banked this often, in seconds (S13). */
+const TRADE_POPUP_EVERY = 6
 
 const TEX: Record<ResourceType, string> = {
   coins: 'res_coins', wood: 'res_wood', food: 'res_food',
@@ -80,6 +82,8 @@ export class BuildingManager {
   private dropSig = ''
   private dropCacheSig = ''
   private outpostHealT = 1
+  /** per trading post (S13): coins owed but not yet whole, banked since the last popup, and its timer */
+  private trade = new Map<string, { acc: number; shown: number; t: number }>()
 
   /** aggregated settlement bonuses, recomputed whenever something is built */
   bonus = {
@@ -711,6 +715,7 @@ export class BuildingManager {
     }
 
     this.tickAutoHire(dt)
+    this.tickTrade(dt)
 
     // infirmary aura
     if (this.bonus.heal > 0) {
@@ -1025,6 +1030,8 @@ export class BuildingManager {
       hint = `workers ${b.workers.length}/${b.stats.workers ?? 0} — stand here to hire (${costStr})`
     } else if (b.level > 0 && b.key === 'depot') {
       hint = `stand here to bank your pack — ${short(res.storedTotal)} in store`
+    } else if (b.level > 0 && b.key === 'tradingPost') {
+      hint = `trading · +${this.tradeRateOf(b).toFixed(1)} coins a second, day and night`
     } else if (b.level > 0 && b.key === 'outpost') {
       hint = b.level >= 2 ? 'banks your pack · waystone · mends allies nearby' : 'banks your pack · waystone beside it'
     }
@@ -1043,13 +1050,57 @@ export class BuildingManager {
     })
   }
 
+  // ---- trade (S13) -------------------------------------------------------
+  /**
+   * The `trade.income` multiplier on every trading post: 1 until S14 wires
+   * modifiers (`mods.value('trade.income', 1)`; the Saltmere Light adds 20%).
+   */
+  tradeIncome(): number {
+    return 1
+  }
+
+  /** Coins a second this post earns now (0 unless built and standing). */
+  tradeRateOf(b: Building): number {
+    return b.key === 'tradingPost' && b.level > 0 && b.alive ? (b.stats.income ?? 0) * this.tradeIncome() : 0
+  }
+
+  /** Coins a second from every standing trading post. */
+  tradeRate(): number {
+    let r = 0
+    for (const b of this.buildings) r += this.tradeRateOf(b)
+    return r
+  }
+
+  /** The only coins that come from time: bank whole coins as they accrue, and show them every few seconds. */
+  private tickTrade(dt: number) {
+    for (const b of this.buildings) {
+      const rate = this.tradeRateOf(b)
+      if (rate <= 0) continue
+      let t = this.trade.get(b.padId)
+      if (!t) this.trade.set(b.padId, t = { acc: 0, shown: 0, t: 0 })
+      t.acc += rate * dt
+      const n = Math.floor(t.acc)
+      if (n > 0) {
+        t.acc -= n
+        t.shown += n
+        this.scene.res.addStored('coins', n)
+      }
+      t.t += dt
+      if (t.t >= TRADE_POPUP_EVERY) {
+        if (t.shown > 0) this.scene.fx.popup(b.x, b.y - b.def.h - 20, `+${t.shown} coins`, PAL.coins, 14)
+        t.t = 0
+        t.shown = 0
+      }
+    }
+  }
+
   private upgradeSummary(b: Building): string {
     const cur = b.def.levels[b.level - 1]?.stats ?? {}
     const nxt = b.def.levels[b.level]?.stats ?? {}
     const parts: string[] = []
     const label: Record<string, string> = {
       dmg: 'Damage', rate: 'Rate', range: 'Range', splash: 'Splash', pop: 'Pop',
-      prod: 'Output', carry: 'Carry', workers: 'Workers', heal: 'Heal',
+      prod: 'Output', carry: 'Carry', workers: 'Workers', heal: 'Heal', income: 'Coins/s',
       heroDmg: 'Hero dmg', troopDmg: 'Troop dmg', towerDmg: 'Tower dmg', unlockTier: 'Tier',
     }
     for (const k of Object.keys(nxt)) {

@@ -5,7 +5,7 @@ export type BuildingKey =
   | 'barracks' | 'archeryRange' | 'stable' | 'house' | 'warehouse'
   | 'blacksmith' | 'workshop' | 'healingTent'
   | 'watchtower' | 'cannonTower' | 'wall' | 'gate'
-  | 'outpost' | 'fishery'
+  | 'outpost' | 'fishery' | 'tradingPost'
 
 export type BuildingCategory = 'core' | 'production' | 'military' | 'support' | 'defense'
 
@@ -83,6 +83,16 @@ export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
     { cost: { coins: 560, wood: 420, stone: 140 }, hp: 900, stats: { workers: 5, rate: 1.9 }, label: 'Fish Market' },
   ], 'Fishers net the shoals off the bank and carry the catch home as food.',
     { workerSlots: 2, gathers: 'food' }),
+
+  // The only building that makes coins from time (S13), and only on
+  // Saltmere's old quay. `income` is coins a second; BuildingManager.tickTrade
+  // banks it through `tradeIncome()` (the `trade.income` stat, S14).
+  tradingPost: B('tradingPost', 'Trading Post', 'TRADE', 'support', 72, 58, [
+    { cost: { coins: 400, wood: 300, stone: 120 }, hp: 700, stats: { income: 0.6 }, label: 'Trading Post' },
+    { cost: { coins: 900, wood: 500, stone: 300 }, hp: 1000, stats: { income: 1.2 }, label: 'Quay Warehouse' },
+    { cost: { coins: 2000, stone: 700, metal: 200 }, hp: 1400, stats: { income: 2 }, label: 'Merchant House' },
+  ], 'Ships still come if someone keeps the lamp lit: coins every second, day and night.',
+    { blocking: true }),
 
   quarry: B('quarry', 'Stone Quarry', 'QUARRY', 'production', 68, 56, [
     { cost: { coins: 300, wood: 220 }, hp: 520, stats: { workers: 2, rate: 1 } },

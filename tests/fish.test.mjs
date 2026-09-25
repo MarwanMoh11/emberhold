@@ -24,3 +24,12 @@ test('fish (S13): every field fills on water, each shoal worked from a reachable
     }
   }
 })
+
+test('trade (S13): one trading post, on Saltmere\'s quay, earning 0.6 / 1.2 / 2.0 coins a second', async () => {
+  const { BUILDINGS } = await loadTs('src/config/buildings.ts')
+  const posts = W.PADS.filter(p => p.key === 'tradingPost')
+  assert.deepEqual(posts.map(p => [p.id, p.region]), [['trade1', 'saltmere']])
+  assert.deepEqual(BUILDINGS.tradingPost.levels.map(l => l.stats.income), [0.6, 1.2, 2])
+  assert.equal(BUILDINGS.fishery.levels[0].cost.coins, 100)
+  assert.equal(BUILDINGS.fishery.levels[0].cost.wood, 80)
+})

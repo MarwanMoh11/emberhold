@@ -15,7 +15,7 @@ test('scatter stays inside the budget and is the same every time', () => {
 })
 
 test('props keep off pads, fields, camps, roads, crossings and blocked ground', () => {
-  const pads = [...W.PADS, ...W.FUTURE_PADS]
+  const pads = W.PADS
   for (const s of spots) {
     const i = r.cell(s.x, s.y)
     assert.equal(r.terrain[i], T.LAND)
