@@ -96,7 +96,7 @@ function bakeKnight(scene: Phaser.Scene, key: string, H: number, g: number) {
 /** The Thornmother: a matron whose skirt is a bramble rooted in the ground, with a crown of thorned branches. */
 function bakeMatron(scene: Phaser.Scene, key: string, H: number, g: number) {
   const k = H / 32
-  const w = Math.ceil(H * 2.1 + 20), h = Math.ceil(H * 1.75 + FOOT + 10)
+  const w = Math.ceil(H * 2.1 + 20), h = Math.ceil(H * 1.95 + FOOT + 10)
   const cx = w / 2, by = h - FOOT
   const BARK = 0x3e2c1e, DARK = 0x21160e, THORN = 0xd6c490, LEAF = 0x6a8a3a
   const waist = by - 20 * k, sh = by - 33 * k
@@ -198,7 +198,7 @@ function bakeOverseer(scene: Phaser.Scene, key: string, H: number, g: number) {
 /** The Stairwarden: heavy blue-steel plate behind a tower shield whose top is cut in steps, a crested helm, a glaive. */
 function bakeWarden(scene: Phaser.Scene, key: string, H: number, g: number) {
   const k = H / 32
-  const w = Math.ceil(H * 1.6 + 30), h = Math.ceil(H * 1.9 + FOOT + 12)
+  const w = Math.ceil(H * 1.6 + 30), h = Math.ceil(H * 2.05 + FOOT + 12)
   const cx = w / 2 - 5 * k, by = h - FOOT
   const PLATE = 0x4a5a70, STEEL = 0xc8d4e2, SHIELD = 0x34405a, GILT = 0xc9a24a
   const hip = by - 15 * k, sh = by - 31 * k

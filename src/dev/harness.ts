@@ -690,6 +690,8 @@ export function installHarness(game: Phaser.Game) {
     if (!rec?.spec.boss) return `no stronghold boss at "${id}"`
     god(true)
     const relicsBefore = g.relics.list().length
+    // unclaimed ground's soft barrier would walk the hero out of the fight
+    if (!g.regions.claimed(rec.spec.region)) claim(rec.spec.region)
     g.camps.wake(id)
     pump(0.1)
     const find = () => rec.guards.find((e: any) => e?.active && e.alive && e.key === rec.spec.boss)
@@ -742,6 +744,7 @@ export function installHarness(game: Phaser.Game) {
     const g = gs()
     god(true)
     const find = () => g.enemies.list.find((e: any) => e.active && e.alive && e.key === 'cinderRegent')
+    if (!g.regions.claimed('crown')) claim('crown')
     const out: any = { sealed: g.nav.isSealed('calderaCauseway') }
     tp(6500, 7400)
     run(0, 1, 3)

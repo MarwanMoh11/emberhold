@@ -6,6 +6,16 @@ import type { GameScene } from '../scenes/GameScene'
 /** The crossing the fire closes, and the camp whose burning puts it out (S10). */
 export const CAUSEWAY = 'calderaCauseway'
 export const CAUSEWAY_KEEPER = 'campAshgate'
+
+/** Is (x, y) on the causeway itself (S17: the Regent rises when the hero first stands on it)? */
+export function onCauseway(x: number, y: number): boolean {
+  const c = CROSSINGS.find(k => k.id === CAUSEWAY)
+  if (!c) return false
+  const [ax, ay] = c.a, [bx, by] = c.b
+  const dx = bx - ax, dy = by - ay
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)))
+  return Math.hypot(ax + dx * t - x, ay + dy * t - y) <= c.width / 2
+}
 /** Rows of flame along the causeway (fractions of its length), and tongues per row across its width. */
 const ROWS = [0.22, 0.5, 0.78]
 const PER_ROW = 5

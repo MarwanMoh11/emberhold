@@ -58,7 +58,8 @@ export class QuestManager {
       if (p.boss) {
         this.bossKills++
         this.defeatedBosses.add(p.key)
-        if (p.key === 'cinderRegent') this.finalBossHp = 0
+        // S17: her fall is the victory, whatever the quest chain says
+        if (p.key === 'cinderRegent') { this.finalBossHp = 0; this.stampVictory() }
       }
     })
     bus.on('camp:burned', () => { this.campsCleared++ })
@@ -233,12 +234,17 @@ export class QuestManager {
 
     // The chain is the campaign. Finishing it used to produce one toast and
     // nothing else; now it is a moment, and the game carries on after it.
-    if (this.campaignComplete && !this.victoryAt) {
-      this.victoryAt = Date.now()
-      this.victoryWave = s.waves.wave
-      this.victoryPlaytime = s.saves.playtime
-      s.bus.emit('campaign:complete', { wave: this.victoryWave })
-    }
+    if (this.campaignComplete) this.stampVictory()
+  }
+
+  /** Stamp the victory once (the Regent's fall, or the last quest) and play the run summary. */
+  private stampVictory() {
+    if (this.victoryAt) return
+    const s = this.scene
+    this.victoryAt = Date.now()
+    this.victoryWave = s.waves.wave
+    this.victoryPlaytime = s.saves.playtime
+    s.bus.emit('campaign:complete', { wave: this.victoryWave })
   }
 
   /** The live numbers every achievement is measured against. */

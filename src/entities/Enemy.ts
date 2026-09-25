@@ -64,7 +64,7 @@ export class Enemy implements Targetable {
   bossTimer = 0
   telegraphT = 0
   chargeT = 0
-  bossAttack: 'slam' | 'charge' | 'shockwave' | 'cinderVolley' | 'cinderNova' | 'cleave' | 'rootLash' | 'whipcrack' | null = null
+  bossAttack: 'slam' | 'charge' | 'shockwave' | 'cinderVolley' | 'cinderNova' | 'cleave' | 'rootLash' | 'whipcrack' | 'bash' | null = null
   /** S17: a stronghold boss's kit state (systems/bosses.ts), made on its first update */
   kit: KitState | null = null
   chargeVX = 0

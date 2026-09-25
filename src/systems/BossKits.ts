@@ -136,9 +136,16 @@ export class BossKits {
         break
       }
       case 'stairwarden': {
-        const c = KITS.stairwarden.charge
-        if (dist > c.minRange && Math.random() < c.chance) s.enemies.telegraphCharge(e)
-        else e.bossTimer = 1.2
+        const c = KITS.stairwarden.charge, b = KITS.stairwarden.bash
+        if (dist > c.minRange) {
+          if (Math.random() < c.chance) s.enemies.telegraphCharge(e)
+          else e.bossTimer = 1.2
+          break
+        }
+        e.bossAttack = 'bash'
+        e.telegraphT = b.telegraph
+        s.fx.warningCircle(e.x, e.y, b.radius, PAL.danger, b.telegraph)
+        s.fx.popup(e.x, top, 'SHIELD BASH', PAL.danger, 18)
         break
       }
     }
@@ -171,6 +178,17 @@ export class BossKits {
       }
       s.fx.shake(0.012, 0.2)
       s.audio.play('boom', 0.35, 1.6)
+      return true
+    }
+    if (attack === 'bash') {
+      const b = KITS.stairwarden.bash
+      for (const a of s.allyGrid.query(e.x, e.y, b.radius, this.scratch).slice()) {
+        if (a.alive) s.combat.damageAlly(a, e.damage * b.mult, e.x, e.y, b.knockback)
+      }
+      s.fx.ring(e.x, e.y, b.radius, 0xc8d4e2, 0.35)
+      s.fx.shake(0.016, 0.22)
+      s.audio.play('boom', 0.35, 1.3)
+      e.bossTimer = Math.min(e.bossTimer, 1.4) // the hero thrown back: the charge follows
       return true
     }
     if (attack === 'whipcrack') {

@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { CAMERA, PLAYER, PICKUP, OUTPOST, POI } from '../config/balance'
 import { PAL } from '../config/palette'
-import { HALL, REGIONS, WORLD, raster } from '../config/world'
+import { HALL, REGIONS, THRONE, WORLD, raster } from '../config/world'
 import { ABILITY_KEYS } from '../config/abilities'
 import { clamp, dist, rr, short, srand } from '../core/math'
 import { Bus } from '../core/Events'
@@ -33,7 +33,7 @@ import { RegionManager } from '../systems/RegionManager'
 import { Approaches, APPROACH_IDS } from '../systems/Approaches'
 import { RouteMarks } from '../world/RouteMarks'
 import { CampManager } from '../systems/CampManager'
-import { CausewayFire } from '../world/CausewayFire'
+import { CAUSEWAY, CausewayFire, onCauseway } from '../world/CausewayFire'
 import { Waystones } from '../systems/Waystones'
 import { AbilitySystem } from '../systems/AbilitySystem'
 import { LevelSystem } from '../systems/LevelSystem'
@@ -61,6 +61,9 @@ export const DEPTH = {
 }
 
 export interface InputVector { x: number; y: number }
+
+/** How far the Regent follows the hero from her throne: the island (r 430) and the causeway. */
+const REGENT_LEASH = 820
 
 export class GameScene extends Phaser.Scene {
   bus!: Bus
@@ -136,7 +139,9 @@ export class GameScene extends Phaser.Scene {
   private zoomTarget = CAMERA.baseZoom
   private harvestCd = 0
   private levelUpQueued = 0
-  private finalBossPending = false
+  /** S17: the Regent has risen on her island (the hero stood on the opened causeway); she stays until she falls */
+  private regentRisen = false
+  private finaleT = 0
   private simTimes = new Float32Array(120)
   private frameTimes = new Float32Array(120)
   private perfCursor = 0
@@ -150,7 +155,8 @@ export class GameScene extends Phaser.Scene {
   create(data: { load?: boolean; settings: Settings }) {
     this.paused = false
     this.coreLost = false
-    this.finalBossPending = false
+    this.regentRisen = false
+    this.finaleT = 0
     this.levelUpQueued = 0
     this.edgeMarkers.length = 0
     this.moveInput = { x: 0, y: 0 }
@@ -200,6 +206,8 @@ export class GameScene extends Phaser.Scene {
       claimMask: () => this.regions.claimMask(),
       claimed: id => this.regions.claimed(id),
       campState: id => this.camps.stateOf(id),
+      // S17: the Regent's fall closes every maw; only raids come after
+      ended: () => !!this.quests?.finalBossDefeated,
     })
     // each via leg's field builds once here (~36 ms each) rather than at the first warning
     for (const id of APPROACH_IDS) for (const leg of this.approaches.legs(id)) this.nav.field(leg)
@@ -212,9 +220,7 @@ export class GameScene extends Phaser.Scene {
     this.lighting = new LightingManager(this, DEPTH.light)
     this.lighting.quality = this.settings.quality
     this.fx.lights = this.lighting
-    this.bus.on('camp:burned', ({ id }) => {
-      if (id === 'campAshgate') this.scheduleFinalBoss()
-    })
+    this.bus.on('enemy:killed', ({ key }) => { if (key === 'cinderRegent') this.finale() })
 
     this.nodes.build()
     this.buildings.build()
@@ -256,9 +262,8 @@ export class GameScene extends Phaser.Scene {
     this.terrain.prime(cam)
     this.causeway.sync()
     this.regions.update(0)
-    if (this.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)) {
-      this.scheduleFinalBoss()
-    }
+    // she rose in an earlier session: she stands on her island again (her hp is in the quests' save)
+    this.regentRisen = this.quests.finalBossHp > 0 && !this.quests.finalBossDefeated && this.camps.isBurned('campAshgate')
 
     this.scene.launch('UI', { game: this })
     const saveWhenHidden = () => this.saves.save()
@@ -291,37 +296,52 @@ export class GameScene extends Phaser.Scene {
     this.fx.popup(cx, cy - 150, 'EMBERHOLD', PAL.gold, 34)
   }
 
-  /** Ashgate's ruler remains in the world until defeated, including after reload. */
-  private scheduleFinalBoss() {
-    if (this.finalBossPending || this.quests.finalBossDefeated) return
-    if (this.enemies.list.some(e => e.active && e.alive && e.key === 'cinderRegent')) return
-    this.finalBossPending = true
-    this.time.delayedCall(1600, () => {
-      this.finalBossPending = false
-      if (this.quests.finalBossDefeated) return
-      // The HUD has one boss bar. Let a night boss finish before the finale enters.
-      if (this.paused || (this.enemies.bossRef?.alive && this.enemies.bossRef.key !== 'cinderRegent')) {
-        this.scheduleFinalBoss()
-        return
-      }
-      const fortress = this.camps.camps.find(c => c.spec.id === 'campAshgate')
-      if (!fortress?.destroyed) return
-      const e = this.enemies.spawn('cinderRegent', fortress.spec.x, fortress.spec.y - 70)
-      if (!e) { this.scheduleFinalBoss(); return }
-      if (this.quests.finalBossHp > 0) e.hp = Math.min(e.maxHp, this.quests.finalBossHp)
-      this.fx.ring(e.x, e.y, 320, PAL.danger, 1.1)
-      this.fx.flash(0xff5b2d, 0.25)
-      this.fx.popup(e.x, e.y - 170, 'THE CINDER REGENT RISES', PAL.danger, 28)
-      this.audio.play('bossRoar', 0.9)
-    })
+  /**
+   * S17: the finale. The Regent waits on her island until the hero first sets
+   * foot on the causeway after Ashgate's fire goes out; then she rises at the
+   * throne and stays (a guard: a lost night leaves her standing), with the hp
+   * she last had. Checked a few times a second.
+   */
+  private updateFinale(dt: number) {
+    this.finaleT -= dt
+    if (this.finaleT > 0) return
+    this.finaleT = 0.2
+    if (this.quests.finalBossDefeated || this.regentUp()) return
+    if (!this.regentRisen) {
+      const p = this.player
+      if (!p.alive || this.nav.isSealed(CAUSEWAY) || !onCauseway(p.x, p.y)) return
+    }
+    this.raiseRegent(!this.regentRisen)
   }
 
-  /** The Ashgate fight is independent of the nightly wave and survives a loss. */
-  resumeFinalBoss() {
-    if (this.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)) {
-      this.scheduleFinalBoss()
-    }
+  private regentUp() { return this.enemies.list.some(e => e.active && e.alive && e.key === 'cinderRegent') }
+
+  private raiseRegent(first: boolean) {
+    const e = this.enemies.spawn('cinderRegent', THRONE.x, THRONE.y)
+    if (!e) return
+    this.regentRisen = true
+    e.guard = true
+    e.home = { id: 'throne', x: THRONE.x, y: THRONE.y, leash: REGENT_LEASH, siege: 0 }
+    if (this.quests.finalBossHp > 0) e.hp = Math.min(e.maxHp, this.quests.finalBossHp)
+    this.quests.finalBossHp = e.hp
+    if (!first) return
+    this.fx.ring(e.x, e.y, 320, PAL.danger, 1.1)
+    this.fx.flash(0xff5b2d, 0.25)
+    this.fx.shake(0.02, 0.6)
+    this.fx.popup(this.player.x, this.player.y - 150, 'THE CINDER REGENT RISES', PAL.danger, 28)
+    this.audio.play('bossRoar', 0.9)
   }
+
+  /** Her fall: every maw closes and the approaches end (Approaches reads `finalBossDefeated`); the run summary follows. */
+  private finale() {
+    const p = this.player
+    this.fx.flash(0xffd9a0, 0.3)
+    this.fx.popup(p.x, p.y - 150, 'THE MAWS CLOSE', PAL.gold, 30)
+    this.fx.popup(p.x, p.y - 118, 'The approaches fall quiet. Only raids remain.', PAL.gold, 18)
+  }
+
+  /** A lost night leaves her standing (a guard); after a sweep, the next check raises her again. */
+  resumeFinalBoss() { this.finaleT = 0 }
 
   applySettings(s: Settings) {
     this.settings = s
@@ -775,6 +795,7 @@ export class GameScene extends Phaser.Scene {
     this.enemies.update(dt)
     this.camps.update(dt)
     this.causeway.update(dt)
+    this.updateFinale(dt)
     this.projectiles.update(dt)
     this.pickups.update(dt)
     this.abilities.update(dt)

@@ -10,7 +10,7 @@ const r = raster()
 const nav = new NavGrid(r, { hall: HALL })
 
 /** Approaches over the real raster with the given regions claimed and camp states. */
-function world({ claimed = ['hold'], burned = [], awake = [] } = {}) {
+function world({ claimed = ['hold'], burned = [], awake = [], ended = false } = {}) {
   const flags = new Set(claimed)
   const idx = new Set(claimed.map(id => REGION_BY_ID.get(id).index))
   const mask = new Uint8Array(r.N)
@@ -19,7 +19,7 @@ function world({ claimed = ['hold'], burned = [], awake = [] } = {}) {
     if (!CAMPS.some(c => c.id === id)) return null
     return burned.includes(id) ? 'burned' : awake.includes(id) ? 'awake' : 'asleep'
   }
-  return new Approaches({ nav, claimMask: () => mask, claimed: id => flags.has(id), campState: state })
+  return new Approaches({ nav, claimMask: () => mask, claimed: id => flags.has(id), campState: state, ended: () => ended })
 }
 
 const near = (p, x, y, tol = 48) => Math.hypot(p[0] - x, p[1] - y) <= tol
@@ -113,4 +113,14 @@ test('marchers take the tier of their muster region', () => {
   assert.equal(typeof a.campKey('south'), 'string')
   const maw = world({ burned: ['campFerrow', 'campStairwarden'] })
   assert.equal(maw.campKey('south'), null)
+})
+
+test("the Regent's fall closes every maw: the main approaches end, raids still come (S17)", () => {
+  const a = world({ awake: ['campDiggers'], ended: true })
+  assert.deepEqual(a.live(30), ['north'])
+  assert.equal(a.muster('south'), null)
+  const p = a.tonight(30)
+  assert.deepEqual(p.fronts, [])
+  assert.equal(p.raid, 'north')
+  assert.deepEqual(world({ ended: true }).live(30), [])
 })

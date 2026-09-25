@@ -62,6 +62,8 @@ export interface ApproachWorld {
   claimed(id: RegionId): boolean
   /** null for an unknown camp id */
   campState(id: string): MusterState | null
+  /** S17: the Regent has fallen: every maw is closed and the main approaches end; raids still come */
+  ended?(): boolean
 }
 
 /** One night's plan: the main fronts and at most one raid. */
@@ -95,7 +97,7 @@ export class Approaches {
   /** The first standing camp in the chain, else its maw, else null (closed for good). */
   muster(id: ApproachId): Muster | null {
     const a = byId.get(id)
-    if (!a) return null
+    if (!a || (!a.raid && this.w.ended?.())) return null
     for (const m of a.chain) {
       const camp = campById.get(m)
       if (camp) {

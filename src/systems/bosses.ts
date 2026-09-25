@@ -38,8 +38,9 @@ export const KITS = {
     every: [5, 7.5] as const,
     /** immune while any bound priest lives; the pair rises once more `rebind` s after the last falls */
     bound: { count: 2, key: 'ashPriest' as const, ring: 150, rebind: 12, respawns: 1 },
-    /** a charge: the warlord's telegraph, at this share of the gap */
-    charge: { chance: 0.6, minRange: 180 },
+    /** from range, a charge (the warlord's telegraph); up close, a bash with the stair-shield that throws the hero back */
+    charge: { chance: 0.75, minRange: 180 },
+    bash: { radius: 120, mult: 1.2, telegraph: 0.6, knockback: 340 },
   },
 }
 
