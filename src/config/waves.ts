@@ -46,6 +46,17 @@ export const WAVE_PACE = 1.5
 const stretched = (k: number) => (k === 1 ? 1 : Math.round(k * WAVE_PACE))
 const LAST = stretched(WAVES.length)
 
+/**
+ * Three fronts (S22). An approach's walkers are stronger the deeper its muster
+ * camp sits (`hp`/`dmg` per tier, tiers 1 to 5), and a night that comes from
+ * three or more fronts sends `share` of its walkers: the army cannot stand on
+ * every road at once. S20 left the hold a coin flip from night 23 (the probe
+ * had no towers); S22's playthrough, towers built, still lost the hall or
+ * the whole army most nights from 23 with the old 0.25/0.15 and a full deck.
+ */
+export const FRONTS = { hp: 0.12, dmg: 0.08, share: 0.85 }
+export const frontShare = (fronts: number) => (fronts >= 3 ? FRONTS.share : 1)
+
 /** Past the scripted list, the director keeps building waves that scale. */
 export function proceduralWave(wave: number): WaveDef {
   const t = wave / WAVE_PACE - WAVES.length

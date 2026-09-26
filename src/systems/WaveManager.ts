@@ -1,4 +1,4 @@
-import { waveDef, directorAdjust, type WaveDef } from '../config/waves'
+import { waveDef, directorAdjust, frontShare, FRONTS, type WaveDef } from '../config/waves'
 import { WORLD } from '../config/world'
 import type { Pt } from '../config/world/blueprint'
 import { DAYNIGHT, VILLAGE, dayLength, nightReward } from '../config/balance'
@@ -252,11 +252,12 @@ export class WaveManager {
     for (const [key, n] of Object.entries(def.enemies) as [EnemyKey, number][]) {
       for (let i = 0; i < (n ?? 0); i++) units.push(key)
     }
-    const deck = shuffled(units)
+    // three fronts or more: a share of the deck (S22, `FRONTS`)
+    const deck = shuffled(units).slice(0, Math.round(units.length * frontShare(plan.fronts.length)))
     const split = splitBudget(plan, deck.length)
     const mult = (t: TonightRoute) => {
       const tier = ap.tier(t.id)
-      return { hp: hpMult * (1 + 0.25 * tier), dmg: dmgMult * (1 + 0.15 * tier) }
+      return { hp: hpMult * (1 + FRONTS.hp * tier), dmg: dmgMult * (1 + FRONTS.dmg * tier) }
     }
     for (const t of this.tonight) {
       // the muster camp's own walker makes up its share of the approach, the

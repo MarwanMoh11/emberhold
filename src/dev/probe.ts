@@ -32,13 +32,17 @@ interface ProbeApi {
 const CLAIM_ORDER = ['downs', 'whisperwood', 'hollow', 'greyfall', 'ferrow', 'frostmere', 'saltmere',
   'irontooth', 'barrowmoor', 'kettle', 'deepvein', 'rim', 'ashgate', 'crown']
 const PRODUCTION = new Set(['lumberCamp', 'farm', 'quarry', 'mine', 'crystalDelve', 'fishery', 'tradingPost'])
+const TOWERS = new Set(['watchtower', 'cannonTower'])
 const REWARDS = ['building:built', 'worker:hired', 'soldier:recruited', 'player:levelup', 'quest:complete',
   'region:claimed', 'camp:burned', 'poi:done', 'achievement', 'wave:cleared']
 const MILESTONES = new Set(['quest:complete', 'region:claimed', 'camp:burned', 'poi:done', 'achievement', 'relic:granted'])
 const RES = ['coins', 'wood', 'food', 'stone', 'metal', 'crystal'] as const
 
 export function makeProbe(h: ProbeApi) {
-  const opts = { buildEvery: 20, errandS: 60, reserve: 0.6, armyShare: 0.35, burnPer: 1 / 120, claimArmy: 3, surplus: 2.5, tick: 1, stepMs: 33 }
+  // `towers` (S22): the hold's towers go up and keep pace with the hall, as a player's would; `real`: camps the
+  // probe leaves to a real fight (the playthrough's assaults) instead of burning them on its strength formula
+  const opts = { buildEvery: 20, errandS: 60, reserve: 0.6, armyShare: 0.35, burnPer: 1 / 120, claimArmy: 3, surplus: 2.5, tick: 1, stepMs: 33,
+    towers: true, real: [] as string[] }
   let s: any = null
 
   const q = (xs: number[], p: number) => {
@@ -47,9 +51,10 @@ export function makeProbe(h: ProbeApi) {
     return Math.round(a[Math.min(a.length - 1, Math.floor(p * a.length))])
   }
 
-  const start = (o: Partial<typeof opts> = {}) => {
+  /** `load` resumes the saved game instead of a new one (the tuning loop starts from a snapshot). */
+  const start = (o: Partial<typeof opts> = {}, load = false) => {
     Object.assign(opts, o)
-    h.start(false)
+    h.start(load)
     const g = h.gs()
     s = {
       clock: 0, lastBuild: -99, lastPiece: -99, lastBurn: -99, questSince: 0, questId: null,
@@ -105,7 +110,7 @@ export function makeProbe(h: ProbeApi) {
       if (!g.buildings.isPadAvailable(b)) continue
       const def = BUILDINGS[b.key as keyof typeof BUILDINGS]
       if (b.level >= def.levels.length || b.state === 'raising') continue
-      out.push({ b, cost: def.levels[b.level].cost as Record<string, number> })
+      out.push({ b, cost: owed(b, def.levels[b.level].cost as Record<string, number>) })
     }
     return out
   }
@@ -113,9 +118,17 @@ export function makeProbe(h: ProbeApi) {
   const afford = (g: G, cost: Record<string, number>, reserve: Record<string, number> | null) =>
     RES.every(k => (g.res.stored[k] ?? 0) - (cost[k] ?? 0) >= (reserve?.[k] ?? 0))
 
+  /** What a pad still needs: rubble keeps part of what its lost level cost (the refund). */
+  const owed = (b: any, cost: Record<string, number>) => {
+    const out: Record<string, number> = {}
+    for (const k of RES) if (cost[k]) out[k] = Math.max(0, cost[k] - (b.progress?.[k] ?? 0))
+    return out
+  }
+
   const raise = (g: G, b: any, cost: Record<string, number>) => {
     g.res.spend(cost)
     g.buildings.finishRaise(b)
+    b.progress = {}
   }
 
   const questTarget = (g: G, b: any): boolean => {
@@ -127,17 +140,33 @@ export function makeProbe(h: ProbeApi) {
     return false
   }
 
+  /**
+   * From the second front on, a player walls in the hold first: its towers (the bridgehead's and the gates') go up as soon as they open and
+   * climb with the hall; a tower out on the frontier is raised once, over the crossing it watches.
+   */
+  const towerScore = (g: G, b: any) => {
+    // one front and early nights: the builds go to the economy first
+    if (g.waves.wave < 9) return b.level === 0 && b.region === 'hold' ? 150 : 90
+    const home = b.region === 'hold'
+    if (b.level === 0) return home ? 520 : 400
+    return b.level < g.buildings.townHallLevel + (home ? 0 : -2) ? (home ? 450 : 250) : 100
+  }
+
   const decideBuild = (g: G) => {
     if (s.clock - s.lastBuild < opts.buildEvery) return
-    const next = wanted(g) ?? nextClaim(g)
+    const want = wanted(g)
+    const next = want ?? nextClaim(g)
     const needHall = next && g.buildings.townHallLevel < next.hall
     const reserve: Record<string, number> = {}
-    if (next && !needHall) for (const k of RES) reserve[k] = ((next.cost as any)[k] ?? 0) * opts.reserve
+    // a dear claim the quest asks for (tier 4 and 5) is saved for in full, not left to the day's leftovers
+    const share = want && (next?.tier ?? 0) >= 4 ? 1 : opts.reserve
+    if (next && !needHall) for (const k of RES) reserve[k] = ((next.cost as any)[k] ?? 0) * share
     // a reasonable player saves for what the quest (or the next claim's hall) asks, not only for claims
     const cands = candidates(g)
     const saveFor = cands.find(c => questTarget(g, c.b)) ?? (needHall ? cands.find(c => c.b.key === 'townHall') : undefined)
     if (saveFor) for (const k of RES) reserve[k] = Math.max(reserve[k] ?? 0, saveFor.cost[k] ?? 0)
-    const popTight = g.popUsed >= g.popCap - 2
+    // from the third front the village grows with the run (the settled country): room for the army the nights call for
+    const popTight = g.popUsed >= g.popCap - 2 || (g.waves.wave >= 12 && g.popCap < 20 + 2.5 * g.waves.wave)
     let best: { b: any; cost: any; score: number } | null = null
     for (const c of cands) {
       const { b } = c
@@ -152,6 +181,7 @@ export function makeProbe(h: ProbeApi) {
       else if ((b.key === 'barracks' || b.key === 'archeryRange') && b.level === 0) score = 800 // no army without it: rebuild before new ground
       else if (b.key === 'barracks' || b.key === 'archeryRange') score = 550 // better soldiers for the strongholds
       else if (b.key === 'townHall') score = 700
+      else if (TOWERS.has(b.key) && opts.towers) score = towerScore(g, b)
       const total = Object.values(c.cost as Record<string, number>).reduce((a, v) => a + v, 0)
       score -= total / 100
       if (!best || score > best.score) best = { ...c, score }
@@ -171,6 +201,16 @@ export function makeProbe(h: ProbeApi) {
     s.lastPiece = s.clock
   }
 
+  /**
+   * A build quest that names no region ("an Iron Mine in the Irontooth Foothills"): none of its pads open on held
+   * ground, so the player claims the first region, in claim order, that has one.
+   */
+  const padRegion = (g: G, key: string) => {
+    const pads = g.buildings.buildings.filter((b: any) => b.key === key && b.level === 0)
+    if (pads.some((b: any) => g.buildings.isPadAvailable(b))) return undefined
+    return CLAIM_ORDER.find(r => !g.regions.claimed(r) && pads.some((b: any) => b.region === r))
+  }
+
   /** The region the current quest wants claimed next: its claim, a zone count, or ground its goal stands on. */
   const wanted = (g: G) => {
     const goal = g.quests.current?.goal
@@ -178,7 +218,8 @@ export function makeProbe(h: ProbeApi) {
     let id: string | undefined
     if (goal.type === 'claim') id = goal.region
     else if (goal.type === 'zone') id = CLAIM_ORDER.find(r => !g.regions.claimed(r))
-    else if (goal.type === 'build' || goal.type === 'settle') id = goal.region
+    else if (goal.type === 'settle') id = goal.region
+    else if (goal.type === 'build') id = goal.region ?? padRegion(g, goal.building)
     else if (goal.type === 'burn') id = CAMPS.find(c => c.id === goal.camp)?.region
     else if (goal.type === 'boss') id = CAMPS.find(c => c.boss === goal.key)?.region
     else if (goal.type === 'reach') id = POIS.find(p => p.id === goal.poi)?.region
@@ -245,7 +286,7 @@ export function makeProbe(h: ProbeApi) {
   const decideBurn = (g: G) => {
     if (g.waves.phase !== 'day' || s.clock - s.lastBurn < 60) return
     const p = power(g)
-    const camp = CAMPS.filter(c => g.regions.claimed(c.region) && !g.camps.isBurned(c.id))
+    const camp = CAMPS.filter(c => g.regions.claimed(c.region) && !g.camps.isBurned(c.id) && !opts.real.includes(c.id))
       .sort((a, b) => a.hp - b.hp)[0]
     if (camp && p >= camp.hp * opts.burnPer) {
       g.camps.burn(camp.id)
@@ -282,6 +323,23 @@ export function makeProbe(h: ProbeApi) {
     }
   }
 
+  /** One tick: pump `opts.tick` s, then every decision. `busy` (the playthrough's assaults) keeps the hero's own. */
+  const step = (g: G, busy = false) => {
+    h.pump(opts.tick, opts.stepMs, true)
+    s.clock += opts.tick
+    if (s.night) s.night.hall = Math.min(s.night.hall, g.buildings.townHall.hp / g.buildings.townHall.maxHp)
+    if (!busy) {
+      decideHunt(g)
+      decideErrand(g)
+      decideClaim(g)
+      decideBurn(g)
+    }
+    decideHire(g)
+    decideRecruit(g)
+    decideBuild(g)
+    decideLine(g)
+  }
+
   const run = (untilWave = 12, wallMs = 50_000) => {
     if (!s) start()
     const g = h.gs()
@@ -289,17 +347,7 @@ export function makeProbe(h: ProbeApi) {
     while (g.waves.wave < untilWave || g.waves.phase !== 'day') {
       if (performance.now() - t0 > wallMs) break
       if (!g.scene.isActive()) return { paused: g.scene.key, wave: g.waves.wave, clockMin: +(s.clock / 60).toFixed(1) }
-      h.pump(opts.tick, opts.stepMs, true)
-      s.clock += opts.tick
-      if (s.night) s.night.hall = Math.min(s.night.hall, g.buildings.townHall.hp / g.buildings.townHall.maxHp)
-      decideHunt(g)
-      decideErrand(g)
-      decideClaim(g)
-      decideBurn(g)
-      decideHire(g)
-      decideRecruit(g)
-      decideBuild(g)
-      decideLine(g)
+      step(g)
     }
     return { wave: g.waves.wave, phase: g.waves.phase, clockMin: +(s.clock / 60).toFixed(1), wallS: Math.round((performance.now() - t0) / 1000) }
   }
@@ -322,5 +370,5 @@ export function makeProbe(h: ProbeApi) {
     }
   }
 
-  return { start, run, report, opts, state: () => s }
+  return { start, run, step, report, opts, power, home, state: () => s }
 }

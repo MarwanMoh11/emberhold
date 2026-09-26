@@ -4,6 +4,7 @@ import { WAYSTONE } from '../config/balance'
 import { DPR } from '../core/device'
 import { makeProbe } from './probe'
 import { makeBench } from './bench'
+import { makePlaythrough } from './playthrough'
 
 /**
  * Dev-only scripted-play harness, stripped from production builds.
@@ -49,6 +50,7 @@ import { makeBench } from './bench'
  *   H.questStep(n)       finish the current quest n times with dev help (claims, burns, pads, a journey); ids done
  *   H.probe.start(); H.probe.run(12); H.probe.report()   the S20 economy probe: a scripted run, per-wave rows
  *   H.bench().then(r => (window.__b = r))  S21: late-game fixture, three-front night, 60 s of frame times (see bench.ts)
+ *   H.play.start(); H.play.run()    S22: fresh start to the Regent (probe + real fights at Ashgate and the throne); repeat run()
  */
 export function installHarness(game: Phaser.Game) {
   // Keep the fake clock well ahead of the real one: Phaser clamps a step whose
@@ -883,5 +885,6 @@ export function installHarness(game: Phaser.Game) {
   }
   ;(window as any).H = { pump, start, goTo, pad, build, snap, gs, ui, game, gallery, tp, claim, burn, night, march, reveal, where, world, nav, watch, run, buildLine, wallGaps, assault, panel, tap, camp, leash, siege, stones, travel, atlas, mini, lvl, cottages, looks, buildAll, pois, poi, relics, relic, relicCheck, god, boss, regent, quests, questStep,
     probe: makeProbe({ gs, pump, start, tp, questStep }),
+    play: makePlaythrough({ gs, ui, pump, start, tp, questStep }),
     bench: makeBench({ gs, ui, game, step: (ms: number) => { t += ms; game.loop.step(t); auto() }, pump, start, tp, buildAll, buildLine }) }
 }
