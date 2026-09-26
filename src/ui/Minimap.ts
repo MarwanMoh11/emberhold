@@ -1,14 +1,14 @@
 import Phaser from 'phaser'
 import { PAL } from '../config/palette'
 import { CAMPS, HALL, POIS, REGIONS, WORLD } from '../config/world'
-import { IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
+import { safeAreaInsets } from '../core/device'
 import type { GameScene } from '../scenes/GameScene'
 import { FOG_KEY, FOG_SCALE } from '../systems/RegionManager'
 import { ATLAS_H, ATLAS_KEY, ATLAS_SCALE, ATLAS_W } from '../world/AtlasBake'
 import { ChartMemory, windowCrop } from './chart'
 import { CHART, POI_GLYPH, drawCamp, drawOutpost, drawStone, poiState } from './chartMarks'
 import { HERO_PLATE_H } from './HUD'
-import { PlateButton, SkinPanel } from './skin'
+import { SkinPanel } from './skin'
 import { screen } from './theme'
 
 /** The local window: this many world px round the hero, north up (S12). */
@@ -23,17 +23,17 @@ const FAST_HZ = 9
 const HEARTBEAT = 1.5
 
 /** Biggest the panel is ever allowed to get, and its share of a narrow screen. */
-const MAX_W = 188
-const SCREEN_SHARE = 0.34
+const MAX_W = 156
+const SCREEN_SHARE = 0.3
 /** Below this the panel is unreadable, so it hides rather than shrinking. */
 const MIN_H = 56
-/** Margin between the map and the frame around it: room for the gilt rule. */
-const INSET = 7
-/** The chip: a full thumb target where one is wanted, tighter for a mouse. */
-const CHIP_TALL = 44
-const CHIP_SHORT = 30
-const CHIP_W_TALL = 104
-const CHIP_W_SHORT = 100
+/**
+ * A phone held upright has no corner to spare: the panel stays away and the
+ * HUD's map button opens the atlas instead.
+ */
+const MIN_SCREEN_W = 520
+/** Margin between the map and the glass around it. */
+const INSET = 4
 
 /**
  * The corner map (S12): a local window of MINI_RADIUS round the hero, north up.
@@ -45,11 +45,12 @@ const CHIP_W_SHORT = 100
  * - `marks` is what changes (pads, camps, POIs, stones, enemies, tonight's
  *   routes, the hero), rebuilt at FAST_HZ out of flat shapes and nudged by the
  *   hero's drift between rebuilds.
- * - the tray and the chip are painted textures.
+ * - the tray is a painted texture.
  *
  * `memory` (where the hero has been) is shared with the atlas: marks show
  * only in seen ground, so the chart never hands you the world on turn one.
- * The chip, a tap on the map, `M` and a controller's Back open the atlas.
+ * A tap on the map, the HUD's map button, `M` and a controller's Back open
+ * the atlas.
  */
 export class Minimap {
   readonly memory = new ChartMemory(WORLD.width, WORLD.height)
@@ -58,7 +59,6 @@ export class Minimap {
   private fog: Phaser.GameObjects.Image
   private marks: Phaser.GameObjects.Graphics
   private hit: Phaser.GameObjects.Zone
-  private chipBtn: PlateButton
 
   private roomy = true
   private heartbeat = 0
@@ -73,10 +73,10 @@ export class Minimap {
   private mapY = 0
   /** panel side in CSS px (the window is square) */
   private side = 0
-  private lastTop = -1
+  private lastLeft = -1
   private lastBottom = -1
 
-  /** True while a modal owns the screen: the chip goes dead, like the HUD's. */
+  /** True while a modal owns the screen: the map stops answering taps, like the HUD. */
   blocked = false
   /** Harness: ms the last marks rebuild took, and the worst so far. */
   drawMs = 0
@@ -92,11 +92,6 @@ export class Minimap {
     this.hit = ui.add.zone(0, 0, 10, 10).setOrigin(0, 0).setScrollFactor(0).setDepth(1_000_008)
     this.hit.setInteractive()
     this.hit.on('pointerdown', () => { if (!this.blocked) this.openAtlas() })
-
-    this.chipBtn = new PlateButton(ui, {
-      label: 'Map', icon: 'ico_map', keyHint: IS_TOUCH ? undefined : 'M', tone: 'quiet', size: 13,
-      onClick: () => this.openAtlas(),
-    }).setScrollFactor(0).setDepth(1_000_009)
 
     // The world restores its explored fog before the UI launches: rebuild the
     // seen grid from those marks so a reload keeps what was walked.
@@ -123,34 +118,27 @@ export class Minimap {
     const sa = safeAreaInsets()
     const padL = base + sa.left
     const padT = base + sa.top
-    const touch = wantsTouchTargets(this.W)
     const bands = this.game.uiBands
-    this.lastTop = bands.top
+    this.lastLeft = bands.left ?? -1
     this.lastBottom = bands.bottom
 
-    // `uiBands.top` covers the objective row but not the PAUSE and stance
-    // chips in the corner, so the taller of the two wins.
-    const stack = padT + HERO_PLATE_H + 6 + CHIP_TALL + 8
-    const top = Math.max(bands.top, stack) + 6
-    const chipH = touch ? CHIP_TALL : CHIP_SHORT
-    const chipW = touch ? CHIP_W_TALL : CHIP_W_SHORT
-
-    const mapY = top + chipH + 6 + INSET
+    // Under whatever the HUD has stacked in the left column: the vitals, and
+    // on a narrow screen the objective tucked in beneath them.
+    const top = (bands.left ?? padT + HERO_PLATE_H) + 8
+    const mapY = top + INSET
     const availH = this.H - bands.bottom - 10 - INSET - mapY
     const side = Math.min(MAX_W, this.W * SCREEN_SHARE, availH)
-    this.roomy = side >= MIN_H
+    this.roomy = side >= MIN_H && this.W >= MIN_SCREEN_W
     this.mapX = padL + INSET
     this.mapY = mapY
     this.side = side
 
-    this.chipBtn.place(padL + chipW / 2, top + chipH / 2, chipW, chipH)
-    this.chipBtn.setVisible(this.roomy)
     this.tray.setVisible(this.roomy)
     this.base.setVisible(this.roomy)
     this.fog.setVisible(this.roomy)
     this.marks.setVisible(this.roomy)
-    if (this.roomy) this.tray.place(this.mapX - INSET, mapY - INSET, side + INSET * 2, side + INSET * 2)
-    this.hit.setPosition(this.mapX, mapY).setSize(side, side)
+    if (this.roomy) this.tray.style({ alpha: 0.55 }).place(this.mapX - INSET, mapY - INSET, side + INSET * 2, side + INSET * 2)
+    this.hit.setPosition(this.mapX, mapY).setSize(this.roomy ? side : 1, this.roomy ? side : 1)
     this.fastT = 0
   }
 
@@ -285,10 +273,9 @@ export class Minimap {
     const bands = this.game.uiBands
     // The HUD moves its own bands as resource rows and the objective come and go.
     if (view.w !== this.W || view.h !== this.H
-      || bands.top !== this.lastTop || bands.bottom !== this.lastBottom) {
+      || (bands.left ?? -1) !== this.lastLeft || bands.bottom !== this.lastBottom) {
       this.layout()
     }
-    this.chipBtn.setLive(!this.blocked && this.roomy)
 
     // Seen ground is tracked whether or not the panel shows, so the atlas knows it too.
     const hero = this.game.player
@@ -328,6 +315,5 @@ export class Minimap {
     this.fog.destroy()
     this.marks.destroy()
     this.hit.destroy()
-    this.chipBtn.destroy()
   }
 }

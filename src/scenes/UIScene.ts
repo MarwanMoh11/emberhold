@@ -108,6 +108,7 @@ export class UIScene extends Phaser.Scene {
     this.gs.bus.on('campaign:complete', () => this.celebrateVictory())
 
     this.events.on('togglePause', () => this.togglePause())
+    this.events.on('toggleAtlas', () => this.toggleAtlas())
     this.events.on('toggleStats', () => { this.hud.showStats = !this.hud.showStats })
     this.events.on('upgradeChosen', () => this.resumeGame())
     this.events.on('openScreen', (n: ScreenName) => this.openScreen(n))
@@ -122,9 +123,10 @@ export class UIScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown', () => this.gs.audio.unlock())
 
     this.hud.hint(IS_TOUCH
-      ? 'Drag to move  ·  you attack on your own  ·  run over coins'
-      : 'Move with WASD  ·  you attack on your own  ·  run over coins')
-    this.time.delayedCall(9000, () => this.hud.hint('Stand on a build site to pour your pack into it'))
+      ? 'Drag to move  ·  you attack on your own'
+      : 'WASD to move  ·  you attack on your own')
+    this.time.delayedCall(6000, () => this.hud.hint('Walk over loot, then stand on a build site to spend it'))
+    if (!IS_TOUCH) this.time.delayedCall(12500, () => this.hud.hint('M map  ·  H army  ·  Esc pause'))
 
     const pauseWhenHidden = () => {
       if (document.hidden && !this.anyModalOpen()) this.togglePause()

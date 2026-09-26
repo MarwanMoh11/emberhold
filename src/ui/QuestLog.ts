@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { Overlay } from './Overlay'
 import { PAL } from '../config/palette'
+import { ON_PAGE } from './skin'
 import { ACTS, QUESTS, actOf } from '../config/quests'
 import type { GameScene } from '../scenes/GameScene'
 
@@ -92,10 +93,10 @@ export class QuestLog extends Overlay {
     this.marks.clear()
     if (!c) this.rule(this.marks, cx, top - 10, Math.min(260, w - 80))
     if (cols === 2) {
-      this.marks.lineStyle(1, 0x3a2616, 0.25)
+      this.marks.lineStyle(1, ON_PAGE.rule, 0.14)
       this.marks.lineBetween(cx, top + 2, cx, top + perCol * pitch - 2)
     }
-    const INK = 0x2a1b10
+    const INK = ON_PAGE.rule
     for (let i = 0; i < this.rows.length; i++) {
       const def = list[i]
       const r = this.rows[i]
@@ -111,16 +112,16 @@ export class QuestLog extends Overlay {
 
       if (active) {
         // a gilt wash behind the line you are on
-        this.marks.fillStyle(0xd9a53a, 0.28)
+        this.marks.fillStyle(PAL.gold, 0.12)
         this.marks.fillRoundedRect(bx - 8, by - pitch / 2 + 2, colW + 16, pitch - 4, 3)
-        this.marks.lineStyle(1, 0x94580e, 0.5)
+        this.marks.lineStyle(1, PAL.gold, 0.4)
         this.marks.strokeRoundedRect(bx - 8, by - pitch / 2 + 2, colW + 16, pitch - 4, 3)
       }
       // The mark carries the state, so the row text never has to say it twice:
       // an inked tick for done, a filled lozenge for the one you are on, and a
       // hollow one for what is still ahead.
       if (done) {
-        this.marks.lineStyle(2, 0x3d6a24, 1)
+        this.marks.lineStyle(2, PAL.good, 1)
         this.marks.beginPath()
         this.marks.moveTo(bx - 1, by)
         this.marks.lineTo(bx + 2.5, by + 3.5)

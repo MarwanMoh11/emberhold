@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { Overlay } from './Overlay'
-import { PAD, sealTexture } from './skin'
+import { ON_PAGE, PAD, sealTexture } from './skin'
 import { PAL } from '../config/palette'
 import { ACHIEVEMENTS } from '../config/quests'
 import { short } from '../core/math'
@@ -104,10 +104,10 @@ export class AchievementsPanel extends Overlay {
 
       // an earned deed is washed in gilt; an open one is only ruled off
       if (got) {
-        this.bars.fillStyle(0xd9a53a, 0.22)
+        this.bars.fillStyle(PAL.gold, 0.1)
         this.bars.fillRoundedRect(bx, by, colW, rh, 4)
       }
-      this.bars.lineStyle(1, 0x3a2616, got ? 0.5 : 0.28)
+      this.bars.lineStyle(1, got ? PAL.gold : ON_PAGE.rule, got ? 0.4 : 0.12)
       this.bars.strokeRoundedRect(bx, by, colW, rh, 4)
 
       // a seal on the left: gilt and crowned once earned, blank wax until then
@@ -123,9 +123,9 @@ export class AchievementsPanel extends Overlay {
       const railX = tx
       const railW = bx + colW - 12 - railX
       const railY = by + rh - (c ? 8 : 10)
-      this.bars.fillStyle(0x3a2616, 0.18)
+      this.bars.fillStyle(ON_PAGE.rule, 0.12)
       this.bars.fillRect(railX, railY, railW, 3)
-      this.bars.fillStyle(got ? 0x94580e : 0x3d6a24, got ? 0.9 : 0.85)
+      this.bars.fillStyle(got ? PAL.gold : PAL.good, 0.9)
       this.bars.fillRect(railX, railY, railW * frac, 3)
 
       r.name.setFontSize(c ? 13 : 16)

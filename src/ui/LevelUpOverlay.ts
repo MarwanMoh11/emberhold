@@ -190,7 +190,7 @@ export class LevelUpOverlay extends Overlay {
         c.keyHint.setOrigin(0.5).setPosition(0, ch / 2 - (compact ? 20 : 24))
         this.pips(c, def, taken, 0, ch / 2 - (compact ? 40 : 48), 'center')
         // a ruled line above the footer
-        c.marks.lineStyle(1, 0x3a2616, 0.3)
+        c.marks.lineStyle(1, ON_PAGE.rule, 0.14)
         c.marks.lineBetween(-cw / 2 + 26, ch / 2 - (compact ? 56 : 66), cw / 2 - 26, ch / 2 - (compact ? 56 : 66))
       }
       c.stacks.setText(def.evergreen ? `Mastery · rank ${taken + 1}` : '')
@@ -216,15 +216,15 @@ export class LevelUpOverlay extends Overlay {
       const s = 4
       const pts = [{ x: px, y: y - s }, { x: px + s, y }, { x: px, y: y + s }, { x: px - s, y }]
       if (i < taken) {
-        g.fillStyle(0x3a2616, 0.85)
+        g.fillStyle(ON_PAGE.rule, 0.85)
         g.fillPoints(pts, true)
       } else if (i === taken) {
         g.fillStyle(PAL.wax, 1)
         g.fillPoints(pts, true)
-        g.lineStyle(1, 0x3a2616, 0.9)
+        g.lineStyle(1, ON_PAGE.rule, 0.9)
         g.strokePoints(pts, true)
       } else {
-        g.lineStyle(1, 0x3a2616, 0.4)
+        g.lineStyle(1, ON_PAGE.rule, 0.35)
         g.strokePoints(pts, true)
       }
     }

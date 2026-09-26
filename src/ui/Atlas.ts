@@ -11,7 +11,7 @@ import { ATLAS_KEY, ATLAS_SCALE } from '../world/AtlasBake'
 import { polyCentroid } from '../world/raster'
 import { AtlasView, pickStone, travelOrder, type ChartMemory } from './chart'
 import { CHART, POI_GLYPH, drawCamp, drawOutpost, drawStone, poiState } from './chartMarks'
-import { DOCK, ON_PAGE, PlateButton, SkinPanel } from './skin'
+import { DOCK, PlateButton, SkinPanel } from './skin'
 import { screen, textStyle, titleCase } from './theme'
 
 /** Above the docked sheets, below the pause menu and its screens. */
@@ -84,15 +84,15 @@ export class Atlas {
     this.fog = ui.add.image(0, 0, FOG_KEY).setOrigin(0, 0).setScrollFactor(0).setDepth(DEPTH + 2).setAlpha(0.9)
     this.marks = ui.add.graphics().setScrollFactor(0).setDepth(DEPTH + 3)
     this.labels = REGIONS.map(r => ui.add.text(0, 0, r.name.toUpperCase(),
-      textStyle({ voice: 'caps', size: 12, weight: '800', colour: ON_PAGE.text, align: 'center' }))
+      textStyle({ voice: 'caps', size: 12, weight: '800', colour: CHART.ink, align: 'center' }))
       .setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(DEPTH + 4).setStroke('#efe0bc', 3))
     this.poiLabels = POIS.filter(p => p.kind === 'landmark' || p.kind === 'shrine').map(poi => ({
       poi,
-      text: ui.add.text(0, 0, titleCase(poi.name), textStyle({ size: 11, weight: 'italic 700', colour: ON_PAGE.text, align: 'center' }))
+      text: ui.add.text(0, 0, titleCase(poi.name), textStyle({ size: 11, weight: 'italic 700', colour: CHART.ink, align: 'center' }))
         .setOrigin(0.5, 0).setScrollFactor(0).setDepth(DEPTH + 4).setStroke('#efe0bc', 3).setVisible(false),
     }))
-    this.head = new SkinPanel(ui, 'hud').setScrollFactor(0).setDepth(DEPTH + 5)
-    this.foot = new SkinPanel(ui, 'hud').setScrollFactor(0).setDepth(DEPTH + 5)
+    this.head = new SkinPanel(ui, 'hud', { alpha: 0.86 }).setScrollFactor(0).setDepth(DEPTH + 5)
+    this.foot = new SkinPanel(ui, 'hud', { alpha: 0.86 }).setScrollFactor(0).setDepth(DEPTH + 5)
     this.title = ui.add.text(0, 0, 'THE FRONTIER', textStyle({ voice: 'caps', size: 16, weight: '800', colour: PAL.gold }))
       .setOrigin(0, 0.5).setScrollFactor(0).setDepth(DEPTH + 6)
     this.note = ui.add.text(0, 0, '', textStyle({ size: 13, weight: 'italic 600', colour: PAL.bone, align: 'center' }))

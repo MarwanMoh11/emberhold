@@ -205,7 +205,7 @@ export class RegionManager {
     // plus its blurb runs well past a fixed box, and on a phone that box is
     // most of the screen anyway.
     const bg = this.scene.add.graphics()
-    const frame = new SkinPanel(this.scene, 'hud')
+    const frame = new SkinPanel(this.scene, 'hud', { alpha: 0.8 })
     const label = this.scene.add.text(0, -50, spec.name,
       textStyle({ voice: 'display', size: 17, colour: PAL.gold, align: 'center', wrap: BANNER_W - 28, shadow: true }))
       .setOrigin(0.5, 0)

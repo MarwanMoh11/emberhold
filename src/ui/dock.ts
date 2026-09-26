@@ -52,6 +52,8 @@ export interface DockBands {
   top: number
   bottom: number
   dock?: DockBand | null
+  /** The bottom edge (CSS px) of the HUD's left column: the vitals, and the objective when it tucks in under them */
+  left?: number
   /** S11: the bottom edge (CSS px) of a card hung under the top band over the middle of the view (the travel list); the camera frames the hero below it */
   card?: number | null
 }
@@ -119,7 +121,7 @@ export class DockSheet {
     const view = screen(scene)
     this.collapsed = remembered ?? wantsTouchTargets(view.w)
     this.root = scene.add.container(0, 0).setDepth(DOCK.depth).setScrollFactor(0).setVisible(false)
-    this.bg = new SkinPanel(scene, 'hud')
+    this.bg = new SkinPanel(scene, 'hud', { alpha: 0.86 })
     this.blocker = scene.add.zone(0, 0, 1, 1).setOrigin(0, 0).setInteractive()
     this.blocker.on('pointerdown', (p: Phaser.Input.Pointer) => { this.dragY = p.y })
     this.blocker.on('pointerup', () => { this.dragY = null })

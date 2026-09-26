@@ -1,39 +1,35 @@
 import Phaser from 'phaser'
 import { PAL } from '../config/palette'
-import { applyGrain, css, glow, lightOf, mix, Rng, shade, shadowOf, type Ctx } from '../art/ink'
+import { css, lightOf, mix, Rng, shade, type Ctx } from '../art/ink'
 import { screen, textStyle } from './theme'
 import { DPR, wantsTouchTargets } from '../core/device'
 
 /**
- * The interface's chrome, painted rather than drawn.
+ * The interface's chrome, painted once rather than drawn every frame.
  *
  * Phaser's Graphics re-triangulates every rounded rectangle on every frame it
- * renders (the minimap notes measured it), and it can only do flat fills — the
- * reason the old HUD looked like debug rectangles laid over a painting. Every
- * piece of chrome here is painted once into a canvas with the same gouache,
- * grain and ink line as the world, cached by what it looks like, and shown as a
- * single quad. A dozen buttons of one size share one texture; hovering one
- * swaps it for another cached texture rather than repainting anything.
+ * renders (the minimap notes measured it), so each piece of chrome is painted
+ * once into a canvas, cached by what it looks like, and shown as a single
+ * quad. A dozen buttons of one size share one texture; hovering one swaps it
+ * for another cached texture rather than repainting anything.
  *
- * Two surfaces carry the whole interface:
- *
- * - walnut lacquer with a gilt rule, for everything that sits over the world
- *   while you play — it is dark, so the painting stays the brightest thing on
- *   screen;
- * - a deckled parchment page with an inked double border, for everything you
- *   stop to read.
+ * One surface carries the whole interface: smoked glass. It is dark, quiet
+ * and slightly see-through, with a soft corner and a hairline edge, and it
+ * carries no ornament at all, so the painted world stays the brightest and
+ * busiest thing on screen and the few colours the chrome does use (health,
+ * the gold of reward, the vermilion of danger) are what the eye finds.
  */
 
 export type Skin = 'hud' | 'page' | 'plate' | 'ribbon' | 'callout' | 'well'
 
 export interface SkinOpts {
-  /** gilt or accent colour for the trim */
+  /** accent colour: a page's top mark, a plate's focus ring */
   accent?: number
   /** plate states */
   state?: 'idle' | 'hover' | 'active' | 'disabled'
-  /** lacquer colour for plates and ribbons: walnut by default */
+  /** fill colour for plates and ribbons: smoke by default */
   lacquer?: number
-  /** strength of the lacquer's fill */
+  /** strength of the fill */
   alpha?: number
 }
 
@@ -42,18 +38,26 @@ export const PAD = 8
 /** How far a callout's pointer drops below its box. */
 const TIP = 10
 
-const WALNUT_TOP = 0x33251b
-const WALNUT_BOT = 0x1a120d
-const INK_EDGE = 0x0c0704
+/** The glass itself: a warm near-black. */
+const SMOKE = 0x100d0b
+/** The light that catches its edge. */
+const EDGE = 0xfff4e2
+/** An ordinary button: warm charcoal. */
+const PLATE_BASE = 0x2c2724
 
-/** Text colours for the parchment page. */
+/**
+ * Text colours for a card. The name survives from when cards were parchment;
+ * they are light inks now, the same family the HUD uses.
+ */
 export const ON_PAGE = {
-  text: 0x2a1b10,
-  dim: 0x6e5840,
-  gilt: 0x94580e,
-  good: 0x3d6a24,
-  danger: 0xa3301c,
-  lapis: 0x24508f,
+  text: PAL.uiText,
+  dim: PAL.uiDim,
+  gilt: PAL.gold,
+  good: PAL.good,
+  danger: PAL.danger,
+  lapis: PAL.heroTrim,
+  /** hairlines and rules drawn on a card */
+  rule: 0xe8dcc4,
 }
 
 // ---- painting helpers ------------------------------------------------------
@@ -64,293 +68,129 @@ function hash(s: string) {
   return h >>> 0
 }
 
-function chamfer(x: Ctx, px: number, py: number, w: number, h: number, c: number) {
-  x.moveTo(px + c, py)
-  x.lineTo(px + w - c, py)
-  x.lineTo(px + w, py + c)
-  x.lineTo(px + w, py + h - c)
-  x.lineTo(px + w - c, py + h)
-  x.lineTo(px + c, py + h)
-  x.lineTo(px, py + h - c)
-  x.lineTo(px, py + c)
-  x.closePath()
-}
-
-/** The same box with a pointer dropping out of the middle of its bottom edge. */
-function calloutPath(x: Ctx, px: number, py: number, w: number, h: number, c: number) {
+/** A rounded box, with a pointer dropping out of the middle of its bottom edge when `tip`. */
+function box(x: Ctx, px: number, py: number, w: number, h: number, r: number, tip = false) {
   const mid = px + w / 2
-  x.moveTo(px + c, py)
-  x.lineTo(px + w - c, py)
-  x.lineTo(px + w, py + c)
-  x.lineTo(px + w, py + h - c)
-  x.lineTo(px + w - c, py + h)
-  x.lineTo(mid + 9, py + h)
-  x.lineTo(mid, py + h + TIP)
-  x.lineTo(mid - 9, py + h)
-  x.lineTo(px + c, py + h)
-  x.lineTo(px, py + h - c)
-  x.lineTo(px, py + c)
+  x.moveTo(px + r, py)
+  x.arcTo(px + w, py, px + w, py + h, r)
+  x.arcTo(px + w, py + h, px, py + h, r)
+  if (tip) {
+    x.lineTo(mid + 8, py + h)
+    x.lineTo(mid, py + h + TIP)
+    x.lineTo(mid - 8, py + h)
+  }
+  x.arcTo(px, py + h, px, py, r)
+  x.arcTo(px, py, px + w, py, r)
   x.closePath()
 }
 
-function giltGradient(x: Ctx, y0: number, y1: number, accent: number) {
-  const g = x.createLinearGradient(0, y0, 0, y1)
-  g.addColorStop(0, css(mix(accent, 0xfff4d0, 0.45)))
-  g.addColorStop(0.5, css(accent))
-  g.addColorStop(1, css(shade(accent, -0.35)))
-  return g
-}
-
-function diamond(x: Ctx, cx: number, cy: number, r: number, c: number) {
-  x.beginPath()
-  x.moveTo(cx, cy - r); x.lineTo(cx + r, cy); x.lineTo(cx, cy + r); x.lineTo(cx - r, cy); x.closePath()
-  x.fillStyle = css(INK_EDGE, 0.9); x.fill()
-  x.beginPath()
-  const q = r * 0.62
-  x.moveTo(cx, cy - q); x.lineTo(cx + q, cy); x.lineTo(cx, cy + q); x.lineTo(cx - q, cy); x.closePath()
-  x.fillStyle = css(mix(c, 0xfff4d0, 0.15)); x.fill()
-}
-
-/** Walnut lacquer, grained, with a lip of light along the top edge. */
-function lacquer(x: Ctx, path: (x: Ctx) => void, w: number, h: number, r: Rng, alpha: number, top = WALNUT_TOP, bot = WALNUT_BOT) {
+/** Smoked glass: a soft shadow, a breath of light along the top, and a hairline edge. */
+function glass(x: Ctx, w: number, h: number, rad: number, alpha: number, tint = SMOKE, tip = false) {
+  const path = (xx: Ctx, inset = 0) => box(xx, PAD + inset, PAD + inset, w - inset * 2, h - inset * 2, Math.max(1, rad - inset), tip)
   x.save()
-  x.shadowColor = 'rgba(8,4,2,0.55)'
-  x.shadowBlur = 6 * DPR
+  x.shadowColor = 'rgba(0,0,0,0.32)'
+  x.shadowBlur = 7 * DPR
   x.shadowOffsetY = 2 * DPR
   x.beginPath(); path(x)
-  const g = x.createLinearGradient(0, PAD, 0, PAD + h)
-  g.addColorStop(0, css(top, alpha))
-  g.addColorStop(1, css(bot, alpha))
-  x.fillStyle = g
+  x.fillStyle = css(tint, alpha)
   x.fill()
   x.restore()
-
   x.save()
   x.beginPath(); path(x); x.clip()
-  for (let i = 0; i < Math.max(4, h / 3); i++) {
-    const yy = PAD + r.range(2, h - 2)
-    x.strokeStyle = css(r.next() < 0.5 ? shade(top, 0.22) : 0x0c0806, r.range(0.1, 0.26))
-    x.lineWidth = r.range(0.5, 1.2)
-    x.beginPath(); x.moveTo(PAD, yy)
-    x.bezierCurveTo(PAD + w * 0.3, yy + r.range(-2, 2), PAD + w * 0.7, yy + r.range(-2, 2), PAD + w, yy + r.range(-1.5, 1.5))
-    x.stroke()
-  }
-  // depth: the middle is lit, the edges fall away
-  const v = x.createRadialGradient(PAD + w / 2, PAD + h * 0.3, Math.min(w, h) * 0.2, PAD + w / 2, PAD + h / 2, Math.max(w, h) * 0.75)
-  v.addColorStop(0, 'rgba(0,0,0,0)')
-  v.addColorStop(1, 'rgba(6,3,1,0.3)')
-  x.fillStyle = v
+  const g = x.createLinearGradient(0, PAD, 0, PAD + Math.min(h, 22))
+  g.addColorStop(0, css(EDGE, 0.07)); g.addColorStop(1, css(EDGE, 0))
+  x.fillStyle = g
   x.fillRect(PAD, PAD, w, h)
-  const lip = x.createLinearGradient(0, PAD, 0, PAD + 7)
-  lip.addColorStop(0, css(0xfff0d0, 0.13)); lip.addColorStop(1, css(0xfff0d0, 0))
-  x.fillStyle = lip; x.fillRect(PAD, PAD, w, 7)
   x.restore()
-  x.save(); x.beginPath(); path(x); x.clip()
-  applyGrain(x, w + PAD * 2, h + PAD * 2, 0.05)
-  x.restore()
+  x.beginPath(); path(x, 0.5)
+  x.strokeStyle = css(EDGE, 0.11); x.lineWidth = 1; x.stroke()
 }
 
 // ---- painters ---------------------------------------------------------------
 
-/** Walnut lacquer with a gilt rule: the HUD's panels. */
-function paintHud(x: Ctx, w: number, h: number, o: SkinOpts, r: Rng) {
-  const accent = o.accent ?? PAL.gilt
-  const c = Math.min(7, h * 0.22, w * 0.1)
-  lacquer(x, xx => chamfer(xx, PAD, PAD, w, h, c), w, h, r, o.alpha ?? 0.94)
-  x.beginPath(); chamfer(x, PAD + 0.5, PAD + 0.5, w - 1, h - 1, c)
-  x.strokeStyle = css(INK_EDGE, 0.95); x.lineWidth = 1.5; x.stroke()
-  const inset = 3
-  x.beginPath(); chamfer(x, PAD + inset, PAD + inset, w - inset * 2, h - inset * 2, Math.max(1, c - 2))
-  x.strokeStyle = giltGradient(x, PAD, PAD + h, accent); x.lineWidth = 1.1
-  x.globalAlpha = 0.85; x.stroke(); x.globalAlpha = 1
-  if (h > 24 && w > 48) {
-    const dr = Math.min(3.4, h * 0.1)
-    const e = c * 0.55 + inset * 0.3
-    diamond(x, PAD + e, PAD + e, dr, accent)
-    diamond(x, PAD + w - e, PAD + e, dr, accent)
-    diamond(x, PAD + e, PAD + h - e, dr, accent)
-    diamond(x, PAD + w - e, PAD + h - e, dr, accent)
-  }
+/** The HUD's panels: glass over the world. */
+function paintHud(x: Ctx, w: number, h: number, o: SkinOpts) {
+  glass(x, w, h, Math.min(10, h / 2, w / 2), o.alpha ?? 0.62, o.lacquer ?? SMOKE)
 }
 
-/** The HUD panel with a pointer: the card that floats over a building. */
-function paintCallout(x: Ctx, w: number, h: number, o: SkinOpts, r: Rng) {
-  const accent = o.accent ?? PAL.gilt
-  const c = Math.min(7, h * 0.22, w * 0.1)
-  lacquer(x, xx => calloutPath(xx, PAD, PAD, w, h, c), w, h + TIP, r, o.alpha ?? 0.95)
-  x.beginPath(); calloutPath(x, PAD + 0.5, PAD + 0.5, w - 1, h - 1, c)
-  x.strokeStyle = css(INK_EDGE, 0.95); x.lineWidth = 1.5; x.stroke()
-  const inset = 3
-  x.beginPath(); chamfer(x, PAD + inset, PAD + inset, w - inset * 2, h - inset * 2, Math.max(1, c - 2))
-  x.strokeStyle = giltGradient(x, PAD, PAD + h, accent); x.lineWidth = 1.1
-  x.globalAlpha = 0.85; x.stroke(); x.globalAlpha = 1
-  const e = c * 0.55 + inset * 0.3
-  for (const [cx, cy] of [[PAD + e, PAD + e], [PAD + w - e, PAD + e]]) diamond(x, cx, cy, 3.2, accent)
+/** The same glass with a pointer: a card that floats over a building. */
+function paintCallout(x: Ctx, w: number, h: number, o: SkinOpts) {
+  glass(x, w, h, Math.min(10, h / 2, w / 2), o.alpha ?? 0.8, o.lacquer ?? SMOKE, true)
 }
 
-/** A parchment page: what every card and menu is written on. */
-function paintPage(x: Ctx, w: number, h: number, o: SkinOpts, r: Rng) {
+/** A card: what every menu and screen is written on. Denser glass, and a short mark of its accent on top. */
+function paintPage(x: Ctx, w: number, h: number, o: SkinOpts) {
+  glass(x, w, h, Math.min(14, h / 2, w / 2), o.alpha ?? 0.93, o.lacquer ?? SMOKE)
   const accent = o.accent ?? PAL.wax
-  // a deckled edge: the page is cut by hand
-  const edge: [number, number][] = []
-  const step = 9
-  for (let px = 0; px <= w; px += step) edge.push([PAD + px, PAD + r.range(-0.8, 0.9)])
-  for (let py = step; py <= h; py += step) edge.push([PAD + w + r.range(-0.9, 0.8), PAD + py])
-  for (let px = w - step; px >= 0; px -= step) edge.push([PAD + px, PAD + h + r.range(-0.9, 0.8)])
-  for (let py = h - step; py > 0; py -= step) edge.push([PAD + r.range(-0.8, 0.9), PAD + py])
-  const page = (xx: Ctx) => {
-    xx.moveTo(edge[0][0], edge[0][1])
-    for (let i = 1; i < edge.length; i++) xx.lineTo(edge[i][0], edge[i][1])
-    xx.closePath()
-  }
-
-  x.save()
-  x.shadowColor = 'rgba(8,4,2,0.6)'
-  x.shadowBlur = 10 * DPR
-  x.shadowOffsetY = 4 * DPR
-  x.beginPath(); page(x)
-  x.fillStyle = css(PAL.parchment)
-  x.fill()
-  x.restore()
-
-  x.save()
-  x.beginPath(); page(x); x.clip()
-  // mottled paper
-  for (let i = 0; i < Math.max(12, Math.min(160, (w * h) / 2500)); i++) {
-    const px = PAD + r.range(0, w), py = PAD + r.range(0, h)
-    glow(x, px, py, r.range(10, 40), r.next() < 0.6 ? 0xd8c090 : 0xfff4dc, r.range(0.12, 0.3))
-  }
-  // foxing
-  for (let i = 0; i < Math.max(3, Math.min(30, (w * h) / 16000)); i++) {
-    glow(x, PAD + r.range(0, w), PAD + r.range(0, h), r.range(2, 6), 0xa07a4a, r.range(0.15, 0.3))
-  }
-  // edges browned by handling
-  const burn = Math.min(w, h) * 0.2
-  for (const [x0, y0, x1, y1] of [[PAD, 0, PAD + burn, 0], [PAD + w, 0, PAD + w - burn, 0], [0, PAD, 0, PAD + burn], [0, PAD + h, 0, PAD + h - burn]]) {
-    const g = x.createLinearGradient(x0, y0, x1, y1)
-    g.addColorStop(0, css(0x8a6a3a, 0.42)); g.addColorStop(1, css(0x8a6a3a, 0))
-    x.fillStyle = g
-    x.fillRect(PAD, PAD, w, h)
-  }
-  x.restore()
-  x.save(); x.beginPath(); page(x); x.clip()
-  applyGrain(x, w + PAD * 2, h + PAD * 2, 0.08)
-  x.restore()
-
-  // inked edge and a double rule inside it
-  x.beginPath(); page(x)
-  x.strokeStyle = css(0x5a3e26, 0.9); x.lineWidth = 1.2; x.stroke()
-  const i1 = 7, i2 = 11
-  x.strokeStyle = css(0x3a2616, 0.75); x.lineWidth = 1.6
-  x.strokeRect(PAD + i1, PAD + i1, w - i1 * 2, h - i1 * 2)
-  x.strokeStyle = css(0x3a2616, 0.45); x.lineWidth = 0.7
-  x.strokeRect(PAD + i2, PAD + i2, w - i2 * 2, h - i2 * 2)
-  // corner pieces: a lozenge in the accent colour where the rules meet
-  for (const [cx, cy] of [[PAD + i1, PAD + i1], [PAD + w - i1, PAD + i1], [PAD + i1, PAD + h - i1], [PAD + w - i1, PAD + h - i1]]) {
-    diamond(x, cx, cy, 5, accent)
-  }
+  const mw = Math.min(56, w * 0.24)
+  x.beginPath(); x.roundRect(PAD + w / 2 - mw / 2, PAD, mw, 2.5, 1.25)
+  x.fillStyle = css(mix(accent, 0xffffff, 0.12), 0.95); x.fill()
 }
 
-/** A button: a walnut (or coloured lacquer) plate with a gilt border. */
+/** A button: a flat pill of its tone, with a hairline edge that brightens under the pointer. */
 function paintPlate(x: Ctx, w: number, h: number, o: SkinOpts) {
   const state = o.state ?? 'idle'
-  const accent = o.accent ?? PAL.gilt
-  const base = o.lacquer ?? 0x3a2a1e
-  const c = Math.min(6, h * 0.25)
-  const lift = state === 'hover'
-  const down = state === 'active'
+  const base = o.lacquer ?? PLATE_BASE
+  const rad = Math.min(9, h / 2)
+  const alpha = o.alpha ?? 1
+  const fill = state === 'disabled' ? mix(base, 0x3a3532, 0.7)
+    : state === 'hover' ? mix(base, 0xffffff, 0.1)
+      : state === 'active' ? shade(base, -0.18) : base
   x.save()
-  x.shadowColor = 'rgba(8,4,2,0.5)'
-  x.shadowBlur = (down ? 2 : lift ? 7 : 4) * DPR
-  x.shadowOffsetY = (down ? 0.5 : state === 'disabled' ? 1 : 2.5) * DPR
-  x.beginPath(); chamfer(x, PAD, PAD, w, h, c)
-  const top = state === 'disabled' ? mix(base, 0x5a5048, 0.55) : lift ? shade(base, 0.14) : down ? shade(base, -0.12) : base
-  const g = x.createLinearGradient(0, PAD, 0, PAD + h)
-  if (down) {
-    g.addColorStop(0, css(shade(top, -0.3)))
-    g.addColorStop(0.5, css(top))
-    g.addColorStop(1, css(shade(top, 0.04)))
-  } else {
-    g.addColorStop(0, css(shade(top, 0.1)))
-    g.addColorStop(0.5, css(top))
-    g.addColorStop(1, css(shade(top, -0.42)))
+  if (state !== 'active') {
+    x.shadowColor = 'rgba(0,0,0,0.3)'
+    x.shadowBlur = 4 * DPR
+    x.shadowOffsetY = 1.5 * DPR
   }
-  x.fillStyle = g
+  x.beginPath(); x.roundRect(PAD, PAD, w, h, rad)
+  x.fillStyle = css(fill, state === 'disabled' ? Math.min(alpha, 0.7) : alpha)
   x.fill()
   x.restore()
-  // highlight along the top, or a pressed shadow when held down
-  x.save()
-  x.beginPath(); chamfer(x, PAD, PAD, w, h, c); x.clip()
-  const lip = x.createLinearGradient(0, PAD, 0, PAD + h * 0.5)
-  lip.addColorStop(0, down ? css(0x000000, 0.25) : css(0xfff4dc, lift ? 0.24 : 0.13))
-  lip.addColorStop(1, css(0xfff4dc, 0))
-  x.fillStyle = lip; x.fillRect(PAD, PAD, w, h * 0.5)
-  applyGrain(x, w + PAD * 2, h + PAD * 2, 0.06)
-  x.restore()
-  x.beginPath(); chamfer(x, PAD + 0.5, PAD + 0.5, w - 1, h - 1, c)
-  x.strokeStyle = css(INK_EDGE, 0.95); x.lineWidth = 1.4; x.stroke()
-  x.beginPath(); chamfer(x, PAD + 2.5, PAD + 2.5, w - 5, h - 5, Math.max(1, c - 1.5))
-  x.strokeStyle = state === 'disabled' ? css(0x7a6a5a, 0.5) : giltGradient(x, PAD, PAD + h, lift ? mix(accent, 0xfff4d0, 0.25) : accent)
-  x.lineWidth = lift || down ? 1.6 : 1.1
-  x.globalAlpha = state === 'idle' ? 0.85 : 1
+  // a breath of light on the upper half, gone when pressed
+  if (state !== 'active') {
+    x.save(); x.beginPath(); x.roundRect(PAD, PAD, w, h, rad); x.clip()
+    const lip = x.createLinearGradient(0, PAD, 0, PAD + h * 0.55)
+    lip.addColorStop(0, css(EDGE, state === 'hover' ? 0.12 : 0.07)); lip.addColorStop(1, css(EDGE, 0))
+    x.fillStyle = lip; x.fillRect(PAD, PAD, w, h)
+    x.restore()
+  }
+  x.beginPath(); x.roundRect(PAD + 0.5, PAD + 0.5, w - 1, h - 1, Math.max(1, rad - 0.5))
+  if (state === 'hover' && o.accent !== undefined) {
+    // hover, or the pad's focus: the accent rings the plate
+    x.strokeStyle = css(o.accent, 0.8); x.lineWidth = 1.5
+  } else {
+    x.strokeStyle = css(EDGE, state === 'disabled' ? 0.05 : 0.12); x.lineWidth = 1
+  }
   x.stroke()
-  x.globalAlpha = 1
 }
 
-/** A pennant ribbon with swallow-tailed ends: headers and toasts. */
-function paintRibbon(x: Ctx, w: number, h: number, o: SkinOpts, r: Rng) {
-  const col = o.lacquer ?? PAL.wax
-  const accent = o.accent ?? PAL.gilt
-  const tail = Math.min(18, w * 0.08)
-  const body = (xx: Ctx) => {
-    xx.moveTo(PAD, PAD)
-    xx.lineTo(PAD + w, PAD)
-    xx.lineTo(PAD + w - tail, PAD + h / 2)
-    xx.lineTo(PAD + w, PAD + h)
-    xx.lineTo(PAD, PAD + h)
-    xx.lineTo(PAD + tail, PAD + h / 2)
-    xx.closePath()
-  }
-  x.save()
-  x.shadowColor = 'rgba(8,4,2,0.55)'; x.shadowBlur = 6 * DPR; x.shadowOffsetY = 3 * DPR
-  x.beginPath(); body(x)
-  const g = x.createLinearGradient(0, PAD, 0, PAD + h)
-  g.addColorStop(0, css(shade(col, 0.15))); g.addColorStop(0.55, css(col)); g.addColorStop(1, css(shade(col, -0.35)))
-  x.fillStyle = g; x.fill()
-  x.restore()
-  x.save(); x.beginPath(); body(x); x.clip()
-  // soft folds across the cloth
-  for (let i = 0; i < Math.max(2, w / 70); i++) {
-    const fx = PAD + r.range(tail, w - tail)
-    const fg = x.createLinearGradient(fx - 14, 0, fx + 14, 0)
-    fg.addColorStop(0, 'rgba(0,0,0,0)'); fg.addColorStop(0.5, css(0x000000, r.range(0.06, 0.14))); fg.addColorStop(1, 'rgba(0,0,0,0)')
-    x.fillStyle = fg; x.fillRect(fx - 14, PAD, 28, h)
-  }
-  applyGrain(x, w + PAD * 2, h + PAD * 2, 0.1)
-  x.restore()
-  x.beginPath(); body(x)
-  x.strokeStyle = css(INK_EDGE, 0.9); x.lineWidth = 1.4; x.stroke()
-  x.strokeStyle = giltGradient(x, PAD, PAD + h, accent); x.lineWidth = 1
-  x.beginPath(); x.moveTo(PAD + tail + 3, PAD + 3.5); x.lineTo(PAD + w - tail - 3, PAD + 3.5); x.stroke()
-  x.beginPath(); x.moveTo(PAD + tail + 3, PAD + h - 3.5); x.lineTo(PAD + w - tail - 3, PAD + h - 3.5); x.stroke()
+/**
+ * A band of shade across the middle of the screen that fades out at both
+ * ends, ruled above and below: headlines and news. No cloth, no tails.
+ */
+function paintRibbon(x: Ctx, w: number, h: number, o: SkinOpts) {
+  const tint = mix(SMOKE, o.lacquer ?? SMOKE, 0.22)
+  const accent = o.accent ?? PAL.gold
+  const band = x.createLinearGradient(PAD, 0, PAD + w, 0)
+  band.addColorStop(0, css(tint, 0))
+  band.addColorStop(0.2, css(tint, o.alpha ?? 0.72))
+  band.addColorStop(0.8, css(tint, o.alpha ?? 0.72))
+  band.addColorStop(1, css(tint, 0))
+  x.fillStyle = band
+  x.fillRect(PAD, PAD, w, h)
+  const rule = x.createLinearGradient(PAD, 0, PAD + w, 0)
+  rule.addColorStop(0, css(accent, 0))
+  rule.addColorStop(0.5, css(accent, 0.7))
+  rule.addColorStop(1, css(accent, 0))
+  x.fillStyle = rule
+  x.fillRect(PAD, PAD, w, 1)
+  x.fillRect(PAD, PAD + h - 1, w, 1)
 }
 
-/** The groove a bar runs in: a dark channel cut into the lacquer. */
+/** The channel a bar runs in: a dark rounded groove. */
 function paintWell(x: Ctx, w: number, h: number, o: SkinOpts) {
-  const rad = Math.min(3, h / 2)
-  const path = (xx: Ctx) => xx.roundRect(PAD, PAD, w, h, rad)
-  x.beginPath(); path(x)
-  x.fillStyle = css(0x0d0805, o.alpha ?? 0.92); x.fill()
-  x.save(); x.beginPath(); path(x); x.clip()
-  const s = x.createLinearGradient(0, PAD, 0, PAD + Math.max(3, h * 0.6))
-  s.addColorStop(0, css(0x000000, 0.6)); s.addColorStop(1, css(0x000000, 0))
-  x.fillStyle = s; x.fillRect(PAD, PAD, w, h)
-  x.restore()
-  x.beginPath(); path(x)
-  x.strokeStyle = css(INK_EDGE, 1); x.lineWidth = 1; x.stroke()
-  // the lacquer catches light along the lower lip of the cut
-  x.beginPath(); x.moveTo(PAD + rad, PAD + h + 0.8); x.lineTo(PAD + w - rad, PAD + h + 0.8)
-  x.strokeStyle = css(o.accent ?? 0xfff0d0, 0.16); x.lineWidth = 1; x.stroke()
+  x.beginPath(); x.roundRect(PAD, PAD, w, h, Math.min(h / 2, 4))
+  x.fillStyle = css(0x000000, o.alpha ?? 0.5); x.fill()
 }
 
 const PAINTERS: Record<Skin, (x: Ctx, w: number, h: number, o: SkinOpts, r: Rng) => void> = {
@@ -474,30 +314,16 @@ export class SkinPanel {
 
 // ---- bars -------------------------------------------------------------------
 
-/** A painted liquid fill: lit along the top, darker below, brushed and grained. */
-function paintFill(x: Ctx, w: number, h: number, colour: number, pale: boolean, r: Rng) {
-  const c = pale ? mix(colour, 0xfff4dc, 0.6) : colour
-  const rad = Math.min(2, h / 2)
+/** A flat fill with a little light along its top: the colour is the message. */
+function paintFill(x: Ctx, w: number, h: number, colour: number, pale: boolean) {
+  const c = pale ? mix(colour, 0xfff4dc, 0.55) : colour
+  const rad = Math.min(3, h / 2)
   x.beginPath(); x.roundRect(0, 0, w, h, rad)
   const g = x.createLinearGradient(0, 0, 0, h)
-  g.addColorStop(0, css(lightOf(c, 0.35)))
-  g.addColorStop(0.45, css(c))
-  g.addColorStop(1, css(shadowOf(c, 0.4)))
+  g.addColorStop(0, css(lightOf(c, 0.18), pale ? 0.55 : 1))
+  g.addColorStop(1, css(shade(c, -0.12), pale ? 0.55 : 1))
   x.fillStyle = g
   x.fill()
-  x.save(); x.beginPath(); x.roundRect(0, 0, w, h, rad); x.clip()
-  if (h >= 6) {
-    for (let i = 0; i < Math.max(2, h / 3); i++) {
-      const yy = r.range(1, h - 1)
-      x.strokeStyle = css(r.next() < 0.5 ? shade(c, 0.3) : shade(c, -0.3), r.range(0.1, 0.22))
-      x.lineWidth = r.range(0.6, 1.2)
-      x.beginPath(); x.moveTo(0, yy); x.lineTo(w, yy + r.range(-0.6, 0.6)); x.stroke()
-    }
-  }
-  x.fillStyle = css(0xffffff, pale ? 0.12 : 0.22)
-  x.fillRect(0, Math.max(1, h * 0.14), w, Math.max(1, h * 0.22))
-  applyGrain(x, w, h, 0.08)
-  x.restore()
 }
 
 /**
@@ -549,12 +375,12 @@ export class SkinBar {
     const { fw, fh, colour } = this
     if (fw <= 0 || fh <= 0) return
     const key = `bar:${colour}:${fw}x${fh}`
-    if (this.fillHeld.swap(key, fw, fh, x => paintFill(x, fw, fh, colour, false, new Rng(hash(key))))) {
+    if (this.fillHeld.swap(key, fw, fh, x => paintFill(x, fw, fh, colour, false))) {
       this.fill.setTexture(key)
     }
     if (this.opts.ghost) {
       const gk = `bar:ghost:${colour}:${fw}x${fh}`
-      if (this.ghostHeld.swap(gk, fw, fh, x => paintFill(x, fw, fh, colour, true, new Rng(hash(gk))))) {
+      if (this.ghostHeld.swap(gk, fw, fh, x => paintFill(x, fw, fh, colour, true))) {
         this.ghost.setTexture(gk)
       }
     }
@@ -622,17 +448,17 @@ export class SkinBar {
 
 export type Tone = 'plain' | 'primary' | 'danger' | 'quiet' | 'good'
 
-const TONES: Record<Tone, { lacquer: number; accent: number; text: number }> = {
-  /** walnut with a gilt rule: most buttons */
-  plain: { lacquer: 0x3a2a1e, accent: PAL.gilt, text: PAL.uiText },
-  /** lapis enamel: the one thing a screen most wants pressed */
-  primary: { lacquer: 0x264a86, accent: 0xe9c46a, text: 0xfff6e2 },
+const TONES: Record<Tone, { lacquer: number; accent: number; text: number; alpha: number }> = {
+  /** charcoal: most buttons */
+  plain: { lacquer: PLATE_BASE, accent: 0xe8d8b8, text: PAL.uiText, alpha: 0.92 },
+  /** lapis: the one thing a screen most wants pressed */
+  primary: { lacquer: 0x2f62b0, accent: 0xcfe2ff, text: 0xffffff, alpha: 1 },
   /** oxblood: anything that throws something away */
-  danger: { lacquer: 0x7a2419, accent: 0xd9a24a, text: 0xfff0e4 },
-  /** dark and quiet: toggles and secondary rows */
-  quiet: { lacquer: 0x2a1e16, accent: 0xa9884a, text: PAL.uiText },
+  danger: { lacquer: 0x94301f, accent: 0xffc2a8, text: 0xfff0e4, alpha: 1 },
+  /** smoke: toggles, secondary rows and the HUD's own buttons */
+  quiet: { lacquer: SMOKE, accent: 0xd8c8a8, text: PAL.uiText, alpha: 0.62 },
   /** moss: something already under way */
-  good: { lacquer: 0x3c5a26, accent: 0xd9b45a, text: 0xf4f0dc },
+  good: { lacquer: 0x3d6a2c, accent: 0xd8f0b8, text: 0xf4f0dc, alpha: 1 },
 }
 
 export interface ButtonOpts {
@@ -715,12 +541,12 @@ export class PlateButton {
   private redraw() {
     const t = TONES[this.tone]
     const state = !this.enabled ? 'disabled' : this.down ? 'active' : (this.hover || this.selected) ? 'hover' : 'idle'
-    this.plate.style({ lacquer: t.lacquer, accent: this.selected ? 0xfff0b8 : t.accent, state })
+    this.plate.style({ lacquer: t.lacquer, accent: this.selected ? 0xfff0b8 : t.accent, state, alpha: t.alpha })
       .place(this.x - this.w / 2, this.y - this.h / 2, this.w, this.h)
     const nudge = state === 'active' ? 1 : 0
     const hasSub = this.sub.visible && !!this.sub.text
     const iconW = this.hasIcon ? Math.min(this.h * 0.62, 30) : 0
-    const gap = this.hasIcon ? 7 : 0
+    const gap = this.hasIcon && this.label.text ? 7 : 0
     const labelW = this.label.width
     const left = this.x - (iconW + gap + labelW) / 2
     const ly = this.y + nudge + (hasSub ? -this.h * 0.14 : 0)
@@ -837,115 +663,67 @@ function hiRes(scene: Phaser.Scene, key: string, w: number, h: number) {
 }
 
 /**
- * Colours that read on walnut do not read on parchment. Text on a page goes
- * through this: bone becomes ink, gold becomes a burnt gold, the signal
- * colours darken until they hold up on paper.
+ * Colours as they sit on a card. Cards are the same dark glass as the HUD, so
+ * the HUD's own colours already hold up; this is kept so a panel never has to
+ * know which surface it sits on.
  */
 export function onPage(c: number): number {
-  switch (c) {
-    case PAL.uiText: return ON_PAGE.text
-    case PAL.uiDim: return ON_PAGE.dim
-    case PAL.gold: return ON_PAGE.gilt
-    case PAL.good: return ON_PAGE.good
-    case PAL.danger: return ON_PAGE.danger
-    case PAL.heroTrim: return ON_PAGE.lapis
-    case PAL.uiEdge: return 0x7a6048
-    default: return shade(c, -0.42)
-  }
+  return c === PAL.uiEdge ? 0x8a7a64 : c
 }
 
-/** A wax seal: the ability buttons. Painted once per colour, state and size. */
+/**
+ * An ability's disc: smoked glass ringed in the ability's colour. Cooling
+ * down, the ring goes grey and the glass thins; ready, it takes its colour
+ * back. The ultimate wears a second, outer ring. Painted once per colour,
+ * state and size.
+ */
 export function sealTexture(scene: Phaser.Scene, colour: number, ready: boolean, r = 40, gilt = false): string {
-  const key = `seal_${colour.toString(16)}_${ready ? 1 : 0}_${r}_${gilt ? 1 : 0}`
+  const key = `disc_${colour.toString(16)}_${ready ? 1 : 0}_${r}_${gilt ? 1 : 0}`
   if (scene.textures.exists(key)) return key
   const S = r * 2 + PAD * 2
   const { tex, x } = hiRes(scene, key, S, S)
   const c = S / 2
-  const rng = new Rng((colour & 0xffff) + r)
-  // the ability's own hue, deepened into wax rather than mixed toward red —
-  // mixing made every seal the same muddy plum
-  const wax = ready ? mix(shade(colour, -0.38), PAL.wax, 0.14) : 0x463830
-  // the poured blob, never quite round
-  const blob = (xx: Ctx, rad: number) => {
-    const n = 26
-    for (let i = 0; i <= n; i++) {
-      const a = (i / n) * Math.PI * 2
-      const rr = rad * (1 + (i % n ? rng.range(-0.03, 0.03) : 0))
-      const px = c + Math.cos(a) * rr, py = c + Math.sin(a) * rr
-      if (i === 0) xx.moveTo(px, py); else xx.lineTo(px, py)
-    }
-    xx.closePath()
-  }
   const body = r - 1
   x.save()
-  x.shadowColor = 'rgba(8,4,2,0.65)'; x.shadowBlur = 6 * DPR; x.shadowOffsetY = 2 * DPR
-  x.beginPath(); blob(x, body)
-  const g = x.createRadialGradient(c - body * 0.35, c - body * 0.4, body * 0.1, c, c, body)
-  g.addColorStop(0, css(mix(wax, 0xffffff, 0.28)))
-  g.addColorStop(0.55, css(wax))
-  g.addColorStop(1, css(shade(wax, -0.5)))
-  x.fillStyle = g
+  x.shadowColor = 'rgba(0,0,0,0.35)'; x.shadowBlur = 6 * DPR; x.shadowOffsetY = 2 * DPR
+  x.beginPath(); x.arc(c, c, body, 0, Math.PI * 2)
+  x.fillStyle = css(SMOKE, ready ? 0.72 : 0.6)
   x.fill()
   x.restore()
-  x.save(); x.beginPath(); blob(x, body); x.clip()
-  applyGrain(x, S, S, 0.08)
-  x.restore()
-  // the pressed ring of the stamp
-  x.beginPath(); x.arc(c, c, body * 0.74, 0, Math.PI * 2)
-  x.strokeStyle = css(shade(wax, -0.55), 0.85); x.lineWidth = 2.2; x.stroke()
-  x.beginPath(); x.arc(c + 0.8, c + 1, body * 0.74, 0, Math.PI * 2)
-  x.strokeStyle = css(mix(wax, 0xffffff, 0.35), 0.35); x.lineWidth = 1; x.stroke()
-  x.beginPath(); x.arc(c, c, body * 0.74 - 2, 0, Math.PI * 2)
-  x.fillStyle = css(shade(wax, -0.3), 0.5); x.fill()
-  x.beginPath(); blob(x, body)
-  x.strokeStyle = css(INK_EDGE, 0.95); x.lineWidth = 1.6; x.stroke()
-  if (gilt) {
-    x.beginPath(); x.arc(c, c, body + 0.5, 0, Math.PI * 2)
-    x.strokeStyle = giltGradient(x, c - body, c + body, ready ? PAL.gilt : 0x7a6a5a); x.lineWidth = 2.4; x.stroke()
-    x.beginPath(); x.arc(c, c, body + 2, 0, Math.PI * 2)
-    x.strokeStyle = css(INK_EDGE, 0.9); x.lineWidth = 1; x.stroke()
+  if (ready) {
+    // the colour glows up from the bottom of the glass
+    const g = x.createRadialGradient(c, c + body * 0.5, body * 0.1, c, c, body)
+    g.addColorStop(0, css(colour, 0.32))
+    g.addColorStop(1, css(colour, 0.06))
+    x.beginPath(); x.arc(c, c, body, 0, Math.PI * 2)
+    x.fillStyle = g; x.fill()
   }
-  // a glint
-  x.beginPath(); x.ellipse(c - body * 0.42, c - body * 0.52, body * 0.17, body * 0.08, -0.6, 0, Math.PI * 2)
-  x.fillStyle = css(0xffffff, ready ? 0.45 : 0.14); x.fill()
+  const ring = ready ? mix(colour, 0xffffff, 0.15) : 0x8a8480
+  const lw = gilt ? 2.6 : 2
+  x.beginPath(); x.arc(c, c, body - lw / 2, 0, Math.PI * 2)
+  x.strokeStyle = css(ring, ready ? 0.95 : 0.4); x.lineWidth = lw; x.stroke()
+  if (gilt) {
+    x.beginPath(); x.arc(c, c, body - lw - 2.5, 0, Math.PI * 2)
+    x.strokeStyle = css(ring, ready ? 0.35 : 0.15); x.lineWidth = 1; x.stroke()
+  }
   tex.refresh()
   return key
 }
 
-/** A gilt medallion with an enamel face: the hero's level, the day's dial. */
-export function medalTexture(scene: Phaser.Scene, r: number, enamel = PAL.lapis): string {
-  const key = `medal_${r}_${enamel.toString(16)}`
+/** A disc with a coloured ring: the hero's level, the stick's knob. */
+export function medalTexture(scene: Phaser.Scene, r: number, enamel = PAL.heroTrim): string {
+  const key = `medal2_${r}_${enamel.toString(16)}`
   if (scene.textures.exists(key)) return key
   const S = r * 2 + PAD * 2
   const { tex, x } = hiRes(scene, key, S, S)
   const c = S / 2
   x.save()
-  x.shadowColor = 'rgba(8,4,2,0.6)'; x.shadowBlur = 6 * DPR; x.shadowOffsetY = 2 * DPR
+  x.shadowColor = 'rgba(0,0,0,0.35)'; x.shadowBlur = 5 * DPR; x.shadowOffsetY = 1.5 * DPR
   x.beginPath(); x.arc(c, c, r, 0, Math.PI * 2)
-  x.fillStyle = giltGradient(x, c - r, c + r, PAL.gilt); x.fill()
+  x.fillStyle = css(mix(SMOKE, enamel, 0.18), 0.92); x.fill()
   x.restore()
-  // notched bezel
-  for (let i = 0; i < 24; i++) {
-    const a = (i / 24) * Math.PI * 2
-    x.beginPath(); x.moveTo(c + Math.cos(a) * (r - 1), c + Math.sin(a) * (r - 1))
-    x.lineTo(c + Math.cos(a) * (r - 3.5), c + Math.sin(a) * (r - 3.5))
-    x.strokeStyle = css(shade(PAL.gilt, -0.45), 0.6); x.lineWidth = 1; x.stroke()
-  }
-  const inner = r - 4.5
-  x.beginPath(); x.arc(c, c, inner, 0, Math.PI * 2)
-  const e = x.createRadialGradient(c - inner * 0.3, c - inner * 0.35, inner * 0.1, c, c, inner)
-  e.addColorStop(0, css(lightOf(enamel, 0.3)))
-  e.addColorStop(0.6, css(enamel))
-  e.addColorStop(1, css(shadowOf(enamel, 0.5)))
-  x.fillStyle = e; x.fill()
-  x.strokeStyle = css(INK_EDGE, 0.9); x.lineWidth = 1.2; x.stroke()
-  x.save(); x.beginPath(); x.arc(c, c, inner, 0, Math.PI * 2); x.clip()
-  applyGrain(x, S, S, 0.08)
-  x.restore()
-  x.beginPath(); x.arc(c, c, r, 0, Math.PI * 2)
-  x.strokeStyle = css(INK_EDGE, 0.95); x.lineWidth = 1.5; x.stroke()
-  x.beginPath(); x.ellipse(c - inner * 0.35, c - inner * 0.5, inner * 0.3, inner * 0.12, -0.5, 0, Math.PI * 2)
-  x.fillStyle = css(0xffffff, 0.2); x.fill()
+  x.beginPath(); x.arc(c, c, r - 1, 0, Math.PI * 2)
+  x.strokeStyle = css(enamel, 0.95); x.lineWidth = 2; x.stroke()
   tex.refresh()
   return key
 }
@@ -967,35 +745,17 @@ export function vignetteTexture(scene: Phaser.Scene, colour = 0x0a0603): string 
   return key
 }
 
-/** The movement stick's ring: a dark glass disc with an inked bone rim and compass ticks. */
+
+/** The movement stick's ring: a faint disc and a thin bone rim. */
 export function stickRingTexture(scene: Phaser.Scene, r: number): string {
-  const key = `stick_ring_${r}`
+  const key = `stick_ring2_${r}`
   if (scene.textures.exists(key)) return key
   const S = r * 2 + PAD * 2
   const { tex, x } = hiRes(scene, key, S, S)
   const c = S / 2
   x.beginPath(); x.arc(c, c, r - 2, 0, Math.PI * 2)
-  const g = x.createRadialGradient(c, c, r * 0.2, c, c, r)
-  g.addColorStop(0, css(0x0c0704, 0.15))
-  g.addColorStop(1, css(0x0c0704, 0.45))
-  x.fillStyle = g; x.fill()
-  x.beginPath(); x.arc(c, c, r - 2, 0, Math.PI * 2)
-  x.strokeStyle = css(INK_EDGE, 0.7); x.lineWidth = 5; x.stroke()
-  x.beginPath(); x.arc(c, c, r - 2, 0, Math.PI * 2)
-  x.strokeStyle = css(PAL.bone, 0.75); x.lineWidth = 2.2; x.stroke()
-  x.beginPath(); x.arc(c, c, r * 0.56, 0, Math.PI * 2)
-  x.strokeStyle = css(PAL.bone, 0.25); x.lineWidth = 1.2; x.setLineDash([3, 5]); x.stroke(); x.setLineDash([])
-  // compass ticks
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 - Math.PI / 2
-    const px = c + Math.cos(a) * (r - 11), py = c + Math.sin(a) * (r - 11)
-    x.save(); x.translate(px, py); x.rotate(a + Math.PI / 2)
-    x.beginPath(); x.moveTo(0, -5); x.lineTo(4, 3); x.lineTo(-4, 3); x.closePath()
-    x.fillStyle = css(INK_EDGE, 0.8); x.fill()
-    x.beginPath(); x.moveTo(0, -3.5); x.lineTo(2.6, 2); x.lineTo(-2.6, 2); x.closePath()
-    x.fillStyle = css(PAL.gilt, 0.9); x.fill()
-    x.restore()
-  }
+  x.fillStyle = css(SMOKE, 0.22); x.fill()
+  x.strokeStyle = css(PAL.bone, 0.45); x.lineWidth = 1.5; x.stroke()
   tex.refresh()
   return key
 }

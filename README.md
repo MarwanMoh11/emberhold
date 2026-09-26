@@ -26,10 +26,10 @@ Then open <http://localhost:5180>.
 | Build / upgrade | walk into a build site; hold `SHIFT` to fund an upgrade |
 | Hire, recruit | stand on the camp or barracks |
 | Abilities | `SPACE`, `Q`, `E`, `F`, `G`, ultimate on `R` |
-| Army follow / hold | `H`, or the stance button under the health bar |
-| Atlas | `M`, or the MAP chip on the minimap: the whole frontier as you have explored it |
+| Army follow / hold | `H`, or the army button top right |
+| Atlas | `M`, the map button top right, or a tap on the minimap: the whole frontier as you have explored it |
 | Travel | walk onto a lit waystone (every outpost has one), or pick a lit stone in the atlas |
-| Pause | `ESC` or `P`, or PAUSE under the health bar |
+| Pause | `ESC` or `P`, or the pause button top right |
 | Debug panel | `F2` |
 
 A standard controller also works: left stick or D-pad moves, A/B/X/Y/LB use
@@ -38,10 +38,15 @@ the map, and left stick click changes the army order. Use the D-pad and A to
 navigate the pause menu; A/B/X choose level-up cards.
 
 On a phone it plays in either orientation: drag the left half of the screen to
-move, tap the buttons bottom-right for abilities and dodge, tap PAUSE or the army's
-standing order under the health bar, and everything else happens by walking
-into it. The minimap starts folded away on a phone, because the corners are
-full; tap MAP to unfold it. Add it to your home screen and it opens without
+move, tap the buttons bottom-right for abilities and dodge, use the three icon
+buttons top right for the army's standing order, the atlas and pause, and
+everything else happens by walking into it. A phone held upright has no corner
+to spare for the minimap, so it stays away there; the map button opens the atlas.
+
+The HUD is kept to the corners and kept quiet: vitals top left, the day and the
+current objective top centre, the icon buttons and your stores top right, and
+the abilities under the right thumb, all on the same dark smoked glass with no
+ornament, so the world stays the brightest thing on screen. Add it to your home screen and it opens without
 browser chrome. The horde is capped lower on a phone so the frame rate holds.
 
 The loop: sweep up coins and wood by hand → walk the load to the depot or a
@@ -155,7 +160,7 @@ The target is a few hundred enemies at 60 fps, and the design follows from that.
   filled with the hour's ambient colour, every hearth, brazier, fire and ember
   is added into it as a soft brush on a 2D canvas, and the result is multiplied
   over the world. By day it is only a warm grade.
-- **The interface is painted, not drawn.** Every panel, plate, bar and seal is
+- **The interface is painted, not drawn.** Every panel, button, bar and disc is
   painted once into a canvas texture by `src/ui/skin.ts`, cached by how it
   looks and shared: a dozen buttons of one size are one texture, and hovering
   one swaps textures rather than repainting. A health bar changing every frame

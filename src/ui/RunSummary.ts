@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { Overlay } from './Overlay'
 import { PAL } from '../config/palette'
+import { ON_PAGE } from './skin'
 import { REGIONS } from '../config/world'
 import { QUESTS } from '../config/quests'
 import { RESOURCE_ORDER } from '../core/types'
@@ -137,9 +138,9 @@ export class RunSummary extends Overlay {
       const bx = x + padX + col * (cellW + gap)
       const by = top + row * cellH
       // a ledger box: ruled in ink, lightly washed
-      this.grid.fillStyle(0x8a6a3a, 0.08)
+      this.grid.fillStyle(ON_PAGE.rule, 0.04)
       this.grid.fillRect(bx, by, cellW, cellH - gap)
-      this.grid.lineStyle(1, 0x3a2616, 0.35)
+      this.grid.lineStyle(1, ON_PAGE.rule, 0.12)
       this.grid.strokeRect(bx, by, cellW, cellH - gap)
 
       cell.label.setFontSize(c ? 10 : 12).setText(data[i][0])

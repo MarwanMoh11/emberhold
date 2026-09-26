@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { Overlay } from './Overlay'
 import { PAL } from '../config/palette'
+import { ON_PAGE } from './skin'
 import { UPGRADE_ICON } from '../art/icons'
 import { UPGRADES } from '../config/upgrades'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
@@ -148,7 +149,7 @@ export class RespecOverlay extends Overlay {
     // Measured down from the top of its own band, so the label always keeps
     // clear of the last row of picks however few picks there are.
     const costTop = y + h - footH - costH
-    this.panel.lineStyle(1, 0x3a2616, 0.3)
+    this.panel.lineStyle(1, ON_PAGE.rule, 0.14)
     this.panel.lineBetween(x + padX, costTop + 2, x + w - padX, costTop + 2)
     const costY = costTop + (c ? 30 : 40)
     this.costLabel.setFontSize(c ? 10 : 12)

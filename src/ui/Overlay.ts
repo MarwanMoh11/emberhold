@@ -1,16 +1,15 @@
 import Phaser from 'phaser'
 import { PAL, CSS } from '../config/palette'
 import { screen, textStyle, type Voice } from './theme'
-import { onPage, PlateButton, SkinPanel, vignetteTexture, type Tone } from './skin'
+import { ON_PAGE, onPage, PlateButton, SkinPanel, vignetteTexture, type Tone } from './skin'
 
 /**
- * Shared chrome for the modal panels: the dim, the parchment page, headings
- * and plate buttons.
+ * Shared chrome for the modal panels: the dim, the card, headings and buttons.
  *
- * Every modal is a page out of the hold's chronicle: ink on parchment over a
- * darkened, vignetted world. Colours are passed in their HUD form (bone, gold,
- * vermilion) and turned into inks that hold up on paper, so a panel never has
- * to know which surface it sits on.
+ * Every modal is a card of the same smoked glass as the HUD, over a darkened,
+ * vignetted world. Colours are passed in their HUD form (bone, gold,
+ * vermilion) and go through `onPage`, so a panel never has to know which
+ * surface it sits on.
  */
 export class Overlay {
   readonly root: Phaser.GameObjects.Container
@@ -109,19 +108,13 @@ export class Overlay {
     return b
   }
 
-  /**
-   * A small inked rule with a lozenge in the middle, the way a chronicle
-   * separates its heading from its body.
-   */
+  /** A hairline with a dot of the accent in the middle: a heading's underline. */
   protected rule(g: Phaser.GameObjects.Graphics, cx: number, y: number, w: number, accent: number = PAL.wax) {
-    const ink = 0x3a2616
-    g.lineStyle(1, ink, 0.55)
-    g.lineBetween(cx - w / 2, y, cx - 7, y)
-    g.lineBetween(cx + 7, y, cx + w / 2, y)
-    g.fillStyle(ink, 0.8)
-    g.fillPoints([{ x: cx, y: y - 4.5 }, { x: cx + 4.5, y }, { x: cx, y: y + 4.5 }, { x: cx - 4.5, y }], true)
+    g.lineStyle(1, ON_PAGE.rule, 0.16)
+    g.lineBetween(cx - w / 2, y, cx - 6, y)
+    g.lineBetween(cx + 6, y, cx + w / 2, y)
     g.fillStyle(accent, 1)
-    g.fillPoints([{ x: cx, y: y - 2.6 }, { x: cx + 2.6, y }, { x: cx, y: y + 2.6 }, { x: cx - 2.6, y }], true)
+    g.fillCircle(cx, y, 2.2)
   }
 
   show() {
