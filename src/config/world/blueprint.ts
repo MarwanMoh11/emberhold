@@ -129,42 +129,42 @@ export const REGIONS: RegionBP[] = [
 
   // ---- tier 3: the wide frontier. Six claims; the campaign asks for four ----------
   {
-    id: 'frostmere', name: 'Frostmere', tier: 3, hall: 3, cost: { coins: 1450, wood: 650, stone: 320 }, biome: 'highland',
+    id: 'frostmere', name: 'Frostmere', tier: 3, hall: 3, cost: { coins: 3200, wood: 1000, stone: 480 }, biome: 'highland',
     blurb: 'A cold lake under the peaks, and an island shrine older than the hold.',
     identity: 'Pine and fish, and the Shrine of the First Flame on Frostmere Isle.',
     poly: [[6100, 0], [10240, 0], [10240, 2100], [9400, 2150], [8700, 1850], [8260, 1560], [7880, 2100], [7600, 1820], [7200, 1480], [6700, 1330], [6100, 1480]],
     claim: { x: 5970, y: 850, from: 'downs', at: 'the Highroad, where it leaves the Downs' },
   },
   {
-    id: 'saltmere', name: 'Saltmere', tier: 3, hall: 3, cost: { coins: 1450, wood: 800, stone: 240 }, biome: 'marsh',
+    id: 'saltmere', name: 'Saltmere', tier: 3, hall: 3, cost: { coins: 3200, wood: 1200, stone: 360 }, biome: 'marsh',
     blurb: 'The harbour still smells of salt and smoke.',
     identity: 'Coin. The old quay takes a trading post — the only building that earns coins.',
     poly: [[420, 3050], [1500, 3100], [2200, 2600], [2700, 3050], [2500, 3800], [2600, 4880], [2100, 5100], [1650, 5320], [1100, 5480], [380, 5570], [420, 5000], [560, 4300], [460, 3600]],
     claim: { x: 2660, y: 4000, from: 'hollow', at: 'the salt road, west of the village' },
   },
   {
-    id: 'irontooth', name: 'Irontooth Foothills', tier: 3, hall: 3, cost: { coins: 1600, stone: 560 }, biome: 'rust',
+    id: 'irontooth', name: 'Irontooth Foothills', tier: 3, hall: 3, cost: { coins: 3500, stone: 840 }, biome: 'rust',
     blurb: 'The hills here are made of rust.',
     identity: 'Metal. Open-cast iron on the east bank, across the Gorge Bridge.',
     poly: [[8260, 1560], [8700, 1850], [9400, 2150], [10240, 2100], [10240, 4500], [9600, 4560], [9000, 4620], [8400, 4640], [7700, 4700], [7400, 3900], [7080, 3000], [7330, 2700], [7560, 2420], [7880, 2100]],
     claim: { x: 7200, y: 2620, from: 'greyfall', at: 'the west end of the Gorge Bridge' },
   },
   {
-    id: 'barrowmoor', name: 'Barrowmoor', tier: 3, hall: 3, cost: { coins: 1750, stone: 480, food: 320 }, biome: 'moor',
+    id: 'barrowmoor', name: 'Barrowmoor', tier: 3, hall: 3, cost: { coins: 3800, stone: 720, food: 480 }, biome: 'moor',
     blurb: 'An old battlefield that never finished.',
     identity: 'Relics. Barrows and battlefield caches, and the Gallows Knight\'s stronghold.',
     poly: [[380, 5570], [1100, 5480], [1650, 5320], [2100, 5100], [2600, 4880], [3150, 4640], [3850, 4420], [3850, 5950], [3700, 6760], [3000, 6720], [2300, 6880], [1600, 7000], [800, 7170], [560, 6400]],
     claim: { x: 3120, y: 4420, from: 'hollow', at: 'the north bank of Millford' },
   },
   {
-    id: 'kettle', name: 'The Kettle', tier: 3, hall: 3, cost: { coins: 1900, stone: 640 }, biome: 'sulphur',
+    id: 'kettle', name: 'The Kettle', tier: 3, hall: 3, cost: { coins: 4200, stone: 960 }, biome: 'sulphur',
     blurb: 'Hot springs, yellow stone, and powder enough to level a wall.',
     identity: 'The south-east muster. Sulphur stone and healing springs.',
     poly: [[7080, 3000], [7400, 3900], [7700, 4700], [7760, 5200], [7700, 5600], [7740, 6100], [7760, 6720], [6600, 6100], [6400, 5700], [6300, 4400], [6250, 3720], [6720, 3350]],
     claim: { x: 6180, y: 4800, from: 'ferrow', at: 'the east road out of the Ferrow Fields' },
   },
   {
-    id: 'deepwood', name: 'The Deepwood', tier: 3, hall: 3, cost: { coins: 2100, wood: 1300 }, biome: 'oldgrowth',
+    id: 'deepwood', name: 'The Deepwood', tier: 3, hall: 3, cost: { coins: 4600, wood: 2000 }, biome: 'oldgrowth',
     optional: true,
     blurb: 'The oldest trees in the world, and the oldest hunger.',
     identity: 'Optional. Giant timber, the Heart Oak, and the Thornmother\'s den.',
@@ -174,14 +174,14 @@ export const REGIONS: RegionBP[] = [
 
   // ---- tier 4 ----------------------------------------------------------------------
   {
-    id: 'deepvein', name: 'Deepvein', tier: 4, hall: 4, cost: { coins: 2900, stone: 960, metal: 190 }, biome: 'deeprock',
+    id: 'deepvein', name: 'Deepvein', tier: 4, hall: 4, cost: { coins: 8700, stone: 1440, metal: 280 }, biome: 'deeprock',
     blurb: 'Iron enough to armour an army, and a violet seam under it.',
     identity: 'Deep metal and the first crystal delve, behind three walls of cliff.',
     poly: [[7700, 4700], [8400, 4640], [9000, 4620], [9600, 4560], [10240, 4500], [10240, 7120], [9500, 7080], [8700, 6980], [7760, 6720], [7740, 6100], [7700, 5600], [7760, 5200]],
     claim: { x: 9000, y: 4450, from: 'irontooth', at: 'the north mouth of the Seamgate' },
   },
   {
-    id: 'rim', name: 'The Blackened Rim', tier: 4, hall: 4, cost: { coins: 3200, stone: 1100, metal: 240 }, biome: 'badlands',
+    id: 'rim', name: 'The Blackened Rim', tier: 4, hall: 4, cost: { coins: 9600, stone: 1650, metal: 360 }, biome: 'badlands',
     blurb: 'The last ground before the Scar. The horde\'s forward camp.',
     identity: 'The Cinder Stair: fortify its top and the south approach is yours.',
     requiresCamps: ['campFerrow'],
@@ -189,7 +189,7 @@ export const REGIONS: RegionBP[] = [
     claim: { x: 5150, y: 5680, from: 'ferrow', at: 'the south road, past the burned muster' },
   },
   {
-    id: 'ashgate', name: 'Ashgate', tier: 4, hall: 4, cost: { coins: 3800, stone: 1300, metal: 400 }, biome: 'ash',
+    id: 'ashgate', name: 'Ashgate', tier: 4, hall: 4, cost: { coins: 11400, stone: 1950, metal: 600 }, biome: 'ash',
     blurb: 'Where the horde is coming from.',
     identity: 'The fortress. Burning it unseals the Crown.',
     poly: [[800, 7170], [1600, 7000], [2300, 6880], [3000, 6720], [3700, 6760], [4400, 6800], [4550, 7200], [4750, 7700], [5200, 8050], [5740, 8250], [5700, 9216], [1420, 9216], [1280, 8700], [1040, 8000]],
@@ -198,7 +198,7 @@ export const REGIONS: RegionBP[] = [
 
   // ---- tier 5 ------------------------------------------------------------------------
   {
-    id: 'crown', name: 'The Cinder Crown', tier: 5, hall: 5, cost: { coins: 6400, stone: 1900, metal: 960, crystal: 64 }, biome: 'obsidian',
+    id: 'crown', name: 'The Cinder Crown', tier: 5, hall: 5, cost: { coins: 16000, stone: 2800, metal: 1400, crystal: 96 }, biome: 'obsidian',
     blurb: 'The Regent\'s caldera. Everything burns toward it.',
     identity: 'The finale. The causeway to the throne is sealed until Ashgate falls.',
     requiresCamps: ['campStairwarden'],
@@ -206,7 +206,7 @@ export const REGIONS: RegionBP[] = [
     claim: { x: 5300, y: 6600, from: 'rim', at: 'the top of the Cinder Stair' },
   },
   {
-    id: 'cinderfall', name: 'Cinderfall', tier: 5, hall: 5, cost: { coins: 5600, metal: 800, crystal: 48 }, biome: 'slag',
+    id: 'cinderfall', name: 'Cinderfall', tier: 5, hall: 5, cost: { coins: 14000, metal: 1200, crystal: 72 }, biome: 'slag',
     optional: true,
     blurb: 'Slag, smoke, and the brightest crystal in the world.',
     identity: 'Optional. The richest crystal and the Slag Forges that arm the south-east.',
