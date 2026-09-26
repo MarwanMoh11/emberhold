@@ -17,12 +17,14 @@ These bind every session. Add a line when one is made, with the date and who dec
 - 2026-09-25 (human): **let go of v1 completely.** v2 is the main game. There is no migration, no Veteran's charter and no "old frontier": v2 ignores every v1 key (it never reads, migrates or deletes them) and every player starts fresh. S19 drops design 07's migration options and keeps the schema consolidation and portability. When the work is complete, the game ships as **Beta 1**: a version label on the title screen and in the save's metadata, landed by S19 and shipped by S22. **Landed (S19):** v1 keys untouched (tested), design 07 §Migration closed, `GAME_VERSION` on the title and in `meta.version`.
 - 2026-09-25 (human): run length stays as landed: more waves, the Regent near wave 50, and `day = 60 + 10 × claimed` capped at 180 s. Longer days were declined. This settles S20's C3 (day length): no new formula proposed.
 - 2026-09-25 (human): worker drop-off (depot, outpost or granary), the cottage population cap (`VILLAGE.cottagePopMax`, none today) and markets selling surplus (`VILLAGE.market.sells`, on today) are **S20's call**. Choose whatever balances best against the pacing decision above, and record the choice in S20's entry. **Landed (S20):** depot/outpost/granary drop-off kept; `cottagePopMax` 150; markets sell, as a trickle.
+- 2026-09-26 (human): **keep the dawn rout.** A night ends 40 s into the fight (`DAYNIGHT.fightGrace`), and any walkers still out flee at dawn and drop their loot; bosses stay.
+- 2026-09-26 (human): S20's acceptance missed twice on the late game, and the human accepted the tuning as it stands and moved on to S21. **S22 owns the late-game check:** its real playthrough must confirm the hold survives waves 15–50 (towers included, three or more fronts), that Ashgate's 18000 hp fortress is burnable for d10, that the tier-3–5 claim cost rise holds past w21, and that act II's 9–10 min gap before the Ferrow Muster burns closes. Tune whatever breaks before the merge.
 
 ## Open decisions
 
 These need the human. Don't guess them. Use the default and flag it in your handoff.
 
-- **Dawn rout** (raised by S20, second pass): a night now ends 40 s into the fight (`DAYNIGHT.fightGrace`, was spread + 80), and walkers still out flee in smoke at dawn, dropping their loot (bosses stay). 03 said the end rule was unchanged. It brings nights to ~55 s and the clock onto 01's minutes, and stops day-long straggler fights that wiped the probe's workers. Default (landed): rout. To revert, set `fightGrace` to 80 and drop `WaveManager.rout()`.
+_(none open)_
 
 ## Log
 
