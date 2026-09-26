@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S22** ([card](sessions/S22-cutover.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**S22 partial: ready for cutover, awaiting the human's go** ([card](sessions/S22-cutover.md): C1 and C2 done, C3 the merge left) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -24,9 +24,19 @@ These bind every session. Add a line when one is made, with the date and who dec
 
 These need the human. Don't guess them. Use the default and flag it in your handoff.
 
-_(none open)_
+- **Cutover (S22 C3):** "Playthrough green. Merge world-v2 → main and deploy?" Only the human says yes; then `git checkout main && git merge --no-ff world-v2`, push, check Pages.
+- **The `/v2/` preview after the merge:** `deploy.yml` still builds `world-v2` at `/emberhold/v2/`, a copy of the live game. Default: drop that step (and the branch) in a small commit on `main` after the merge. The preview shares the origin and the `emberhold.save.v2` keys with the live game, so a preview save loads in the live game.
+- **Late-game ease (S22):** `FRONTS` and `GROWTH` in `waves.ts` were eased once each; the hold now keeps its hall at w35–48, but w28–34 still had 2–4% nights in the probe. Accept, or ease `GROWTH` again (0.12/0.08) before the merge. Default: accept, and let a human run judge w25–35.
 
 ## Log
+
+### S22 · Playthrough and cutover: partial, ready for cutover (2026-09-26)
+- C1 (`759dd0a`, S22 hand-over commit) `H.play` (`src/dev/playthrough.ts`): S20's probe plus real fights at every quest camp and the Regent (hero and army set down, the walk shortcut), lost nights, deaths, stuck units, console errors. Probe taught towers (hold first, from w9, climbing with the hall), rubble refunds, village growth from w12, regionless build quests (c2's mine: it sat at c2 from w21, which is why S20's hold "fell" there), saving in full for the Crown.
+- **Run D (fresh): the Regent fell at w35, 103 min.** Acts end I w7/13 min, II w14/29, III w19/43, IV w28/77; 0 lost nights, 0 console errors. Run E (fresh, Regent held to w48): w28–34 at 2–4% hall, army wiped 3 nights → `GROWTH` eased; resumed from its w34 save: w35–48 no losses, hall ≥ 76% from w38, **the Regent fell at w48, ~149 min** (9400 hp, 16 s, all 26 soldiers lost).
+- **Checks:** Ashgate burnable: 24000 hp (braziers + 18000) in 42–44 s by 20–30 soldiers, none lost. Ferrow Muster: burned on the day Ferrow is claimed (4800 hp, 14 s); act II's longest milestone gap 4.3–5 min (S20: 9–10, an artefact of its burn formula, which asked 1 swordsman per 120 hp; a real fight is ~1000 hp per soldier a minute). Tier-3–5 rise: holds (no stall); claims come w14–20 (tier 3), w23–34 (deepvein, rim, ashgate), crown w32–38, ahead of 21–48: the probe walks nowhere and skips POIs. Act IV–V gaps 13–15 min are the Crown's 16000 coins saved for.
+- **Tuned:** `FRONTS` per muster tier hp 0.25 → 0.12, dmg 0.15 → 0.08, 3+ fronts send 85% of the deck; `GROWTH` hp 0.22 → 0.16, dmg 0.13 → 0.1 (tests updated).
+- C2: no v1 leftovers to delete (the grep hits are save-key comments and `settings.v1`, the live settings key); root README: atlas and travel rows, "The frontier" with `map.svg`, campaign line; `docs/world/README.md` status banner; `npm run build` green; the harness stays out of `dist`.
+- Follow-ups: soldiers whose formation slot lands in a building stand still (~190 stuck samples in 20 min, no blocker); farmers pause in `travel` at (4750, 2160); towers rarely climb past Lv 1 in the probe (wrecked nightly); a real human run of w25–35 and act IV pacing. Not measured: real walking time, POIs.
 
 ### S21 · Performance and mobile: done (2026-09-26)
 - C1 (`cd81f62`) `H.bench()` (`src/dev/bench.ts`): tiers 1–3 claimed, every pad at top level plus walls, 297 workers (every slot), 150 soldiers, wave 30 from dusk (three fronts, ~210 walkers), 60 s paced at 60 fps; frame p50/p95/max, bakes, flow, A*, drawn objects, heap; `prof` per system. C2 (`0e892c8`), C3 (`S21 hand-over` commit).
@@ -54,14 +64,7 @@ _(none open)_
 - For S21/S22: in the probe the hold is a coin flip from w15 (fronts 3, up to 300 walkers out at dawn). Check it with a real playthrough, then ease `waves.ts` at 3+ fronts or teach the probe to build towers. Probe trips: a visibility pause stops `run` (resume the Game scene). `run` longer than ~27 s of wall time times out `javascript_tool`. The probe saves over the real save, so back it up.
 
 ### S19 · Save v2: done (2026-09-25)
-- C1 (`6765c87`) schema, limits, tests; C2 (`21636cb`) Beta 1 on the title, docs. **Implemented the decision: v1 let go** (no migration, charter, chest or old frontier; the card's C2 dropped). v1 keys are never read, written or deleted; a test holds it.
-- `SaveBlobV2` is the one schema. `validShape` is strict on types and ranges; `tolerate` drops unknown ids (pads incl. laid wall pieces, worker homes, soldiers, upgrades, regions, camps, guards, boss hp, waystones, POIs, relics), keeps each once, one `console.warn`. Fog `r:`/`b:` only (v1 bare bitset gone), ≤ 3842. CONTRACTS §S19; save-fields table consolidated with owners.
-- **64 KB enforced on read and write.** Raw, a maxed frontier (every pad, 343 workers, 150 soldiers, full fog) was ~105 KB, so `save()` writes a compact form (whole px and hp, defaults and `carryType` left out): ~56 KB. Past 64 KB workers and soldiers lose their places (walk out from home) before a save is refused.
-- `GAME_VERSION = 'Beta 1'` (`config/version.ts`): top right of the title, `meta.version` in every save. S22 ships it.
-- Tests: every field round-trips, a blueprint edit drops ids, v1 untouched, oversized refused, maxed fits, download → import. POI and relic tests now expect drops, not refusals.
-- Verify (browser, one run; the pane's storage was empty and is restored empty): title shows BETA 1 (1 screenshot); new game → save (18.4 KB, meta Beta 1) → reload → load at the same x/y, coins, quest a2; a planted v1 key untouched; `H.buildAll` save 19.5 KB.
-- Deviations: unknown ids in `regions`, `camps`, `waystones`, `pois`, `relics` etc. no longer refuse a save (CONTRACTS said they did). Workers and soldiers reload within 0.5 px of where they stood.
-- For S20: save size grows ~80 B per worker; a cottage cap far past ~340 workers makes saves go lean (places lost), not fail. Not measured: a real late-game save's size, import on a phone. No blueprint moves, no new open decisions.
+- `SaveBlobV2` one schema, strict `validShape`, `tolerate` drops unknown ids, 64 KB enforced (compact form), v1 keys untouched, `GAME_VERSION = 'Beta 1'`; CONTRACTS §S19.
 
 ### S18 · Campaign 2.0: done (2026-09-25)
 - 53 quests (goals claim, burn, restore, relic, reach, travel, line, settle), `targetFor`, `systems/questAnchors.ts`, act banners and deeds a12–a15; CONTRACTS §S18.

@@ -57,6 +57,9 @@ const LAST = stretched(WAVES.length)
 export const FRONTS = { hp: 0.12, dmg: 0.08, share: 0.85 }
 export const frontShare = (fronts: number) => (fronts >= 3 ? FRONTS.share : 1)
 
+/** Per first-pass night past the scripted list: walker hp and damage growth (S22: was 0.22 and 0.13). */
+export const GROWTH = { hp: 0.16, dmg: 0.1 }
+
 /** Past the scripted list, the director keeps building waves that scale. */
 export function proceduralWave(wave: number): WaveDef {
   const t = wave / WAVE_PACE - WAVES.length
@@ -74,8 +77,9 @@ export function proceduralWave(wave: number): WaveDef {
       elite: 2 + Math.floor(t / 2),
       commander: 1 + Math.floor(t / 3),
     },
-    hpMult: 1 + t * 0.22,
-    dmgMult: 1 + t * 0.13,
+    // S22: 0.22/0.13 left the hold at 2-4% hall most nights from 28, towers up (FRONTS already eased)
+    hpMult: 1 + t * GROWTH.hp,
+    dmgMult: 1 + t * GROWTH.dmg,
     spread: 12,
   }
   // a boss every 8 nights (the first pass: every 5), a Warlord every 16

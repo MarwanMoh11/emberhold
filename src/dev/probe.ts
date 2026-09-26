@@ -158,8 +158,8 @@ export function makeProbe(h: ProbeApi) {
     const next = want ?? nextClaim(g)
     const needHall = next && g.buildings.townHallLevel < next.hall
     const reserve: Record<string, number> = {}
-    // a dear claim the quest asks for (tier 4 and 5) is saved for in full, not left to the day's leftovers
-    const share = want && (next?.tier ?? 0) >= 4 ? 1 : opts.reserve
+    // the Crown (tier 5) is saved for in full when the quest asks: at 60% the day's leftovers never reach it
+    const share = want && (next?.tier ?? 0) >= 5 ? 1 : opts.reserve
     if (next && !needHall) for (const k of RES) reserve[k] = ((next.cost as any)[k] ?? 0) * share
     // a reasonable player saves for what the quest (or the next claim's hall) asks, not only for claims
     const cands = candidates(g)

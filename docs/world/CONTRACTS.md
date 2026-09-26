@@ -331,6 +331,14 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - Dev: `H.bench(opts?) → Promise<report>` (`seconds` 60, `stepMs` 16.7, `wave` 30, `tier` 3, `level` 5, `workers` 500, `soldiers` 150, `keep`, `prof`, `paced` true); `H.bench.fixture(opts?)`, `H.bench.last()`. Paced runs take `seconds` of wall, so kick off with `.then(r => window.__b = r)` and poll. The fixture puts back the saves a new game writes.
 - `RouteMarks` draws only on-screen dots, one per 14 px cell where routes overlap. `PathFinder.tick` stops 0.4 ms short of its slice.
 
+## S22: playthrough and cutover
+
+*Status: landed (S22). [src/dev/playthrough.ts](../../src/dev/playthrough.ts), [src/config/waves.ts](../../src/config/waves.ts).*
+
+- `FRONTS = { hp: 0.12, dmg: 0.08, share: 0.85 }`: an approach's walkers get `×(1 + hp·tier)` hp and `×(1 + dmg·tier)` damage by its muster tier (was 0.25/0.15, in WaveManager); `frontShare(fronts)`: a night from 3+ fronts deals that share of its deck.
+- `GROWTH = { hp: 0.16, dmg: 0.1 }`: procedural `hpMult = 1 + t·hp`, `dmgMult = 1 + t·dmg` (was 0.22/0.13).
+- Dev: `H.play.start(load?, { regentFrom? }) / run(untilWave?, wallMs = 18000) / summary() / log()`; `run` returns `{ done, wave, clockMin, quest, regent, acts[{act, from, end, target, p50, p90, msMax}], claims, losses, deaths, fights[], stuck, errors, … }`. Quest camps and the Regent are fought for real. Probe: `start(opts, load?)`, `step(g, busy?)`, `power(g)`, `home(g)`; opts `towers` (true), `real` (camp ids).
+
 ## Save fields
 
 `SaveBlobV2` in `SaveManager.ts`, consolidated by S19. "Ids" means unknown ones are dropped by `tolerate` (one warning), not refused; a wrong type or range still refuses the whole save. A session that adds persistent state adds a row here, the field to `SaveBlobV2`, `validShape`, `tolerate` (if it holds ids) and `load`, a row in design 07 §Schema, and a round trip in `tests/save-portability.test.mjs`.

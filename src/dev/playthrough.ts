@@ -1,13 +1,15 @@
 import { CAMPS, THRONE } from '../config/world'
+import { QUESTS } from '../config/quests'
 import { makeProbe } from './probe'
 
 /**
  * Dev-only playthrough (S22): a fresh start to the Regent's death on top of
  * S20's probe, which plays the economy, the claims and the nights (towers
- * included). Two fights are played for real instead of on the probe's
- * strength formula: Ashgate Fortress (quest d10: three braziers, then 18000
- * hp) and the Cinder Regent (e5). The hero and the army are set down at the
- * target (the walk is shortcut), fight from dawn until the day runs short,
+ * included). Its fights are played for real instead of on the probe's
+ * strength formula: every camp a quest names (a10's diggers to d10's Ashgate
+ * Fortress: three braziers, then 18000 hp) and the Cinder Regent (e5). The
+ * hero and the army are set down at the target (the walk is shortcut), fight
+ * from early in the day until it runs short,
  * go home for the night and go back the next day; the fortress and the Regent
  * keep the hp they had. Alongside it logs deaths, lost nights (the hall
  * falls, the player rebuilds), stuck units (a worker or soldier with
@@ -31,14 +33,24 @@ interface PlayApi {
 /** Each act's end in design 01 §Pacing targets: [wave, game-clock minute]. */
 export const ACT_TARGETS: Record<string, [number, number]> = { I: [8, 16], II: [18, 42], III: [33, 90], IV: [45, 130], V: [50, 160] }
 const FORTRESS = CAMPS.find(c => c.id === 'campAshgate')!
+/** The camp each burn or boss quest names: fought for real, not burned on the probe's strength formula. */
+const QUEST_CAMP: Record<string, string> = {}
+for (const q of QUESTS) {
+  const goal = q.goal as any
+  const camp = goal.type === 'burn' ? goal.camp : goal.type === 'boss' ? CAMPS.find(c => c.boss === goal.key)?.id : undefined
+  if (camp) QUEST_CAMP[q.id] = camp
+}
 const MOVING_W = new Set(['travel', 'carry'])
 
 export function makePlaythrough(h: PlayApi) {
   const probe = makeProbe(h)
   let L: any = null
 
-  const start = (load = false) => {
-    probe.start({ real: [FORTRESS.id] }, load)
+  /** `regentFrom`: the night before which the hero leaves the Regent be (a slower player's run: the hold meets nights to 50). */
+  let regentFrom = 0
+  const start = (load = false, o: { regentFrom?: number } = {}) => {
+    regentFrom = o.regentFrom ?? 0
+    probe.start({ real: Object.values(QUEST_CAMP) }, load)
     const g = h.gs()
     L = {
       deaths: { hero: 0, soldiers: 0, workers: 0 }, losses: [] as number[][], stuck: [] as any[], stuckN: 0,
@@ -76,10 +88,13 @@ export function makePlaythrough(h: PlayApi) {
     }
     for (const w of g.workers.workers) if (w.alive !== false && MOVING_W.has(w.state)) flag(w, 'worker', w.state)
     const p = g.player
+    const heading = Math.atan2(p.vy, p.vx) || 0
     for (const x of g.army.soldiers) {
       if (!x.alive || x.state === 'hold') continue
       const t = x.target
-      const far = t ? Math.hypot(t.x - x.x, t.y - x.y) > x.def.range + (t.radius ?? 0) + 30 : Math.hypot(p.x - x.x, p.y - x.y) > 220
+      // a big army's formation reaches well past 220 px from the hero: measure from the soldier's own slot
+      const slot = t ? null : g.army.slotPosition(x.slot, p.x, p.y, heading)
+      const far = t ? Math.hypot(t.x - x.x, t.y - x.y) > x.def.range + (t.radius ?? 0) + 30 : Math.hypot(slot.x - x.x, slot.y - x.y) > 80
       if (far) flag(x, 'soldier', x.state)
     }
     L.last = seen
@@ -113,7 +128,7 @@ export function makePlaythrough(h: PlayApi) {
   const ready = (g: G, key: string) => {
     const last = L.fights.filter((f: any) => f.what === key).pop()
     const dawn = g.waves.phase === 'day' && g.waves.phaseT >= g.waves.dayLength * 0.6
-    const army = g.army.count >= Math.max(12, Math.floor(g.popCap * probe.opts.armyShare * 0.8))
+    const army = g.army.count >= Math.max(3, Math.floor(g.popCap * probe.opts.armyShare * 0.8))
     return dawn && army && (!last || last.wave < g.waves.wave)
   }
 
@@ -146,10 +161,12 @@ export function makePlaythrough(h: PlayApi) {
     return f
   }
 
-  const fortressHp = (g: G) => {
-    const rec = g.camps.camps.find((c: any) => c.spec.id === FORTRESS.id)
-    const wards = (rec?.guards ?? []).filter((e: any) => e?.active && e.alive).reduce((n: number, e: any) => n + e.hp, 0)
-    return g.camps.isBurned(FORTRESS.id) ? 0 : wards + (rec?.enemy?.alive ? rec.enemy.hp : FORTRESS.hp)
+  /** A camp's hp and its wards' (boss, braziers). */
+  const campHp = (g: G, camp: typeof FORTRESS) => {
+    const rec = g.camps.camps.find((c: any) => c.spec.id === camp.id)
+    const wards = (rec?.guards ?? []).filter((e: any) => e?.active && e.alive && (e.key === 'brazier' || e.key === camp.boss))
+      .reduce((n: number, e: any) => n + e.hp, 0)
+    return g.camps.isBurned(camp.id) ? 0 : wards + (rec?.enemy?.alive ? rec.enemy.hp : camp.hp)
   }
 
   const regentHp = (g: G) => {
@@ -160,18 +177,19 @@ export function makePlaythrough(h: PlayApi) {
   /** The fight today calls for, if any. */
   const fight = (g: G) => {
     const id = g.quests.current?.id
-    if (id === 'd10' && g.regions.claimed(FORTRESS.region) && !g.camps.isBurned(FORTRESS.id) && ready(g, 'fortress')) {
-      const rec = g.camps.camps.find((c: any) => c.spec.id === FORTRESS.id)
-      // the braziers first, nearest first; then the fortress itself
+    const camp = CAMPS.find(c => c.id === QUEST_CAMP[id])
+    if (camp && g.regions.claimed(camp.region) && !g.camps.isBurned(camp.id) && ready(g, camp.id)) {
+      const rec = g.camps.camps.find((c: any) => c.spec.id === camp.id)
+      // its wards first (a stronghold's boss, the fortress's braziers), nearest first; then the camp itself
       const aim = () => {
         const p = g.player
-        const live = (rec?.guards ?? []).filter((e: any) => e?.active && e.alive)
+        const live = (rec?.guards ?? []).filter((e: any) => e?.active && e.alive && (e.key === 'brazier' || e.key === camp.boss))
           .sort((a: any, b: any) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))
-        return live[0] ?? FORTRESS
+        return live[0] ?? camp
       }
-      return assault(g, 'fortress', aim, () => g.camps.isBurned(FORTRESS.id), () => fortressHp(g))
+      return assault(g, camp.id, aim, () => g.camps.isBurned(camp.id), () => campHp(g, camp))
     }
-    if (id === 'e5' && g.camps.isBurned(FORTRESS.id) && ready(g, 'regent')) {
+    if (id === 'e5' && g.camps.isBurned(FORTRESS.id) && g.waves.wave >= regentFrom && ready(g, 'regent')) {
       // she rises when the hero first sets foot on the opened causeway
       h.tp(THRONE.x, THRONE.y - 850)
       h.pump(1, probe.opts.stepMs, true)

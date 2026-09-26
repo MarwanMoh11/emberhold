@@ -1,5 +1,9 @@
 # World v2: start here
 
+> **Status (2026-09-26): all 25 sessions are done; v2 ships as Beta 1 when `world-v2` merges into `main`.**
+> S22's playthrough reached the Regent. The cutover merge (which deploys) waits on the human's go; until then
+> `main` is the live v1 game and v2 previews at `/v2/`. Once merged, this folder is the record of how the frontier was built.
+
 Emberhold's 3400×2800 map is being replaced by a 10240×9216 frontier (9.9× the
 area) with 17 regions, rivers and cliffs that only open at named crossings,
 fifteen warcamps, approaches the horde marches along, outposts and waystones,
