@@ -34,7 +34,7 @@
     --sal: env(safe-area-inset-left, 0px);
   }
   html, body {
-    margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0d1222;
+    margin: 0; padding: 0; height: var(--app-h, 100%); overflow: hidden; background: #0d1222;
     /* iOS: no rubber-band scroll, no pull-to-refresh, no double-tap zoom. */
     overscroll-behavior: none;
     touch-action: none;
@@ -46,9 +46,12 @@
   /*
    * --app-h is set only when the page is short of the screen (see main.ts):
    * from the iOS home screen the translucent status bar lifts the page to the
-   * top edge but the viewport keeps the bar's height off its bottom.
+   * top edge but the viewport keeps the bar's height off its bottom. Sizing
+   * html and body to it is what makes iOS give the room back; #app and the
+   * splash are absolute, not fixed, because WebKit clips fixed boxes to the
+   * short viewport however tall they are.
    */
-  #app { position: fixed; inset: 0; height: var(--app-h, auto); touch-action: none; }
+  #app { position: absolute; top: 0; left: 0; right: 0; height: var(--app-h, 100%); touch-action: none; }
   canvas { display: block; touch-action: none; }
 
   /*
@@ -57,7 +60,7 @@
    * hand-off to the painted title is a brightening, not a cut.
    */
   #boot {
-    position: fixed; inset: 0; height: var(--app-h, auto); z-index: 5; display: flex; gap: 12px;
+    position: absolute; top: 0; left: 0; right: 0; height: var(--app-h, 100%); z-index: 5; display: flex; gap: 12px;
     flex-direction: column; align-items: center; justify-content: center;
     background:
       radial-gradient(ellipse 80% 45% at 50% 100%, rgba(224,138,68,.55), rgba(224,138,68,0) 70%),

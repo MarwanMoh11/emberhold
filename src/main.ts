@@ -139,6 +139,10 @@ function launch() {
  * sat over a dark strip under the home indicator. That exact shortfall — the
  * screen less the viewport equals the top inset — is the tell; a browser tab,
  * a Slide Over window or Android never matches it and is left alone.
+ *
+ * Once the page is screen-tall iOS grows the viewport to match, so a shortfall
+ * of nothing still counts: dropping the fix there would shrink the page, bring
+ * the gap back, and flip-flop on every resize.
  */
 function fillScreen() {
   const root = document.documentElement
@@ -150,7 +154,7 @@ function fillScreen() {
   const screenH = h >= w ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height)
   const short = screenH - h
   const top = safeAreaInsets().top
-  if (standalone && top > 0 && short > 0 && Math.abs(short - top) <= 4) root.style.setProperty('--app-h', `${screenH}px`)
+  if (standalone && top > 0 && short >= 0 && short <= top + 4) root.style.setProperty('--app-h', `${screenH}px`)
   else root.style.removeProperty('--app-h')
 }
 fillScreen()
