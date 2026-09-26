@@ -60,8 +60,9 @@ Each entry has a status line that reads *planned* until its session lands it; th
   - `new Culler({ bucket = 1024, margin = 256, interval = 150, moveStep = 64 })`; `GameScene.culler`, updated every frame after `terrain.update`.
   - `culler.add(obj, x, y, radius)` (obj: anything with `cameraFilter`; the disc should cover the sprite at its largest) and `culler.remove(obj)`.
   - `culler.update(camera, now?)` hides objects whose disc misses the view plus 256 px by setting the camera's bit in `cameraFilter`. It never touches `visible` or `active`: game logic owns those.
-  - `culler.stats() → { total, shown }`; F2 shows it.
-  - Registered: node sprites (`NodeManager.add`), building sprite and ghost (`BuildingManager.addPad`), camp labels. Enemies, allies, projectiles and TerrainChunks images are not.
+  - `culler.stats() → { total, shown, movers }`; F2 shows it.
+  - S21: `culler.addMover(obj)` (obj: `{ cameraFilter, x, y }`, pooled, registered once at construction; dropped on `destroy`): tested against the view plus `moverMargin` (128) **every frame** from its live x/y. Registered: enemy, soldier, worker and worker-load sprites, projectile and pickup pool sprites. Not registered: the player, fx, building bars (drawn in shared Graphics).
+  - Registered: node sprites (`NodeManager.add`), building sprite and ghost (`BuildingManager.addPad`), camp labels. Enemies, allies, projectiles and pickups are movers (S21, below); TerrainChunks images are not registered.
 
 ## S04: world seam
 
@@ -322,6 +323,13 @@ Each entry has a status line that reads *planned* until its session lands it; th
 - `OPENS` (8 / 12 / 17) and `frontsFor` (1 / 2 / 3 / all from 1 / 8 / 15 / 30) in `systems/Approaches.ts`.
 - `VILLAGE.cottagePopMax = 150`, `VILLAGE.market.sells = true`, `goodsPerCoin = 4`.
 - Dev: `H.probe.start(opts?) / run(untilWave, wallMs) / report()`; `H.pump(s, stepMs, headless)` steps without drawing. `run` returns `{ paused }` if the Game scene stops (the hall's fall).
+
+## S21: performance
+
+*Status: landed (S21). [src/dev/bench.ts](../../src/dev/bench.ts); measured table in [04 §Performance budgets](design/04-systems.md#performance-budgets-checked-in-s21).*
+
+- Dev: `H.bench(opts?) → Promise<report>` (`seconds` 60, `stepMs` 16.7, `wave` 30, `tier` 3, `level` 5, `workers` 500, `soldiers` 150, `keep`, `prof`, `paced` true); `H.bench.fixture(opts?)`, `H.bench.last()`. Paced runs take `seconds` of wall, so kick off with `.then(r => window.__b = r)` and poll. The fixture puts back the saves a new game writes.
+- `RouteMarks` draws only on-screen dots, one per 14 px cell where routes overlap. `PathFinder.tick` stops 0.4 ms short of its slice.
 
 ## Save fields
 

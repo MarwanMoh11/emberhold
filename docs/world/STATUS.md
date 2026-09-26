@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**Next: S21** ([card](sessions/S21-performance.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Next: S22** ([card](sessions/S22-cutover.md)) · branch `world-v2` (created by S01 from `main` at df51e0f)
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -27,6 +27,15 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 _(none open)_
 
 ## Log
+
+### S21 · Performance and mobile: done (2026-09-26)
+- C1 (`cd81f62`) `H.bench()` (`src/dev/bench.ts`): tiers 1–3 claimed, every pad at top level plus walls, 297 workers (every slot), 150 soldiers, wave 30 from dusk (three fronts, ~210 walkers), 60 s paced at 60 fps; frame p50/p95/max, bakes, flow, A*, drawn objects, heap; `prof` per system. C2 (`0e892c8`), C3 (`S21 hand-over` commit).
+- **Fixes:** off-screen movers culled (`Culler.addMover`: walkers, soldiers, workers and loads, shots, pickups; drawn 1808 → ≤ 605); route dots drawn only on screen and once where routes share a road (render 2.8 → ~0.1 ms); A* stops 0.4 ms short (max 2.1 → 1.7 ms). Render per frame 3.2–3.7 → 1.3 ms.
+- **Measured** (table in [04 §Performance budgets](design/04-systems.md#performance-budgets-checked-in-s21)): desktop 1280×720 p95 4.7 ms (max 16.5); phone 375×812 p95 4.6 ms, ×4 ≈ 18 ms (≤ 22); chunks 24, ≤ 3.6 ms/frame, worst in play 7.3 ms; flow ≤ 5.7 ms, ~4 frames a rebuild; JS heap ≤ 186 MB. Every row met except the first bake after a `prime` (13–14 ms, cold, on a load frame).
+- Phone checks (one run): docked panel bottom 343×64 (7%), 44×44 target, font ≥ 13, clear of building and hero; a press on it does not start the joystick; a joystick drag moved the hero 79 px in 1 s; atlas opens. 1 screenshot.
+- **Deviations:** 4× CPU throttling is emulated by scaling frame times (the pane has none). Frames are paced by busy-wait: unpaced, the GPU queue filled and the CPU stalled in the flush (10–30 ms spikes no player sees). ~210 walkers, not 250.
+- Trips: the hidden pane re-opens the pause on each visibility change; `H.bench` unpauses every frame, ad-hoc scripts must too (`u.pause.hide(); u.resumeGame()`; `closeScreen` re-opens the pause). A new game saves as it starts; the bench puts the saves back.
+- Not measured: boot delta, memory and GPU on a device, touch travel from the atlas (S12 verified it). No blueprint moves, no new open decisions.
 
 ### S20 · Balance and pacing: done (2026-09-26, two passes)
 - Pass 1 (`3f3e090`, `c8a4cf6`, `452ae61`): `H.probe` (`src/dev/probe.ts`, headless ~50×); region/hall costs ~1.6×, camp hp 1.5×, `WAVE_PACE` 1.5, `OPENS` 8/12/17, `nightReward = 50 + 17w`; village calls: drop-off at depot/outpost/granary, `cottagePopMax` 150, markets sell a trickle.
@@ -55,12 +64,7 @@ _(none open)_
 - For S20: save size grows ~80 B per worker; a cottage cap far past ~340 workers makes saves go lean (places lost), not fail. Not measured: a real late-game save's size, import on a phone. No blueprint moves, no new open decisions.
 
 ### S18 · Campaign 2.0: done (2026-09-25)
-- C1–C2 (`fe79a1e`), C3 (`a4c5fca`). Goals claim, burn, restore, relic, reach, travel, line, settle (+ `build.region`); `zone` = regions held incl. the hold. All read world state, not events, so dev claims and loads agree. `targetFor` per card; pure candidates in `systems/questAnchors.ts`; a test puts every quest's targets on passable ground. `act:begun` banners, ribbons queue, deeds a12–a15, quest log shows the current act. CONTRACTS §S18.
-- **Chain: 53 quests** (06's 46 + 7 village: a11 cottages, b11 Ferrow granary, c9 Saltmere market, d2 Kettle watch post, d5 Deepvein market, e2 settle Ashgate 4, e4 settle Crown 3). **Deviations:** ids renumbered in chain order within each act; "Three fronts" moved up to b8 (after Greyfall opens the gorge) and acts III–V reordered so a quest waits on at most one claim (III: shrine, mine, Irontooth burned, gorge line, then zone 8; IV opens on the Kettle); survive waves moved to the 1.5× pace: "Three fronts" night 14 (was 10), "Thirty nights" night 30 (06: "Twenty nights", 20). Banners on campFerrow/campIrontooth burning (`CAMP_BANNERS`), not on the quest.
-- Verify (harness, one run): new game plays "Act I · The Rise" (1 screenshot); `H.questStep(27)` finished a2…b13 and c1, banners II and III; the arrow's route to Irontooth 10 points. The user's v2 save (old `q1`) loaded at a2 with no banners or rewards. Saves restored byte-identical.
-- **For S20, rewards (first pass, `QUESTS[].reward`):** act I 30–500 coins (xp 5–150), II 250–1000 (60–200), III 600–1500 (110–320), IV 600–2500 (120–600), V 1500–7000 (300–1400); wood/stone/metal/crystal grow alongside. **Likely slow:** survive goals (b8, c8) and zone goals (c5, c10) only wait; a14 bridgehead (23 pads, ~1.4k wood) in act I; a5 night 1 comes before the barracks; e2/e4 settle counts.
-- Trips: `H.start` pumps 0.6 s, so a1 (30 coins) is done before a script reads the chain; hook banners via `H.quests()` before stepping. `travel` counts journeys this session only (not saved). `QuestManager.load` no longer has the v1 q20→Regent patch; S19's migration owns v1.
-- Not measured: real-play pacing per act (S20), the arrow over long routes by eye, the quest log on a phone. No blueprint moves, no new open decisions.
+- 53 quests (goals claim, burn, restore, relic, reach, travel, line, settle), `targetFor`, `systems/questAnchors.ts`, act banners and deeds a12–a15; CONTRACTS §S18.
 
 ### S17 · Bosses and the finale: done (2026-09-25)
 - Stronghold bosses (`KITS` in `systems/bosses.ts`, hp in `campHealth`), the Regent at `THRONE` on the unsealed causeway, victory card, maws close; CONTRACTS §S16 and S17.

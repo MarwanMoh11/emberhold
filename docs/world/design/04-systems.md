@@ -132,13 +132,20 @@ Today `buildTerrain` paints one canvas the size of the world at `SCALE 0.5`, fro
 
 ## Performance budgets (checked in S21)
 
-| | Budget |
-|---|---|
-| Frame rate | 60 fps on desktop. At least 45 fps on a mid-range phone during a three-front night (about 250 enemies) |
-| Terrain | at most 24 resident chunks (24 MB); ≤ 4 ms of baking per frame; ≤ 12 ms for any single chunk bake |
-| Flow fields | ≤ 6 ms per frame while rebuilding; a full rebuild in ≤ 30 frames |
-| Pathing | ≤ 2 ms per frame for all A* searches (queue the rest) |
-| Display objects | ≤ 1500 visible after culling |
-| Boot | play starts ≤ 300 ms later than today |
-| Memory | ≤ 350 MB on a phone |
-| Save | ≤ 64 KB of JSON |
+Measured by `H.bench()` (S21, `src/dev/bench.ts`): tiers 1–3 claimed, every pad at its top level (walls laid), 297 workers, 150 soldiers, wave 30 with three fronts (south, west, southeast; ~210 walkers at most), 60 s from dusk, frames paced to 60 fps, CPU time per `game.loop.step`. Desktop is 1280×720; the phone profile is the 375×812 preset (touch, DPR 2), with 4× CPU throttling emulated by scaling its frame times (the pane has no throttle).
+
+| | Budget | Measured (S21) |
+|---|---|---|
+| Frame rate | 60 fps on desktop. At least 45 fps on a mid-range phone during a three-front night (about 250 enemies) | desktop p50 2.9, **p95 4.7**, max 16.5 ms. Phone viewport p95 4.6 ms, **×4 ≈ 18 ms** (≤ 22) |
+| Terrain | at most 24 resident chunks (24 MB); ≤ 4 ms of baking per frame; ≤ 12 ms for any single chunk bake | 24 resident; ≤ 3.6 ms a frame; worst bake in play 7.3 ms. The first bake after a boot or a camera jump (`prime`) runs 13–14 ms, cold, on a load frame |
+| Flow fields | ≤ 6 ms per frame while rebuilding; a full rebuild in ≤ 30 frames | ≤ 5.7 ms a slice; 13 rebuilds in 50 slice frames (~4 each) |
+| Pathing | ≤ 2 ms per frame for all A* searches (queue the rest) | ≤ 1.7 ms a frame (was 2.1; the slice now stops 0.4 ms short); worst single search 2.1 ms |
+| Display objects | ≤ 1500 visible after culling | **≤ 605** drawn (mean 443) + ~110 HUD. Was 1808: off-screen units, pickups and shots are now culled (`Culler.addMover`) |
+| Boot | play starts ≤ 300 ms later than today | not measured in S21 (S22's playthrough) |
+| Memory | ≤ 350 MB on a phone | JS heap 145–186 MB in both profiles; textures on top (24 chunk MB, ≤ 160 `bld_`), not measured on a device |
+| Save | ≤ 64 KB of JSON | ≤ 64 KB enforced; a maxed frontier ~56 KB (S19) |
+| Buildings (S13c density) | every pad built renders and simulates inside the frame | 420 standing (244 blueprint pads + wall pieces); buildings update ~0.25 ms a frame |
+| Workers | up to the save's 500 | 297 (every production slot filled); update ~0.4 ms a frame, the costliest system |
+| Drop-off paths | inside the A* row | ~3100 searches a minute through the queue, 0 left queued |
+| Yard props | culled with their building | 284 yards; 268 of 3042 static objects shown |
+| `bld_` textures | ≤ 160, lazily baked | 151, 0 fallbacks; one variant bake reached 92–110 ms (while `buildAll` raised every pad at once; see S13b) |

@@ -13,8 +13,8 @@ import { SOLDIERS, WORKER_FOR } from '../config/units'
  * The fixture is a new game with regions of tier ≤ `tier` claimed and their
  * camps burned, every blueprint pad raised to `level` (walls too), crews to
  * `workers` (the save's cap is 500), `soldiers` troops, fog cleared, the hero
- * god-moded at the hall and saving stubbed out (the real save is never
- * touched). The night is wave `wave`, measured from dusk for `seconds` of game
+ * god-moded at the hall and saving stubbed out (the saves a new game writes
+ * as it starts are put back). The night is wave `wave`, measured from dusk for `seconds` of game
  * time while the hero walks a slow square so the camera keeps streaming.
  * A frame is CPU time only (update + render submission); the GPU is async.
  * Frames are paced to real time (`paced`), so a 60 s run takes 60 s of wall;
@@ -79,9 +79,17 @@ export function makeBench(h: BenchApi) {
   let last: unknown = null
 
   const fixture = (o: Required<BenchOpts>) => {
+    // a new game saves as it starts, before the stub below can land: put the saves back after
+    const saved = (() => { try { return Object.keys(localStorage).filter(k => k.startsWith('emberhold.save')).map(k => [k, localStorage.getItem(k)!]) } catch { return null } })()
     h.start(false)
     const g = h.gs()
     g.saves.save = () => true
+    try {
+      if (saved) {
+        for (const k of Object.keys(localStorage)) if (k.startsWith('emberhold.save') && !saved.some(e => e[0] === k)) localStorage.removeItem(k)
+        for (const [k, v] of saved) localStorage.setItem(k, v)
+      }
+    } catch { /* storage blocked: nothing was written either */ }
     g.combat.god = true
     for (const r of REGIONS) if (r.tier <= o.tier) g.regions.claim(r.id, true)
     for (const c of CAMPS) if (g.regions.claimed(c.region)) g.camps.burn(c.id)
