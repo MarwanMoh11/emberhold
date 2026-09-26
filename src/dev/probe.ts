@@ -149,7 +149,7 @@ export function makeProbe(h: ProbeApi) {
       else if (hall) score = 900
       else if ((b.key === 'house' || b.key === 'cottage') && popTight) score = 600
       else if (PRODUCTION.has(b.key)) score = b.level === 0 ? 500 : 300
-      else if ((b.key === 'barracks' || b.key === 'archeryRange') && b.level === 0) score = 450
+      else if ((b.key === 'barracks' || b.key === 'archeryRange') && b.level === 0) score = 800 // no army without it: rebuild before new ground
       else if (b.key === 'townHall') score = 700
       const total = Object.values(c.cost as Record<string, number>).reduce((a, v) => a + v, 0)
       score -= total / 100

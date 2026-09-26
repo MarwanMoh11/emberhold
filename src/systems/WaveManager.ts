@@ -325,13 +325,14 @@ export class WaveManager {
 
   /**
    * Dawn breaks the horde (S20): night walkers still out when the fight
-   * window closes flee in smoke: no kills, no drops. Bosses stand their
-   * ground and carry into the day.
+   * window closes flee in smoke and drop what they carried (their loot, no
+   * kill or xp). Bosses stand their ground and carry into the day.
    */
   private rout() {
     const fled: Enemy[] = []
     this.scene.enemies.forEachAlive(e => { if (e.fromWave && !e.def.boss) fled.push(e) })
     for (const e of fled) {
+      this.scene.pickups.dropLoot(e.def, e.x, e.y, this.scene.player.stats.greed)
       this.scene.fx.smoke(e.x, e.y, 3)
       this.scene.enemies.despawn(e)
     }
