@@ -6,6 +6,9 @@ export type CullCamera = Pick<Phaser.Cameras.Scene2D.Camera, 'id' | 'scrollX' | 
 /** Any game object: the culler only touches its camera filter. */
 export interface Cullable { cameraFilter: number }
 
+/** A pooled object that moves (a unit, a shot, a pickup): its place is read live every frame. */
+export interface Mover extends Cullable { x: number; y: number; once?: (event: string, fn: () => void) => unknown }
+
 export interface CullerOptions {
   /** Spatial hash bucket, world px. */
   bucket?: number
@@ -15,6 +18,8 @@ export interface CullerOptions {
   interval?: number
   /** Re-cull at once when the camera has moved this far, world px. */
   moveStep?: number
+  /** How far outside the view a mover still draws, world px (its sprite's reach included). */
+  moverMargin?: number
 }
 
 interface Entry {
@@ -37,14 +42,18 @@ const keyOf = (bx: number, by: number) => (by + 32768) * 65536 + (bx + 32768)
  * It hides through the camera filter, not `visible`: game logic owns
  * `visible` (a felled rock, a built pad's ghost) and must never find it
  * flipped, and an object the culler hid comes back exactly as the game left
- * it. Objects that move and simulate (enemies, allies, shots) do not belong
- * here.
+ * it. Objects that move and simulate (enemies, allies, shots, pickups) are
+ * `movers` (S21): no hash, just a bounds test against the view every frame,
+ * since Phaser draws every visible sprite wherever it stands. A late-game
+ * night had ~1500 of them off screen.
  */
 export class Culler {
   private readonly bucket: number
   private readonly margin: number
   private readonly interval: number
   private readonly moveStep: number
+  private readonly moverMargin: number
+  private readonly movers = new Set<Mover>()
   private readonly buckets = new Map<number, Entry[]>()
   private readonly entries = new Map<Cullable, Entry>()
   private readonly shown = new Set<Entry>()
@@ -58,7 +67,8 @@ export class Culler {
   private lastW = 0
   private lastH = 0
 
-  constructor({ bucket = 1024, margin = 256, interval = 150, moveStep = 64 }: CullerOptions = {}) {
+  constructor({ bucket = 1024, margin = 256, interval = 150, moveStep = 64, moverMargin = 128 }: CullerOptions = {}) {
+    this.moverMargin = moverMargin
     this.bucket = bucket
     this.margin = margin
     this.interval = interval
@@ -77,6 +87,12 @@ export class Culler {
     this.shown.add(e)
     this.maxRadius = Math.max(this.maxRadius, radius)
     this.dirty = true
+  }
+
+  /** Track a moving object for its whole life (pooled ones are never released). */
+  addMover(obj: Mover) {
+    this.movers.add(obj)
+    obj.once?.('destroy', () => this.movers.delete(obj))
   }
 
   /** Stop tracking `obj`, and give it back to the camera if it was hidden. */
@@ -101,6 +117,7 @@ export class Culler {
   update(camera: CullCamera, now = performance.now()) {
     if (!camera.id) return // past the 32nd camera ids run out; draw everything
     if (camera.id !== this.camId) this.retarget(camera.id)
+    this.cullMovers(camera)
     const moved = Math.abs(camera.scrollX - this.lastX) > this.moveStep
       || Math.abs(camera.scrollY - this.lastY) > this.moveStep
       || camera.zoom !== this.lastZoom || camera.width !== this.lastW || camera.height !== this.lastH
@@ -144,11 +161,23 @@ export class Culler {
 
   /** `shown` are drawn (unless the game hid them); the rest are culled. */
   stats() {
-    return { total: this.entries.size, shown: this.shown.size }
+    return { total: this.entries.size, shown: this.shown.size, movers: this.movers.size }
+  }
+
+  private cullMovers(camera: CullCamera) {
+    const id = this.camId, m = this.moverMargin
+    const vw = camera.width / camera.zoom, vh = camera.height / camera.zoom
+    const left = camera.scrollX + (camera.width - vw) / 2 - m, top = camera.scrollY + (camera.height - vh) / 2 - m
+    const right = left + vw + 2 * m, bottom = top + vh + 2 * m
+    for (const o of this.movers) {
+      const off = o.x < left || o.x > right || o.y < top || o.y > bottom
+      o.cameraFilter = off ? o.cameraFilter | id : o.cameraFilter & ~id
+    }
   }
 
   /** A different camera: move every hidden object's filter bit over to it. */
   private retarget(id: number) {
+    for (const o of this.movers) o.cameraFilter &= ~this.camId
     for (const e of this.entries.values()) {
       if (e.shown) continue
       e.obj.cameraFilter = (e.obj.cameraFilter & ~this.camId) | id

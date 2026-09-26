@@ -174,7 +174,8 @@ export class PathFinder {
   tick(budgetMs = this.sliceMs): void {
     if (!this.active && !this.queue.length) { this.st.frameMs = 0; return }
     const t0 = this.now()
-    const deadline = t0 + budgetMs - 0.2
+    // the clock is read every few hundred pops and a search settles past it: stop short (S21 saw 2.1 ms)
+    const deadline = t0 + budgetMs - 0.4
     for (;;) {
       if (!this.active) {
         const job = this.queue.shift()

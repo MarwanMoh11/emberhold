@@ -45,6 +45,7 @@ export class Soldier implements Targetable {
 
   constructor(scene: Phaser.Scene) {
     this.sprite = scene.add.image(0, 0, 'sol_swordsman').setVisible(false)
+    ;(scene as any).culler?.addMover(this.sprite)
   }
 
   spawn(def: SoldierDef, x: number, y: number, slot: number, hpMult: number) {

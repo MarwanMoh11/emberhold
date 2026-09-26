@@ -32,11 +32,16 @@ export function dotsAlong(route: readonly Pt[], gap = ROUTE_GAP): Pt[] {
  * Tonight's approaches as ember dotted lines on the ground (S09): from the
  * warning until the night ends, only within ROUTE_NEAR of the hero, with a
  * glint running along each toward the hall.
+ *
+ * The Graphics is re-tessellated every frame, so only dots on screen are
+ * drawn, and where routes share a road a dot is drawn once (S21: three
+ * fronts near the hall came to ~1200 dots and ~2.8 ms of render a frame).
  */
 export class RouteMarks {
   private g: Phaser.GameObjects.Graphics
   private src: unknown = null
   private dots: Pt[][] = []
+  private drawn = new Set<number>()
 
   constructor(private scene: GameScene, depth: number) {
     this.g = scene.add.graphics().setDepth(depth)
@@ -54,9 +59,17 @@ export class RouteMarks {
     const p = this.scene.player
     const near2 = ROUTE_NEAR * ROUTE_NEAR
     const run = this.scene.now / 1000 * 6
+    const v = this.scene.cameras.main.worldView
+    const x0 = v.x - 16, x1 = v.right + 16, y0 = v.y - 16, y1 = v.bottom + 16
+    const drawn = this.drawn
+    drawn.clear()
     for (const dots of this.dots) {
       for (let k = 0; k < dots.length; k++) {
         const [x, y] = dots[k]
+        if (x < x0 || x > x1 || y < y0 || y > y1) continue
+        const cell = Math.round(y / 14) * 4096 + Math.round(x / 14)
+        if (drawn.has(cell)) continue
+        drawn.add(cell)
         const dx = x - p.x, dy = y - p.y
         const d2 = dx * dx + dy * dy
         if (d2 > near2) continue

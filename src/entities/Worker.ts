@@ -55,6 +55,8 @@ export class Worker implements Targetable {
   constructor(scene: Phaser.Scene) {
     this.sprite = scene.add.image(0, 0, 'wrk_lumberjack').setVisible(false)
     this.load = scene.add.image(0, 0, 'res_wood').setVisible(false).setScale(0.6)
+    const culler = (scene as any).culler
+    culler?.addMover(this.sprite); culler?.addMover(this.load)
   }
 
   spawn(def: WorkerDef, x: number, y: number, homeId: string, homeX: number, homeY: number, carryType: ResourceType) {

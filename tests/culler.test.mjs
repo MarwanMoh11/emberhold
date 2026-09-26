@@ -16,11 +16,11 @@ test('objects beyond the view and its margin are culled, and come back', () => {
   c.add(far, 3000, 2500, 40)
   c.update(cam(0, 0), 0)
   assert.deepEqual([hidden(near), hidden(edge), hidden(far)], [false, false, true])
-  assert.deepEqual(c.stats(), { total: 3, shown: 2 })
+  assert.deepEqual(c.stats(), { total: 3, shown: 2, movers: 0 })
 
   c.update(cam(2600, 2200), 1)
   assert.deepEqual([hidden(near), hidden(edge), hidden(far)], [true, true, false])
-  assert.deepEqual(c.stats(), { total: 3, shown: 1 })
+  assert.deepEqual(c.stats(), { total: 3, shown: 1, movers: 0 })
 })
 
 test('the culler never touches visible, so the game keeps its own', () => {
@@ -66,5 +66,20 @@ test('remove gives a hidden object back to the camera', () => {
   assert.equal(hidden(o), true)
   c.remove(o)
   assert.equal(hidden(o), false)
-  assert.deepEqual(c.stats(), { total: 0, shown: 0 })
+  assert.deepEqual(c.stats(), { total: 0, shown: 0, movers: 0 })
+})
+
+test('movers are culled every frame from where they stand, and come back when they walk in', () => {
+  const c = new Culler()
+  const unit = { cameraFilter: 0, x: 400, y: 300 }
+  c.addMover(unit)
+  c.update(cam(0, 0), 0)
+  assert.equal(hidden(unit), false)
+  unit.x = 800 + 128 + 10 // just past the mover margin
+  c.update(cam(0, 0), 1) // a still camera, well inside the interval: movers still re-cull
+  assert.equal(hidden(unit), true)
+  unit.x = 700
+  c.update(cam(0, 0), 2)
+  assert.equal(hidden(unit), false)
+  assert.equal(c.stats().movers, 1)
 })

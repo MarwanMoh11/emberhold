@@ -106,6 +106,7 @@ export class Enemy implements Targetable {
 
   constructor(scene: Phaser.Scene) {
     this.sprite = scene.add.image(0, 0, 'enm_grunt').setVisible(false)
+    ;(scene as any).culler?.addMover(this.sprite)
   }
 
   spawn(def: EnemyDef, x: number, y: number, hpMult: number, dmgMult: number) {

@@ -17,7 +17,8 @@ import { SOLDIERS, WORKER_FOR } from '../config/units'
  * touched). The night is wave `wave`, measured from dusk for `seconds` of game
  * time while the hero walks a slow square so the camera keeps streaming.
  * A frame is CPU time only (update + render submission); the GPU is async.
- * It yields every ~250 ms so a long run spans several `javascript_tool` calls.
+ * Frames are paced to real time (`paced`), so a 60 s run takes 60 s of wall;
+ * it yields every ~250 ms so a long run spans several `javascript_tool` calls.
  */
 
 type G = any
@@ -45,6 +46,12 @@ export interface BenchOpts {
   keep?: boolean
   /** Time each system's update (adds a little overhead of its own). */
   prof?: boolean
+  /**
+   * Hold each frame to its `stepMs` slot (busy-wait) so the GPU keeps up as
+   * it would under vsync. Unpaced, frames go back to back, the GPU queue
+   * fills and the CPU stalls in the pipeline flush: spikes no player sees.
+   */
+  paced?: boolean
 }
 
 const pct = (sorted: number[], p: number) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] : 0
@@ -123,11 +130,12 @@ export function makeBench(h: BenchApi) {
 
   const bench = async (opts: BenchOpts = {}) => {
     const o: Required<BenchOpts> = {
-      seconds: 60, stepMs: 1000 / 60, wave: 30, tier: 3, level: 5, workers: 500, soldiers: 150, keep: false, prof: false, ...opts,
+      seconds: 60, stepMs: 1000 / 60, wave: 30, tier: 3, level: 5, workers: 500, soldiers: 150, keep: false, prof: false, paced: true, ...opts,
     }
     if (!o.keep) fixture(o)
     const g = h.gs(); const u = h.ui()
-    const unpause = () => { if (g.paused) { u.closeScreen?.(); if (g.paused) u.resumeGame?.() } }
+    // the pane is usually hidden, and the UI pauses a hidden game
+    const unpause = () => { if (!g.paused) return; if (u.pause?.open) u.pause.hide(); u.resumeGame?.() }
     // dusk of a three-front night
     const w = g.waves
     if (w.phase !== 'night') {
@@ -150,7 +158,7 @@ export function makeBench(h: BenchApi) {
     const frames: number[] = []; const bakeMs: number[] = []; const flowMs: number[] = []; const pathMs: number[] = []
     const t0 = { bakes: g.terrain.stats().baked, rebuilds: g.nav.stats().rebuilds, searches: g.nav.stats().paths.searches }
     let visMax = 0, visSum = 0, visN = 0, uiVisMax = 0, walkersMax = 0, residentMax = 0, heapMax = heapMb() ?? 0
-    let worstChunk = 0, flowFrames = 0, pathFrames = 0
+    let worstChunk = 0, flowFrames = 0, pathFrames = 0, lastBaked = t0.bakes
     const dirs: [number, number][] = [[1, 0], [0, 1], [-1, 0], [0, -1]]
     const heap0 = heapMb()
     try {
@@ -158,14 +166,16 @@ export function makeBench(h: BenchApi) {
       for (let i = 0; i < n; i++) {
         const d = dirs[Math.floor((i * o.stepMs) / 4000) % 4]
         g.moveInput.x = d[0] * 0.5; g.moveInput.y = d[1] * 0.5
+        unpause()
         const a = performance.now()
         h.step(o.stepMs)
         frames.push(performance.now() - a)
+        if (o.paced) while (performance.now() - a < o.stepMs) { /* hold the slot */ }
         const ts = g.terrain.stats(), ns = g.nav.stats()
         bakeMs.push(ts.frameMs); flowMs.push(ns.frameMs); pathMs.push(ns.paths.frameMs)
         if (ns.frameMs > 0) flowFrames++
         if (ns.paths.frameMs > 0) pathFrames++
-        worstChunk = Math.max(worstChunk, ts.worstChunkMs ?? 0)
+        if (ts.baked !== lastBaked) { worstChunk = Math.max(worstChunk, ts.chunkMs); lastBaked = ts.baked }
         residentMax = Math.max(residentMax, ts.resident)
         walkersMax = Math.max(walkersMax, g.enemies.walkerCount)
         if (i % 30 === 0) {
@@ -173,7 +183,7 @@ export function makeBench(h: BenchApi) {
           uiVisMax = Math.max(uiVisMax, visibleCount(u))
           heapMax = Math.max(heapMax, heapMb() ?? 0)
         }
-        if (performance.now() - chunkStart > 250) { unpause(); await yieldNow(); chunkStart = performance.now() }
+        if (performance.now() - chunkStart > 250) { await yieldNow(); chunkStart = performance.now() }
       }
     } finally {
       g.moveInput.x = 0; g.moveInput.y = 0
@@ -187,7 +197,7 @@ export function makeBench(h: BenchApi) {
       frameMs: { p50: r2(pct(s, 0.5)), p95: r2(pct(s, 0.95)), max: r2(s[s.length - 1] ?? 0), mean: r2(s.reduce((x, y) => x + y, 0) / (s.length || 1)) },
       night: { wave: w.wave, fronts, walkersMax, phaseAtEnd: w.phase },
       world: { pads: [...g.buildings.byPad.values()].filter((b: G) => b.level > 0).length, workers: g.workers.workers.length, soldiers: g.army.soldiers.length, textures: g.buildings.looks.stats() },
-      chunks: { baked: ts.baked - t0.bakes, residentMax, bakeFrameMs: stat(bakeMs), worstChunkMs: r2(worstChunk) },
+      chunks: { baked: ts.baked - t0.bakes, residentMax, bakeFrameMs: stat(bakeMs), worstChunkMs: r2(worstChunk), worstChunkMsEver: r2(ts.worstChunkMs) },
       flow: { rebuilds: ns.rebuilds - t0.rebuilds, sliceFrames: flowFrames, sliceMs: stat(flowMs), lastBuildMs: r2(ns.lastBuildMs) },
       astar: { searches: ns.paths.searches - t0.searches, frames: pathFrames, frameMs: stat(pathMs), worstSearchMs: r2(ns.paths.worstMs), queued: ns.paths.queued },
       visible: { gameMax: visMax, gameMean: Math.round(visSum / (visN || 1)), uiMax: uiVisMax, culler: g.culler.stats() },
@@ -198,5 +208,5 @@ export function makeBench(h: BenchApi) {
     return res
   }
 
-  return Object.assign(bench, { fixture: (opts: BenchOpts = {}) => fixture({ seconds: 60, stepMs: 1000 / 60, wave: 30, tier: 3, level: 5, workers: 500, soldiers: 150, keep: false, prof: false, ...opts }), last: () => last })
+  return Object.assign(bench, { fixture: (opts: BenchOpts = {}) => fixture({ seconds: 60, stepMs: 1000 / 60, wave: 30, tier: 3, level: 5, workers: 500, soldiers: 150, keep: false, prof: false, paced: true, ...opts }), last: () => last })
 }
