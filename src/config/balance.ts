@@ -73,6 +73,13 @@ export const DAYNIGHT = {
   dayMax: 180,
   /** the fight window: it starts on the first arrival on claimed ground, or `marchMax` after dusk */
   nightSeconds: 34,
+  /**
+   * The night ends once every walker is down, or this long after the fight
+   * starts with walkers still out (at least `nightSeconds`); stragglers carry
+   * into the day. S20 cut it from `spread + 80` (nights ran ~90 s) toward
+   * design 01's ~50 s of march and fight.
+   */
+  fightGrace: 40,
   marchMax: 25,
   warningSeconds: 8,
 }

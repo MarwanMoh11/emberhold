@@ -123,9 +123,9 @@ export class WaveManager {
         if (!this.fighting && this.nightElapsed >= DAYNIGHT.marchMax) this.beginFight()
         if (this.fighting) this.fightElapsed += dt
         const spawnedAll = this.queueHead >= this.queue.length
-        // the old rule, counted from the start of the fight rather than dusk
+        // the fight window, stretched by the spawn's spread; stragglers carry into the day (S20)
         const timedOut = this.fighting
-          && this.fightElapsed > Math.max(DAYNIGHT.nightSeconds * 2.2, (this.current?.spread ?? 8) + 80)
+          && this.fightElapsed > Math.max(DAYNIGHT.nightSeconds, (this.current?.spread ?? 8) + DAYNIGHT.fightGrace)
         if (spawnedAll && (this.remaining <= 0 || timedOut)) this.endNight()
         break
       }

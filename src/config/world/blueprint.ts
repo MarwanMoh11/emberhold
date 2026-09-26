@@ -90,21 +90,21 @@ export const REGIONS: RegionBP[] = [
 
   // ---- tier 1: the near country, claimable from the first hall ----------------
   {
-    id: 'downs', name: 'The Barrow Downs', tier: 1, hall: 1, cost: { coins: 200 }, biome: 'meadow',
+    id: 'downs', name: 'The Barrow Downs', tier: 1, hall: 1, cost: { coins: 250, wood: 700 }, biome: 'meadow',
     blurb: 'Deep loam over the old kings. Something is digging them up.',
     identity: 'Food. The best open farmland north of the river, and barrows to break open.',
     poly: [[3700, 0], [6100, 0], [6100, 1480], [6000, 2300], [4200, 2300], [3800, 1900]],
     claim: { x: 5120, y: 2440, from: 'hold', at: 'the north road, outside the North Gate' },
   },
   {
-    id: 'whisperwood', name: 'Whisperwood', tier: 1, hall: 1, cost: { coins: 320, wood: 100 }, biome: 'forest',
+    id: 'whisperwood', name: 'Whisperwood', tier: 1, hall: 1, cost: { coins: 450, wood: 1400 }, biome: 'forest',
     blurb: 'Deep timber. Something moves in it.',
     identity: 'Wood. Two lumber clearings and the first warcamp worth burning.',
     poly: [[2300, 0], [3700, 0], [3800, 1900], [4200, 2300], [4050, 2950], [3300, 2900], [2700, 3050], [2200, 2600], [2100, 1300]],
     claim: { x: 4260, y: 2650, from: 'hold', at: 'the wood road, north-west of the palisade' },
   },
   {
-    id: 'hollow', name: 'Hollow Village', tier: 1, hall: 1, cost: { coins: 480, wood: 240 }, biome: 'village',
+    id: 'hollow', name: 'Hollow Village', tier: 1, hall: 1, cost: { coins: 700, wood: 2200 }, biome: 'village',
     blurb: 'Survivors hiding in the ruins of a river village.',
     identity: 'People. Rebuilt houses, a river fishery, and the Millford crossing to hold.',
     poly: [[3300, 2900], [4050, 2950], [4100, 3750], [4520, 4300], [3850, 4420], [3150, 4640], [2600, 4880], [2500, 3800], [2700, 3050]],
@@ -113,14 +113,14 @@ export const REGIONS: RegionBP[] = [
 
   // ---- tier 2 --------------------------------------------------------------------
   {
-    id: 'greyfall', name: 'Greyfall Scarp', tier: 2, hall: 2, cost: { coins: 720, wood: 400 }, biome: 'scarp',
+    id: 'greyfall', name: 'Greyfall Scarp', tier: 2, hall: 2, cost: { coins: 1000, wood: 2600 }, biome: 'scarp',
     blurb: 'Good stone, bad neighbours, and the only bridge over the gorge.',
     identity: 'Stone. Quarries at the cliff foot; the Gorge Bridge is the east approach.',
     poly: [[6000, 2300], [6100, 1480], [6700, 1330], [7200, 1480], [7600, 1820], [7880, 2100], [7560, 2420], [7330, 2700], [7080, 3000], [6720, 3350], [6250, 3720], [6450, 2950]],
     claim: { x: 6300, y: 3050, from: 'hold', at: 'the east road, beyond the East Gate' },
   },
   {
-    id: 'ferrow', name: 'The Ferrow Fields', tier: 2, hall: 2, cost: { coins: 960, wood: 480, food: 160 }, biome: 'farmland',
+    id: 'ferrow', name: 'The Ferrow Fields', tier: 2, hall: 2, cost: { coins: 960, wood: 1200, food: 300 }, biome: 'farmland',
     blurb: 'The best soil on the frontier. That is why they burned it.',
     identity: 'The bridgehead. Big farms on the floodplain and the first muster to break.',
     poly: [[6250, 3720], [6300, 4400], [6400, 5700], [3850, 5950], [3850, 4420], [4520, 4300], [5120, 4230], [5700, 4040]],
@@ -769,7 +769,7 @@ export const CAMPS: CampBP[] = [
   { id: 'campThornstake', name: 'Thornstake Camp', region: 'whisperwood', x: 2650, y: 800, tier: 'warcamp', hp: 2100,
     spawns: { key: 'grunt', every: 9, count: 2 }, reward: { coins: 260, wood: 180 },
     why: 'Deep in the wood on the old track west. Feeds the north-west raids until it burns.' },
-  { id: 'campRotwood', name: 'Rotwood Camp', region: 'hollow', x: 2720, y: 3120, tier: 'warcamp', hp: 2700,
+  { id: 'campRotwood', name: 'Rotwood Camp', region: 'hollow', x: 2720, y: 3120, tier: 'warcamp', hp: 2250,
     spawns: { key: 'runner', every: 8, count: 3 }, reward: { coins: 380, wood: 200, stone: 80 },
     why: 'In the rotten wood above the village — why the survivors are still hiding.' },
   { id: 'campScarp', name: 'Scarp Warcamp', region: 'greyfall', x: 7450, y: 2150, tier: 'warcamp', hp: 4500,

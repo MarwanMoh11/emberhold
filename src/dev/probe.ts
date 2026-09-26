@@ -62,7 +62,7 @@ export function makeProbe(h: ProbeApi) {
     g.bus.on('act:begun', (p: any) => s.acts.push([p.roman, g.waves.wave, Math.round(s.clock)]))
     g.bus.on('camp:burned', (p: any) => { s.burns[p.id ?? p.camp ?? '?'] = [g.waves.wave, Math.round(s.clock)] })
     g.bus.on('wave:start', () => {
-      s.night = { w: g.workers.count, s: g.army.count, lv: levels(g), hall: 1 }
+      s.night = { w: g.workers.count, s: g.army.count, lv: levels(g), hall: 1, t: s.clock }
     })
     g.bus.on('wave:cleared', (p: any) => onCleared(g, p.wave))
     // the hero hunts all over claimed ground, and a stone he crosses must not claim by accident
@@ -78,7 +78,7 @@ export function makeProbe(h: ProbeApi) {
   const nextClaim = (g: G) => REGIONS.find(r => r.id === CLAIM_ORDER.find(id => !g.regions.claimed(id)))
 
   const onCleared = (g: G, wave: number) => {
-    const n = s.night ?? { w: 0, s: 0, lv: 0, hall: 1 }
+    const n = s.night ?? { w: 0, s: 0, lv: 0, hall: 1, t: s.clock }
     const dt = Math.max(1, s.clock - s.lastRow.t) / 60
     const got = g.res.totalGathered
     const inc = (k: string) => Math.round(((got[k] ?? 0) - (s.lastRow.got[k] ?? 0)) / dt)
@@ -91,7 +91,8 @@ export function makeProbe(h: ProbeApi) {
     s.rows.push([wave, Math.round(s.clock), g.regions.claimedCount, ...RES.map(k => Math.round(st[k])),
       inc('coins'), inc('wood'), inc('food'), inc('stone'), inc('metal'),
       Math.max(0, n.w - g.workers.count), Math.max(0, n.s - g.army.count), Math.max(0, n.lv - levels(g)),
-      Math.round(n.hall * 100), g.buildings.townHallLevel, g.workers.count, g.army.count, g.quests.current?.id ?? '-'])
+      Math.round(n.hall * 100), g.buildings.townHallLevel, g.workers.count, g.army.count, g.quests.current?.id ?? '-',
+      Math.round(s.clock - n.t), g.waves.enemiesRemaining, g.enemies.walkerCount])
     s.lastRow = { t: s.clock, got: { ...got } }
     s.night = null
   }
@@ -132,9 +133,13 @@ export function makeProbe(h: ProbeApi) {
     const needHall = next && g.buildings.townHallLevel < next.hall
     const reserve: Record<string, number> = {}
     if (next && !needHall) for (const k of RES) reserve[k] = ((next.cost as any)[k] ?? 0) * opts.reserve
+    // a reasonable player saves for what the quest (or the next claim's hall) asks, not only for claims
+    const cands = candidates(g)
+    const saveFor = cands.find(c => questTarget(g, c.b)) ?? (needHall ? cands.find(c => c.b.key === 'townHall') : undefined)
+    if (saveFor) for (const k of RES) reserve[k] = Math.max(reserve[k] ?? 0, saveFor.cost[k] ?? 0)
     const popTight = g.popUsed >= g.popCap - 2
     let best: { b: any; cost: any; score: number } | null = null
-    for (const c of candidates(g)) {
+    for (const c of cands) {
       const { b } = c
       const quest = questTarget(g, b)
       const hall = b.key === 'townHall' && needHall
@@ -309,7 +314,7 @@ export function makeProbe(h: ProbeApi) {
     const bounds = [0, ...s.acts.slice(1).map((x: any) => x[2]), s.clock]
     const acts = s.acts.map((x: any, i: number) => ({ act: x[0], fromWave: x[1], fromMin: +(x[2] / 60).toFixed(1), ...gaps(bounds[i], bounds[i + 1]) }))
     return {
-      cols: 'wave,clockS,claimed,coins,wood,food,stone,metal,crystal,inc/min c,w,f,s,m,lostW,lostS,lostLv,hall%,hallLv,workers,army,quest',
+      cols: 'wave,clockS,claimed,coins,wood,food,stone,metal,crystal,inc/min c,w,f,s,m,lostW,lostS,lostLv,hall%,hallLv,workers,army,quest,nightS,left,out',
       rows: s.rows, claims: s.claims, burns: s.burns, acts, nightOk: s.nightOk, nightShort: s.nightShort,
     }
   }
