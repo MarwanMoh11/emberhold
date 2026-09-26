@@ -207,12 +207,14 @@ export function makeProbe(h: ProbeApi) {
 
 
   const decideHire = (g: G) => {
+    // a reasonable player keeps room for the army it means to field: fallen soldiers are replaced, not their pop hired away
+    const room = Math.max(0, Math.floor(g.popCap * opts.armyShare) - g.army.count)
     for (const b of g.buildings.buildings) {
       if (b.level === 0) continue
       const wkey = WORKER_FOR[b.key as keyof typeof WORKER_FOR]
       if (!wkey || b.workers.length >= g.buildings.slotsOf(b)) continue
       const def = WORKERS[wkey]
-      if (g.popUsed + def.pop > g.popCap || !g.res.canAfford(def.cost)) continue
+      if (g.popUsed + def.pop + room > g.popCap || !g.res.canAfford(def.cost)) continue
       g.res.spend(def.cost)
       const w = g.workers.hire(wkey, b)
       if (w) { b.workers.push(w.id); b.peakWorkers = Math.max(b.peakWorkers, b.workers.length) }

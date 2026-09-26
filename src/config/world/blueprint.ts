@@ -97,7 +97,7 @@ export const REGIONS: RegionBP[] = [
     claim: { x: 5120, y: 2440, from: 'hold', at: 'the north road, outside the North Gate' },
   },
   {
-    id: 'whisperwood', name: 'Whisperwood', tier: 1, hall: 1, cost: { coins: 450, wood: 1400 }, biome: 'forest',
+    id: 'whisperwood', name: 'Whisperwood', tier: 1, hall: 1, cost: { coins: 450, wood: 1900 }, biome: 'forest',
     blurb: 'Deep timber. Something moves in it.',
     identity: 'Wood. Two lumber clearings and the first warcamp worth burning.',
     poly: [[2300, 0], [3700, 0], [3800, 1900], [4200, 2300], [4050, 2950], [3300, 2900], [2700, 3050], [2200, 2600], [2100, 1300]],
@@ -120,7 +120,7 @@ export const REGIONS: RegionBP[] = [
     claim: { x: 6300, y: 3050, from: 'hold', at: 'the east road, beyond the East Gate' },
   },
   {
-    id: 'ferrow', name: 'The Ferrow Fields', tier: 2, hall: 2, cost: { coins: 960, wood: 1200, food: 300 }, biome: 'farmland',
+    id: 'ferrow', name: 'The Ferrow Fields', tier: 2, hall: 2, cost: { coins: 1600, wood: 2400, food: 400 }, biome: 'farmland',
     blurb: 'The best soil on the frontier. That is why they burned it.',
     identity: 'The bridgehead. Big farms on the floodplain and the first muster to break.',
     poly: [[6250, 3720], [6300, 4400], [6400, 5700], [3850, 5950], [3850, 4420], [4520, 4300], [5120, 4230], [5700, 4040]],
