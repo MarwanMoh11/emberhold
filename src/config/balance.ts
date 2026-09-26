@@ -75,8 +75,8 @@ export const DAYNIGHT = {
   nightSeconds: 34,
   /**
    * The night ends once every walker is down, or this long after the fight
-   * starts with walkers still out (at least `nightSeconds`); stragglers carry
-   * into the day. S20 cut it from `spread + 80` (nights ran ~90 s) toward
+   * starts with walkers still out (at least `nightSeconds`); stragglers flee
+   * at dawn (bosses stay). S20 cut it from `spread + 80` (nights ran ~90 s) toward
    * design 01's ~50 s of march and fight.
    */
   fightGrace: 40,

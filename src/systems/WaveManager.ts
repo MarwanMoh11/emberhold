@@ -123,10 +123,13 @@ export class WaveManager {
         if (!this.fighting && this.nightElapsed >= DAYNIGHT.marchMax) this.beginFight()
         if (this.fighting) this.fightElapsed += dt
         const spawnedAll = this.queueHead >= this.queue.length
-        // the fight window, stretched by the spawn's spread; stragglers carry into the day (S20)
+        // the fight window, stretched by the spawn's spread; stragglers flee at dawn (S20)
         const timedOut = this.fighting
           && this.fightElapsed > Math.max(DAYNIGHT.nightSeconds, (this.current?.spread ?? 8) + DAYNIGHT.fightGrace)
-        if (spawnedAll && (this.remaining <= 0 || timedOut)) this.endNight()
+        if (spawnedAll && (this.remaining <= 0 || timedOut)) {
+          if (this.remaining > 0) this.rout()
+          this.endNight()
+        }
         break
       }
     }
@@ -318,6 +321,21 @@ export class WaveManager {
   /** Called by the scene when any wave enemy dies. */
   notifyKilled(fromWave: boolean) {
     if (fromWave) this.remaining = Math.max(0, this.remaining - 1)
+  }
+
+  /**
+   * Dawn breaks the horde (S20): night walkers still out when the fight
+   * window closes flee in smoke: no kills, no drops. Bosses stand their
+   * ground and carry into the day.
+   */
+  private rout() {
+    const fled: Enemy[] = []
+    this.scene.enemies.forEachAlive(e => { if (e.fromWave && !e.def.boss) fled.push(e) })
+    for (const e of fled) {
+      this.scene.fx.smoke(e.x, e.y, 3)
+      this.scene.enemies.despawn(e)
+    }
+    this.remaining = 0
   }
 
   private endNight() {
