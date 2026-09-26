@@ -12,7 +12,7 @@ import { GameScene } from './scenes/GameScene'
 import { UIScene } from './scenes/UIScene'
 import { PAL, CSS } from './config/palette'
 import { FONT_FACES } from './ui/theme'
-import { DPR } from './core/device'
+import { DPR, safeAreaInsets } from './core/device'
 
 /**
  * The canvas is sized in device pixels and shown at CSS size, so nothing is
@@ -131,6 +131,31 @@ function launch() {
     import('./dev/harness').then(m => m.installHarness(game))
   }
 }
+
+/**
+ * Fill the screen when the page comes up short of it. Opened from the iOS home
+ * screen, the translucent status bar lets the page start at the very top edge,
+ * but the viewport still leaves the bar's height off the bottom, and the game
+ * sat over a dark strip under the home indicator. That exact shortfall — the
+ * screen less the viewport equals the top inset — is the tell; a browser tab,
+ * a Slide Over window or Android never matches it and is left alone.
+ */
+function fillScreen() {
+  const root = document.documentElement
+  const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
+    || (typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches)
+  const w = window.innerWidth
+  const h = Math.min(window.innerHeight, root.clientHeight || window.innerHeight)
+  // iOS reports the screen in portrait whichever way it is held
+  const screenH = h >= w ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height)
+  const short = screenH - h
+  const top = safeAreaInsets().top
+  if (standalone && top > 0 && short > 0 && Math.abs(short - top) <= 4) root.style.setProperty('--app-h', `${screenH}px`)
+  else root.style.removeProperty('--app-h')
+}
+fillScreen()
+window.addEventListener('resize', fillScreen)
+window.addEventListener('orientationchange', () => setTimeout(fillScreen, 150))
 
 /**
  * Polled on a timer rather than requestAnimationFrame. A container that is

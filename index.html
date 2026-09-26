@@ -43,7 +43,12 @@
     user-select: none;
   }
   body { font-family: "Gill Sans", "Trebuchet MS", sans-serif; -webkit-tap-highlight-color: transparent; }
-  #app { position: fixed; inset: 0; touch-action: none; }
+  /*
+   * --app-h is set only when the page is short of the screen (see main.ts):
+   * from the iOS home screen the translucent status bar lifts the page to the
+   * top edge but the viewport keeps the bar's height off its bottom.
+   */
+  #app { position: fixed; inset: 0; height: var(--app-h, auto); touch-action: none; }
   canvas { display: block; touch-action: none; }
 
   /*
@@ -52,7 +57,7 @@
    * hand-off to the painted title is a brightening, not a cut.
    */
   #boot {
-    position: fixed; inset: 0; z-index: 5; display: flex; gap: 12px;
+    position: fixed; inset: 0; height: var(--app-h, auto); z-index: 5; display: flex; gap: 12px;
     flex-direction: column; align-items: center; justify-content: center;
     background:
       radial-gradient(ellipse 80% 45% at 50% 100%, rgba(224,138,68,.55), rgba(224,138,68,0) 70%),

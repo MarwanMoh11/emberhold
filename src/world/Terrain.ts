@@ -225,19 +225,22 @@ function washAt(F: TerrainFields, px: number, py: number) {
   }
 }
 
-/** one scratch field per sample step, so the chunk streamer and the atlas bake never resize each other's */
-const scratches = new Map<number, [HTMLCanvasElement, Ctx]>()
-
-/** 1. The wash, sampled on a grid pinned to the world's origin and smoothed up. */
+/**
+ * 1. The wash, sampled on a grid pinned to the world's origin and smoothed up.
+ *
+ * The field is a fresh canvas every call, never a shared scratch. iOS Safari
+ * defers canvas-to-canvas draws until the target is flushed, so a scratch
+ * rewritten for the next slice before the chunk was uploaded got drawn with
+ * whatever it held last: every slice of a chunk wore the same wash, and the
+ * ground came out as a grid of repeated riverbanks. At ~40×40 texels a new
+ * canvas costs nothing next to sampling the field.
+ */
 function paintWash(x: Ctx, wx: number, wy: number, size: number, step = WASH_STEP) {
   const F = terrainFields()
   const f = 1 / step
   const i0 = Math.floor(wx * f) - 1, j0 = Math.floor(wy * f) - 1
   const cols = Math.ceil((wx + size) * f) + 2 - i0, rows = Math.ceil((wy + size) * f) + 2 - j0
-  let scratch = scratches.get(step)
-  if (!scratch) { scratch = makeCanvas(cols, rows); scratches.set(step, scratch) }
-  const [field, fx] = scratch
-  if (field.width !== cols || field.height !== rows) { field.width = cols; field.height = rows }
+  const [field, fx] = makeCanvas(cols, rows)
   const img = fx.createImageData(cols, rows)
   const d = img.data
   for (let j = 0; j < rows; j++) {
