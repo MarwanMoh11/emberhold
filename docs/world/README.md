@@ -1,8 +1,8 @@
 # World v2: start here
 
-> **Status (2026-09-26): all 25 sessions are done; v2 ships as Beta 1 when `world-v2` merges into `main`.**
-> S22's playthrough reached the Regent. The cutover merge (which deploys) waits on the human's go; until then
-> `main` is the live v1 game and v2 previews at `/v2/`. Once merged, this folder is the record of how the frontier was built.
+> **Status (2026-09-26): shipped.** All 25 sessions are done. `world-v2` merged into `main` as Beta 1 (`381ac1f`) and
+> deploys to https://marwanmoh11.github.io/emberhold/. The `/v2/` preview and the `world-v2` branch are retired.
+> This folder is now the record of how the frontier was built.
 
 Emberhold's 3400×2800 map is being replaced by a 10240×9216 frontier (9.9× the
 area) with 17 regions, rivers and cliffs that only open at named crossings,
@@ -30,7 +30,7 @@ A paste-ready kickoff for any session:
 
 An orchestrator is a parent session that runs the cards as subagents, one at a time. Its own context is 200k as well, so it has to stay thin:
 
-- Loop: read the STATUS.md header, then spawn one subagent with the kickoff above, **in the foreground**. When it returns, read its final report (keep it to 25 lines or fewer) and check that STATUS.md moved on. Then refresh the preview so the human can play it (`git push origin world-v2`, then `gh workflow run deploy.yml --ref main`; it serves at https://marwanmoh11.github.io/emberhold/v2/, beside the live game, and never pushes to `main`). Then start the next card.
+- Loop: read the STATUS.md header, then spawn one subagent with the kickoff above, **in the foreground**. When it returns, read its final report (keep it to 25 lines or fewer) and check that STATUS.md moved on. (Until the cutover, the orchestrator also refreshed a `/v2/` preview after each card; it was retired when Beta 1 shipped.) Then start the next card.
 - Never read code or cards yourself. The subagent does. With 25 cards at about 3k tokens of report each, the orchestrator uses about 75k in total.
 - If a subagent stops at a checkpoint (STATUS says `SXX partial: done through C2`), spawn the **same card** again. The new subagent resumes after the last completed checkpoint.
 - Stop and ask the human when:

@@ -1,6 +1,6 @@
 # World v2: status ledger
 
-**S22 partial: ready for cutover, awaiting the human's go** ([card](sessions/S22-cutover.md): C1 and C2 done, C3 the merge left) · branch `world-v2` (created by S01 from `main` at df51e0f)
+**Done: Beta 1 shipped** (2026-09-26). `world-v2` merged into `main` at `381ac1f`; live at https://marwanmoh11.github.io/emberhold/. The `/v2/` preview and the `world-v2` branch are retired.
 
 Keep this file short. The newest entry goes on top. Each entry is 12 lines or fewer, and entries that are 3+ sessions old collapse to one line.
 
@@ -29,6 +29,11 @@ These need the human. Don't guess them. Use the default and flag it in your hand
 - **Late-game ease (S22):** `FRONTS` and `GROWTH` in `waves.ts` were eased once each; the hold now keeps its hall at w35–48, but w28–34 still had 2–4% nights in the probe. Accept, or ease `GROWTH` again (0.12/0.08) before the merge. Default: accept, and let a human run judge w25–35.
 
 ## Log
+
+### Cutover · Beta 1 shipped (2026-09-26, orchestrator)
+- The human said yes. `git merge --no-ff world-v2` into `main` as `381ac1f` "Ship the new frontier as Beta 1" (tree identical to `world-v2`, build green), then pushed; Pages deploys it to https://marwanmoh11.github.io/emberhold/.
+- Also on the human's call: the `/v2/` preview step is removed from `deploy.yml` and the `world-v2` branch is deleted (every commit is in `main`).
+- **Follow-ups, none blocking:** check waves 25–35 in a real human run (the second `GROWTH` ease was only rechecked from a wave-34 save); act IV–V gaps of 13–15 min while saving for the Crown; soldiers stand idle when their formation spot lands inside a building; farmers pause at (4750, 2160); towers rarely climb past level 1; the first chunk bake after a jump takes 13–14 ms (budget 12); boot, memory and GPU on a real phone are unmeasured.
 
 ### S22 · Playthrough and cutover: partial, ready for cutover (2026-09-26)
 - C1 (`759dd0a`, S22 hand-over commit) `H.play` (`src/dev/playthrough.ts`): S20's probe plus real fights at every quest camp and the Regent (hero and army set down, the walk shortcut), lost nights, deaths, stuck units, console errors. Probe taught towers (hold first, from w9, climbing with the hall), rubble refunds, village growth from w12, regionless build quests (c2's mine: it sat at c2 from w21, which is why S20's hold "fell" there), saving in full for the Crown.

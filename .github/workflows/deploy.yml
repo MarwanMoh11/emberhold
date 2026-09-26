@@ -27,23 +27,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # The world v2 preview: the world-v2 branch, built beside the live game at
-      # /emberhold/v2/ so it can be played while it is being made. It keeps its
-      # own save keys, so it never touches a v1 run. A broken preview must never
-      # hold back the live game, hence continue-on-error on both steps.
-      - uses: actions/checkout@v4
-        continue-on-error: true
-        with:
-          ref: world-v2
-          path: v2
-      - name: Build the world v2 preview
-        continue-on-error: true
-        if: hashFiles('v2/package.json') != ''
-        working-directory: v2
-        run: |
-          npm ci
-          npx tsc --noEmit
-          npx vite build --base=/emberhold/v2/ --outDir ../dist/v2 --emptyOutDir
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
