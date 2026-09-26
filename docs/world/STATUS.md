@@ -22,18 +22,25 @@ These bind every session. Add a line when one is made, with the date and who dec
 
 These need the human. Don't guess them. Use the default and flag it in your handoff.
 
-- **Survive gates in the chain** (raised by S20): b8 "survive night 14" and c8 "survive night 30" leave the probe 13 min without a quest or milestone (01 wants ≤ 6). Options: keep them (POIs and deeds fill the gap in real play), lower them, or swap them for goals that do something. Default (landed): keep.
+- **Dawn rout** (raised by S20, second pass): a night now ends 40 s into the fight (`DAYNIGHT.fightGrace`, was spread + 80), and walkers still out flee in smoke at dawn, dropping their loot (bosses stay). 03 said the end rule was unchanged. It brings nights to ~55 s and the clock onto 01's minutes, and stops day-long straggler fights that wiped the probe's workers. Default (landed): rout. To revert, set `fightGrace` to 80 and drop `WaveManager.rout()`.
 
 ## Log
 
-### S20 · Balance and pacing: done (2026-09-25)
-- C1 (`3f3e090`) `H.probe` (`src/dev/probe.ts`): a quest-following player (pays costs, pop caps; walking shortcut, camps burn by army strength), per-wave rows, reward gaps per act; the harness pumps headless (~50× real time). C2 (`c8a4cf6`) the tune, C3 settled by the human's 2026-09-25 decision (day formula unchanged).
-- Tuned: region and hall costs ~1.6× (downs 200 … crown 6400; hall 500 … 6700); camp hp 1.5× (rewards kept); nights stretch by `WAVE_PACE` 1.5 (night 45 = old 30; siege beast 8, Krahn 15, a boss every 8 after); `OPENS` 8/12/17; fronts 1/2/3/all from 1/8/15/30; `nightReward = 50 + 17 × wave` (config, was hardcoded 40 + 25w). Market sell 0.2/0.4/0.6 c/s at 4 goods a coin.
-- **Village calls:** drop-off stays depot / nearest outpost / granary (outposts and granaries earn their build and shorten the long hauls the slower pace makes). `cottagePopMax` 150 (binds only late; total pop ~320 < the ~340 workers where saves shed places). Markets sell (wood and food pile up by the thousand from act I; the trickle rate keeps claims paced by cost).
-- Probe, before → after (wave of claim): downs 1 → 1 (target 3), whisperwood 1 → 1 (6), hollow 1 → 2 (9), greyfall 2 → 5 (12), ferrow 4 → **14** (16 ✓), first tier-3 4 → **18** (21 ✓); act II from w2 → w2 (target w9); act III from — → **w19** (18 ✓) at 57.9 min (42: +38% ✗); the hold fell night 10 → held to 20 (hall knocked a level on 19).
-- Micro (after): reward gaps p50 1 s, p90 19 s, max 109 s ✓; every night's reward ≥ the cheapest open build (20/20) ✓; **quest/milestone drought 13 min in act II** (b8 "survive 14" waits; the probe visits no POIs) ✗.
-- Outliers for S22 / the human: (1) act I ends ~6 waves early: a1–a8 pay ~980 coins in a cascade, so early claims are instant; next lever is act I–II quest coin rewards (unchanged). (2) b8/c8 survive gates make 6+ min quest gaps (see Open decisions). (3) Nights run ~85 s, not the ~50 s design 01's clock assumes, so clock minutes run ~35% over at the right waves.
-- Not measured: waves 21–50 (acts III–V, the Regent), boss hp (`KITS` unchanged), fishery/trade yields and outpost costs (unchanged), real play time. Tests: `tests/pacing.test.mjs`; approaches and village tests follow the new numbers. No blueprint moves (costs and camp hp only).
+### S20 · Balance and pacing: done (2026-09-26, two passes)
+- Pass 1 (`3f3e090`, `c8a4cf6`, `452ae61`): `H.probe` (`src/dev/probe.ts`, headless ~50×); region/hall costs ~1.6×, camp hp 1.5×, `WAVE_PACE` 1.5, `OPENS` 8/12/17, `nightReward = 50 + 17w`; village calls: drop-off at depot/outpost/granary, `cottagePopMax` 150, markets sell a trickle.
+- Pass 2 (`743e556` … `047847b`): tier-1/2 claims cost wood (downs 250c 700w … ferrow 1600c 2400w 400f); act I–II quest coins cut ~35%; tier 3 ×2.2, tier 4 ×3, tier 5 ×2.5 coins. **Survive gates resolved** (human's 6-min cap, balance delegated): b8 "Three fronts" builds 2 Watch Posts, c8 "Old lights" restores 3 shrines. **Night length:** `fightGrace` 40 plus the dawn rout (see Open decisions). Probe: keeps pop room for its army, rebuilds and upgrades barracks.
+
+| Probe (wave, clock) | Target | Pass 1 | Pass 2 |
+|---|---|---|---|
+| downs · whisperwood · hollow | 3 · 6 · 9 | 1 · 1 · 2 | 2–3 · 7 · 9–12 |
+| greyfall · ferrow | 12 · 16 | 5 · 14 | 12–15 · 13–16 |
+| act II · act III from | w9 16 min · w19 42 min | w2 · w19 58 min | w8 15–16 min · w18–21 41–47 min |
+| act IV · crown (old tier-3–5 costs) | w34 90 min · w48 | not run | w25 62 min · w32 (w33 at 91 min) |
+| night length | ~50 s | ~85 s | 51–59 s |
+| longest quest/milestone gap, act II | ≤ 6 min | 13 min (b8) | 9–10 min (b10 burn waits on army) |
+
+- **Hold and acts III–V:** with the old tier-3–5 costs the probe held to w36 and stalled on d10 (Ashgate fortress, 18000 hp, beyond the probe's army). After the price rise, the hold fell from w23: 13–17 level-1 swordsmen and no towers against three fronts. So the rise is measured only to w21, and the Regent was never reached. Earlier runs fell at w8, w11–16 and w20. The probe varies a lot from run to run.
+- For S21/S22: in the probe the hold is a coin flip from w15 (fronts 3, up to 300 walkers out at dawn). Check it with a real playthrough, then ease `waves.ts` at 3+ fronts or teach the probe to build towers. Probe trips: a visibility pause stops `run` (resume the Game scene). `run` longer than ~27 s of wall time times out `javascript_tool`. The probe saves over the real save, so back it up.
 
 ### S19 · Save v2: done (2026-09-25)
 - C1 (`6765c87`) schema, limits, tests; C2 (`21636cb`) Beta 1 on the title, docs. **Implemented the decision: v1 let go** (no migration, charter, chest or old frontier; the card's C2 dropped). v1 keys are never read, written or deleted; a test holds it.

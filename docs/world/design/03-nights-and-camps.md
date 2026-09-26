@@ -14,7 +14,7 @@ World v2 replaces gates with **approaches**: named routes from a muster, over na
 - **Warning.** `warningSeconds` (8 s) before dusk, fire `night:warning`. Tonight's approach routes are drawn as ember dotted lines, on the ground (only near the hero) and on the minimap and atlas. A banner names them: *"Tonight: the south road and the west ford."*
 - **Night** has two parts: **march** and **fight**.
   - The fight window (`nightSeconds`, 34 s) starts when the first marcher sets foot on claimed ground, or 25 s after dusk, whichever comes first.
-  - The rule for ending the night is unchanged from today.
+  - The night ends when every walker is down, or `fightGrace` (40 s) into the fight; walkers still out then flee at dawn and drop their loot, and bosses stay (S20; see STATUS §Open decisions).
   - So a far muster costs the player nothing. The fight is always the same length.
 
 ## Approaches
