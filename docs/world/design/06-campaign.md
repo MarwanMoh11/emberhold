@@ -2,7 +2,7 @@
 
 The campaign stays **one running chain**, as today (`QUESTS` in `src/config/quests.ts`). Each step points an arrow at the next thing and pays enough to do it.
 
-> **As landed (S18):** the tables below are the design. `quests.ts` holds the chain as built: the same 46 goals plus seven village quests, "Three fronts" moved up to b8 and acts III–V reordered for the 1.5× pace, ids renumbered in chain order, and the two survive goals moved to nights 14 and 30 (see STATUS §S18).
+> **As landed (S18):** the tables below are the design. `quests.ts` holds the chain as built: the same 46 goals plus seven village quests, "Three fronts" moved up to b8 and acts III–V reordered for the 1.5× pace, ids renumbered in chain order, and the two survive goals moved to nights 14 and 30 (see STATUS §S18). **S20** swapped both for goals that do something, since waiting on a night left 13 min without a quest: b8 "Three fronts" builds 2 Watch Posts, c8 "Old lights" restores 3 shrines.
 
 **What changes:**
 - It grows from 29 quests to **46**, across five acts.
