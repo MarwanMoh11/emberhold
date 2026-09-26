@@ -2,10 +2,12 @@ import Phaser from 'phaser'
 import { Soldier } from '../entities/Soldier'
 import { SOLDIERS, type SoldierKey } from '../config/units'
 import { PAL } from '../config/palette'
-import { WORLD } from '../config/balance'
+import { WORLD } from '../config/world'
+import { walkRadius } from '../world/NavGrid'
 import { clamp, rr } from '../core/math'
 import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
+import { slowMult, tickSlow } from './walkers'
 
 /** Front-to-back ordering so tanks screen the shooters. */
 const LINE_ORDER: Record<SoldierKey, number> = {
@@ -48,7 +50,9 @@ export class ArmyManager {
     const def = SOLDIERS[key]
     let s = this.free.pop()
     if (!s) s = new Soldier(this.scene)
-    const hpMult = 1 + this.scene.buildings.bonus.troopDmg * 0.3
+    const base = 1 + this.scene.buildings.bonus.troopDmg * 0.3
+    // the Shrine of the Fallen (S14)
+    const hpMult = this.scene.mods?.value('soldier.hp', base) ?? base
     s.spawn(def, x + (silent ? 0 : rr(-8, 8)), y + (silent ? 0 : rr(-4, 4)), this.soldiers.length, hpMult)
     this.soldiers.push(s)
     this.dirty = true
@@ -114,6 +118,8 @@ export class ArmyManager {
     const heading = Math.atan2(player.vy, player.vx) || 0
     const anchorX = this.holding ? scene.buildings.townHall.x : player.x
     const anchorY = this.holding ? scene.buildings.townHall.y + 60 : player.y
+    // the Gallows Bell (S15)
+    const armySpeed = scene.mods?.value('army.speed', 1) ?? 1
 
     for (let i = 0; i < this.soldiers.length; i++) {
       const s = this.soldiers[i]
@@ -141,7 +147,9 @@ export class ArmyManager {
 
       const def = s.def
       let mx = 0, my = 0
-      let speed = def.speed
+      tickSlow(s.slow, dt)
+      const legs = armySpeed * slowMult(s.slow) // the Gallows Bell (S15), a wretch's slow (S16)
+      let speed = def.speed * legs
 
       if (s.target) {
         s.state = 'engage'
@@ -164,13 +172,16 @@ export class ArmyManager {
       } else {
         s.state = this.holding ? 'hold' : 'form'
         const p = this.slotPosition(s.slot, anchorX, anchorY, heading)
-        const dx = p.x - s.x, dy = p.y - s.y
-        const d = Math.hypot(dx, dy)
+        const d = Math.hypot(p.x - s.x, p.y - s.y)
         if (d > 16) {
-          mx = dx / d
-          my = dy / d
-          // catch-up sprint so the formation does not string out forever
-          speed = def.speed * (d > 220 ? 1.7 : d > 110 ? 1.25 : 1)
+          const g = this.route(s, anchorX, anchorY, p.x, p.y, dt)
+          const dx = g.x - s.x, dy = g.y - s.y
+          const dg = Math.hypot(dx, dy) || 1
+          mx = dx / dg
+          my = dy / dg
+          // catch-up sprint so the formation does not string out forever; a detour is always behind
+          const far = s.follower.active ? Math.max(d, 240) : d
+          speed = def.speed * legs * (far > 220 ? 1.7 : far > 110 ? 1.25 : 1)
           if (Math.abs(dx) > 4) s.facing = dx > 0 ? 1 : -1
         }
       }
@@ -192,11 +203,13 @@ export class ArmyManager {
           n++
         }
       }
-      s.x += sx * 56 * dt
-      s.y += sy * 56 * dt
-
-      s.x = clamp(s.x + s.vx * dt, 20, WORLD.width - 20)
-      s.y = clamp(s.y + s.vy * dt, 20, WORLD.height - 20)
+      // terrain collision (S05): fords slow, banks stop. Formation moves path round
+      // them (route); a chase stays straight, so it can still end at a bank.
+      const nav = scene.nav
+      const slow = nav.allySpeedAt(s.x, s.y)
+      const p = nav.slide(s.x, s.y, sx * 56 * dt + s.vx * dt * slow, sy * 56 * dt + s.vy * dt * slow, walkRadius(s.radius))
+      s.x = clamp(p.x, 20, WORLD.width - 20)
+      s.y = clamp(p.y, 20, WORLD.height - 20)
       scene.buildings.resolveCollision(s)
       scene.allyGrid.insert(s)
 
@@ -223,10 +236,52 @@ export class ArmyManager {
     this.drawBars()
   }
 
+  /**
+   * Where a soldier heading for its slot should steer (S06). With sight of
+   * the anchor (the hero, or the hall when holding) it walks straight to the
+   * slot, or to the nearest ground if the slot is in the water. Without, it
+   * walks a path to the anchor, asked for again every second, whenever the
+   * anchor has moved 200 px since, or when the soldier stops closing on it.
+   */
+  private route(s: Soldier, ax: number, ay: number, px: number, py: number, dt: number): { x: number; y: number } {
+    const nav = this.scene.nav
+    s.losT -= dt
+    if (s.losT <= 0) {
+      s.losT = 0.3 + (s.id % 7) * 0.02
+      s.los = nav.paths.segClear(s.x, s.y, ax, ay, walkRadius(s.radius))
+    }
+    if (s.los) {
+      s.follower.clear()
+      s.pathTicket = null
+      if (nav.passableAt(px, py)) return { x: px, y: py }
+      const i = nav.nearestPassable(px, py)
+      if (i < 0) return { x: ax, y: ay }
+      const [cx, cy] = nav.r.xy(i)
+      return { x: cx, y: cy }
+    }
+    s.pathT -= dt
+    if (s.pathTicket?.done) { s.follower.set(s.pathTicket.path); s.pathTicket = null }
+    if (!s.pathTicket && (s.pathT <= 0 || s.follower.stuck > 1.5 || Math.hypot(ax - s.pathAx, ay - s.pathAy) > 200)) {
+      s.pathT = 1
+      s.pathAx = ax; s.pathAy = ay
+      s.pathTicket = nav.requestPath(s.x, s.y, ax, ay)
+    }
+    if (s.follower.active) {
+      const w = s.follower.step(s.x, s.y, dt)
+      if (!w.done) return w
+    }
+    return { x: px, y: py }
+  }
+
+  /** A soldier's base damage with its relics (`soldier.damage`, S15). */
+  damageOf(def: { damage: number }): number {
+    return this.scene.mods?.value('soldier.damage', def.damage) ?? def.damage
+  }
+
   private strike(s: Soldier, target: Enemy) {
     const def = s.def
     const bonus = 1 + this.scene.buildings.bonus.troopDmg
-    let dmg = def.damage * bonus * this.buffDamage * this.scene.player.stats.troopDamage
+    let dmg = this.damageOf(def) * bonus * this.buffDamage * this.scene.player.stats.troopDamage
     if (def.vsHeavy && target.radius >= 17) dmg *= def.vsHeavy
 
     const ang = Math.atan2(target.y - s.y, target.x - s.x)

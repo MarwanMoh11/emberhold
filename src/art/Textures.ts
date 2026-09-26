@@ -2,8 +2,10 @@ import Phaser from 'phaser'
 import { buildUnitTextures } from './units'
 import { buildBuildingTextures } from './buildings'
 import { buildPropTextures } from './props'
+import { buildScatterTextures } from './scatter'
 import { buildFxTextures } from './fx'
 import { buildIconTextures } from './icons'
+import { buildPoiTextures } from './pois'
 
 /**
  * Every pixel in the game is painted here at boot, through the ink toolkit in
@@ -14,7 +16,9 @@ import { buildIconTextures } from './icons'
 export function generateAllTextures(scene: Phaser.Scene) {
   buildFxTextures(scene)
   buildPropTextures(scene)
+  buildScatterTextures(scene)
   buildBuildingTextures(scene)
+  buildPoiTextures(scene)
   buildUnitTextures(scene)
   buildIconTextures(scene)
 }

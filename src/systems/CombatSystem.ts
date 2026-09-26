@@ -15,6 +15,7 @@ export class CombatSystem {
 
   kills = 0
   bossKills = 0
+  private lastWardMs = -1e9
 
   constructor(private scene: GameScene) {}
 
@@ -24,6 +25,15 @@ export class CombatSystem {
 
   damageEnemy(e: Enemy, amount: number, srcX: number, srcY: number, knockback = 0, crit = false, fromPlayer = true, showNumber = true) {
     if (!e.alive) return
+    if (e.shielded) {
+      // a warded camp (S10): say why the blows do nothing, but not on every hit
+      const now = this.scene.time.now
+      if (now - this.lastWardMs > 700) {
+        this.lastWardMs = now
+        this.scene.fx.popup(e.x, e.y - e.radius - 40, 'WARDED', PAL.uiDim, 15)
+      }
+      return
+    }
     const dmg = Math.max(1, amount)
     const hpBefore = Math.max(0, e.hp)
     const killed = e.applyDamage(dmg, srcX, srcY, knockback)
@@ -52,6 +62,13 @@ export class CombatSystem {
       this.scene.fx.shake(0.008, 0.16)
     }
 
+    // S16: the thornling's splinters (visual only) and the hound's burning patch
+    if (def.deathFx === 'splinters') {
+      this.scene.fx.deathBurst(e.x, e.y - e.radius * 0.5, 0x6a4a26, 0.9)
+      this.scene.fx.hitSpark(e.x, e.y - e.radius * 0.5, 0xd8c890, 1.4)
+    }
+    if (def.deathPatch) this.scene.enemies.addPatch(e.x, e.y, def.deathPatch)
+
     this.scene.fx.deathBurst(e.x, e.y - e.radius * 0.5, def.colour, def.boss ? 3.5 : def.elite ? 1.8 : 1)
     if (def.boss) {
       this.scene.fx.explosion(e.x, e.y, 220, PAL.gold)
@@ -69,8 +86,11 @@ export class CombatSystem {
     this.scene.enemies.despawn(e)
   }
 
+  /** dev: the hero takes no damage (harness `H.god()`, S17) */
+  god = false
+
   damageAlly(t: Targetable, amount: number, srcX: number, srcY: number, knockback = 0) {
-    if (!t.alive) return
+    if (!t.alive || (this.god && t.kind === 'player')) return
     const killed = t.applyDamage(amount, srcX, srcY, knockback)
     if (t.kind !== 'player') {
       this.scene.fx.damage(t.x, t.y - t.radius - 14, Math.round(amount), false, '#ff9a8a')

@@ -1,11 +1,14 @@
 import Phaser from 'phaser'
-import { PLAYER, HERO_TIERS, XP, WORLD } from '../config/balance'
+import { PLAYER, HERO_TIERS, XP } from '../config/balance'
+import { HALL, WORLD } from '../config/world'
 import { PAL } from '../config/palette'
 import type { PlayerStats } from '../config/upgrades'
 import { clamp, dist } from '../core/math'
 import { nextId } from '../core/ids'
 import { CarryStack } from './CarryStack'
+import { walkRadius } from '../world/NavGrid'
 import type { Targetable } from '../core/types'
+import { noSlow, slowMult, tickSlow } from '../systems/walkers'
 import type { GameScene } from '../scenes/GameScene'
 
 export function freshStats(): PlayerStats {
@@ -23,8 +26,8 @@ export class Player implements Targetable {
   readonly id = nextId()
   readonly kind = 'player' as const
 
-  x = WORLD.centerX
-  y = WORLD.centerY + 340
+  x = HALL.x
+  y = HALL.y + 340
   vx = 0
   vy = 0
   radius = 15
@@ -53,6 +56,8 @@ export class Player implements Targetable {
   invincible = false
   deadTimer = 0
   respawnShieldT = 0
+  /** S16: a bog wretch's slow on the hero's stride */
+  readonly slow = noSlow()
 
   /** temporary multipliers from Rally etc. */
   buffDamage = 1
@@ -108,7 +113,8 @@ export class Player implements Targetable {
 
   addXp(amount: number) {
     if (!this.alive) return
-    this.xp += amount
+    // the Shrine of the First Flame (S14)
+    this.xp += this.scene.mods?.value('hero.xp', amount) ?? amount
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext
       this.level++
@@ -176,13 +182,15 @@ export class Player implements Targetable {
       return
     }
     this.respawnShieldT = Math.max(0, this.respawnShieldT - dt)
+    tickSlow(this.slow, dt)
 
-    if (this.stats.regen > 0 && this.hp < this.maxHp) {
-      this.hp = Math.min(this.maxHp, this.hp + this.stats.regen * dt)
+    const regen = this.scene.mods?.value('hero.regen', this.stats.regen) ?? this.stats.regen
+    if (regen > 0 && this.hp < this.maxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + regen * dt)
     }
 
     const len = Math.hypot(inputX, inputY)
-    const speed = this.stats.moveSpeed
+    const speed = this.stats.moveSpeed * slowMult(this.slow)
     if (this.dodgeTime > 0) {
       this.dodgeTime = Math.max(0, this.dodgeTime - dt)
       this.vx = this.dodgeX * PLAYER.dodgeSpeed
@@ -206,8 +214,12 @@ export class Player implements Targetable {
       this.moving = Math.hypot(this.vx, this.vy) > 24
     }
 
-    this.x = clamp(this.x + this.vx * dt, 24, WORLD.width - 24)
-    this.y = clamp(this.y + this.vy * dt, 24, WORLD.height - 24)
+    // terrain: fords slow, water and cliffs stop (slide along the edge)
+    const nav = this.scene.nav
+    const slow = nav.allySpeedAt(this.x, this.y) // fords slow, roads speed up (S06)
+    const p = nav.slide(this.x, this.y, this.vx * dt * slow, this.vy * dt * slow, walkRadius(this.radius))
+    this.x = clamp(p.x, 24, WORLD.width - 24)
+    this.y = clamp(p.y, 24, WORLD.height - 24)
 
     // push out of solid buildings
     this.scene.buildings.resolveCollision(this)

@@ -1,9 +1,21 @@
 import Phaser from 'phaser'
 import { Building } from '../entities/Building'
 import type { BuildingKey } from '../config/buildings'
-import { PADS, WALL_RING, type PadSpec } from '../config/map'
+import { PADS, WALL_LINES, type PadSpec } from '../config/world'
+import { walkRadius } from '../world/NavGrid'
+import { pathLength } from '../world/PathFind'
+import { capDiscs, layWallLine, legacyRingPads, WALL_CAP_R } from '../world/wallLine'
+
+/**
+ * An old save's `wall${i}` lends its level to every new piece this close to
+ * where it stood: a step and a bit, or further beside a gate, where the old
+ * layout left no pad within 96 px.
+ */
+const LEGACY_WALL_REACH = 72
+const LEGACY_GATE_REACH = 128
 import { PAL } from '../config/palette'
-import { POP, PERF } from '../config/balance'
+import { POP, PERF, OUTPOST, VILLAGE } from '../config/balance'
+import { bestBonus, blessingMultiplier, marketGood, marketRate, routeNear, type BonusSource } from './village'
 import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type ResourceBag, type ResourceType } from '../core/types'
 import { clamp, dist, rr, short } from '../core/math'
@@ -11,12 +23,15 @@ import { SOLDIERS, WORKER_FOR, WORKERS, type SoldierKey } from '../config/units'
 import { wantsTouchTargets, DPR } from '../core/device'
 import type { GameScene } from '../scenes/GameScene'
 import { BuildingPanel, type PanelChip, type PanelRow } from '../ui/BuildingPanel'
+import { BuildingLooks } from './BuildingLooks'
 
 /** SPEAR → Spear: the card's small caps do the shouting. */
 const cap = (w: string) => w.charAt(0) + w.slice(1).toLowerCase()
 
 /** Seconds the hero must stand on a pad before it starts drawing resources. */
 const DWELL = 0.3
+/** A trading post shows what it banked this often, in seconds (S13). */
+const TRADE_POPUP_EVERY = 6
 
 const TEX: Record<ResourceType, string> = {
   coins: 'res_coins', wood: 'res_wood', food: 'res_food',
@@ -62,6 +77,21 @@ export class BuildingManager {
   byPad = new Map<string, Building>()
   grid = new Grid<Building>(PERF.gridCell * 2)
 
+  /** The depot and every outpost pad: where a haul can end (S11). */
+  private dropSites: Building[] = []
+  /** `dropoffFor` answers by 256 px block; cleared when `dropSig` moves on */
+  private dropCache = new Map<number, Building | null>()
+  private dropSig = ''
+  private dropCacheSig = ''
+  private outpostHealT = 1
+  /** per trading post (S13): coins owed but not yet whole, banked since the last popup, and its timer */
+  private trade = new Map<string, { acc: number; shown: number; t: number }>()
+  /** every granary pad (S13b): food drop-offs, checked before the depot */
+  private granaries: Building[] = []
+  /** per market (S13b): coins owed but not yet whole, banked since the last popup, and its timer */
+  private markets = new Map<string, { acc: number; shown: number; t: number }>()
+  private chapelT = 1
+
   /** aggregated settlement bonuses, recomputed whenever something is built */
   bonus = {
     pop: POP.base, carry: 0, prod: 0,
@@ -89,12 +119,19 @@ export class BuildingManager {
    */
   private justRazed: string | null = null
 
+  /** Each wall line's pad ids, pieces and gates, in order (S10). */
+  private readonly lines = new Map<string, string[]>()
+
   /** Farm pads whose crop ring has already been sown, so a rebuild adds none. */
   private fielded = new Set<string>()
 
   private shiftKey?: Phaser.Input.Keyboard.Key
 
+  /** Regional looks, lazy variant bakes and yards (S13b C4). */
+  readonly looks: BuildingLooks
+
   constructor(private scene: GameScene) {
+    this.looks = new BuildingLooks(scene, () => this.buildings)
     this.panel = new BuildingPanel(scene, {
       upgrade: b => this.commitUpgrade(b),
       pickUnit: (b, key) => this.setTrains(b, key as SoldierKey),
@@ -122,9 +159,15 @@ export class BuildingManager {
   }
 
   private addPad(spec: PadSpec) {
-    const b = new Building(this.scene, spec)
+    const b = new Building(this.scene, spec, this.looks)
+    // Later levels draw taller than the level-1 ghost, so the disc is generous.
+    const r = Math.max(b.ghost.width, b.ghost.height) * 1.5
+    this.scene.culler.add(b.sprite, b.x, b.y - b.ghost.height / 2, r)
+    this.scene.culler.add(b.ghost, b.x, b.y - b.ghost.height / 2, r)
     this.buildings.push(b)
     this.byPad.set(spec.id, b)
+    if (spec.key === 'depot' || spec.key === 'outpost') this.dropSites.push(b)
+    if (spec.key === 'granary') this.granaries.push(b)
     if (spec.startLevel) {
       for (let i = 0; i < spec.startLevel; i++) b.completeLevel()
       this.onBuilt(b, true)
@@ -132,27 +175,34 @@ export class BuildingManager {
     return b
   }
 
+  /**
+   * Lay every wall line piece by piece (S09b, S10): posts on the corners and
+   * gate jambs, runs spaced evenly between them. A line's pads show once its
+   * region is claimed and the hall has reached the line's level.
+   */
   private generateWalls() {
-    const { left, right, top, bottom, step, gates } = WALL_RING
-    const specs: PadSpec[] = []
-    const gapNear = (x: number, y: number) => gates.some(g => Math.hypot(g.x - x, g.y - y) < 96)
-    let i = 0
-    for (let x = left; x <= right; x += step) {
-      for (const y of [top, bottom]) {
-        if (gapNear(x, y)) continue
-        specs.push({ id: `wall${i++}`, key: 'wall', x, y, zone: 'hold' })
+    for (const line of WALL_LINES) {
+      if (!line.active) continue
+      const ids: string[] = []
+      for (const p of layWallLine(line)) {
+        this.addPad({ id: p.id, key: p.key, x: p.x, y: p.y, region: line.region,
+          ...(line.hall > 1 ? { requiresTownHall: line.hall } : {}),
+          piece: { part: p.part, dir: p.dir, len: p.len, ux: p.ux, uy: p.uy, ...(p.cap ? { cap: p.cap } : {}) } })
+        ids.push(p.id)
       }
+      this.lines.set(line.id, ids)
     }
-    for (let y = top + step; y < bottom; y += step) {
-      for (const x of [left, right]) {
-        if (gapNear(x, y)) continue
-        specs.push({ id: `wall${i++}`, key: 'wall', x, y, zone: 'hold' })
-      }
-    }
-    for (const g of gates) {
-      specs.push({ id: g.id, key: 'gate', x: g.x, y: g.y, zone: 'hold' })
-    }
-    for (const s of specs) this.addPad(s)
+  }
+
+  /** Every piece and gate of a wall line is built and standing (quests, S10). Unknown ids: false. */
+  lineComplete(lineId: string): boolean {
+    const ids = this.lines.get(lineId)
+    return !!ids && ids.every(id => { const b = this.byPad.get(id); return !!b && b.level > 0 && b.alive })
+  }
+
+  /** A wall line's pads in order along it, gates included (S18's `line` quests). Unknown ids: []. */
+  linePads(lineId: string): Building[] {
+    return (this.lines.get(lineId) ?? []).map(id => this.byPad.get(id)).filter((b): b is Building => !!b)
   }
 
   // ---- queries ---------------------------------------------------------
@@ -164,6 +214,157 @@ export class BuildingManager {
 
   get townHall() { return this.byPad.get('hall')! }
   get depot() { return this.byPad.get('depot')! }
+
+  /** Built outposts still standing (S11): drop-offs, waystones, respawn points. */
+  outposts(): Building[] {
+    return this.dropSites.filter(b => b.key === 'outpost' && b.level > 0 && b.alive)
+  }
+
+  /**
+   * Where a hauler standing at (x, y) unloads: the depot (the hall's door
+   * while the depot is down) or, since S11, a standing outpost, whichever is
+   * nearest by path. The one place drop-offs are chosen. Answers are cached
+   * per 256 px block until an outpost or the depot rises or falls, or the
+   * NavGrid changes, so a crew walking home costs one search per block.
+   */
+  dropoffFor(x: number, y: number, res?: ResourceType): { x: number; y: number } {
+    // food (farms and fisheries) goes to a granary in reach first (S13b)
+    const g = res === 'food' ? this.granaryFor(x, y) : null
+    if (g) return { x: g.x, y: g.y + 14 }
+    let pick: Building | null = null
+    if (this.dropSites.length > 1) {
+      if (this.dropCacheSig !== this.dropSig) { this.dropCache.clear(); this.dropCacheSig = this.dropSig }
+      const key = Math.floor(x / 256) + Math.floor(y / 256) * 64
+      const hit = this.dropCache.get(key)
+      pick = hit !== undefined ? hit : this.nearestDrop(x, y)
+      if (hit === undefined) this.dropCache.set(key, pick)
+      if (pick && !(pick.level > 0 && pick.alive)) pick = null
+    }
+    if (pick) return { x: pick.x, y: pick.y + 14 }
+    const d = this.depot
+    if (d && d.level > 0) return { x: d.x, y: d.y + 14 }
+    const h = this.townHall
+    return { x: h.x, y: h.y + 30 }
+  }
+
+  /** The nearest standing granary whose `reach` (straight line) covers (x, y), else null (S13b). */
+  granaryFor(x: number, y: number): Building | null {
+    let best: Building | null = null
+    let bestD = Infinity
+    for (const b of this.granaries) {
+      if (b.level <= 0 || !b.alive) continue
+      const d = Math.hypot(b.x - x, b.y - y)
+      if (d <= (b.stats.reach ?? 0) && d < bestD) { bestD = d; best = b }
+    }
+    return best
+  }
+
+  /** Standing, built buildings of one key. */
+  standing(key: BuildingKey): Building[] {
+    return this.buildings.filter(b => b.key === key && b.level > 0 && b.alive)
+  }
+
+  /**
+   * 1 + the best `bonus` stat among the standing `key` buildings whose `reach`
+   * covers (x, y): the mill on farms and lumber camps, docks on a trading
+   * post (S13b). They never stack.
+   */
+  localBonus(key: BuildingKey, x: number, y: number): number {
+    const src: BonusSource[] = []
+    for (const b of this.standing(key)) src.push({ x: b.x, y: b.y, bonus: b.stats.bonus ?? 0, reach: b.stats.reach ?? 0 })
+    return bestBonus(src, x, y)
+  }
+
+  /**
+   * What a crew's delivery is worth, as a multiplier on the haul: the best
+   * mill within reach of a farm or lumber camp, times a Lv.2 granary's `haul`
+   * when food is unloaded there (S13b).
+   */
+  haulMultiplier(home: Building | undefined, res: ResourceType, x: number, y: number): number {
+    let m = 1
+    if (home && (home.key === 'farm' || home.key === 'lumberCamp')) m *= this.localBonus('mill', home.x, home.y)
+    if (res === 'food') m *= 1 + (this.granaryFor(x, y)?.stats.haul ?? 0)
+    // S14: shrines (and S15 relics) multiply after the local bonuses
+    return m * this.yieldMod(home)
+  }
+
+  /** `food.yield` on farm and fishery crews, `wood.yield` on lumber camps; 1 elsewhere (S14). */
+  yieldMod(home: Building | undefined): number {
+    const mods = this.scene.mods
+    if (!home || !mods) return 1
+    if (home.key === 'farm' || home.key === 'fishery') return mods.value('food.yield', 1)
+    if (home.key === 'lumberCamp') return mods.value('wood.yield', 1)
+    return 1
+  }
+
+  /** Walls and gates take a new `wall.hp` (S14): max hp moves, and hp keeps its share of it. */
+  refreshWallHp() {
+    for (const b of this.buildings) {
+      if ((b.key !== 'wall' && b.key !== 'gate') || b.level <= 0 || b.maxHp <= 0) continue
+      const max = Building.hpMod(b.key, b.def.levels[b.level - 1].hp)
+      b.hp = b.alive ? b.hp * (max / b.maxHp) : b.hp
+      b.maxHp = max
+    }
+  }
+
+  /** Worker slots a camp has now: its level's, plus one from docks within reach of a fishery (S13b). */
+  slotsOf(b: Building): number {
+    const base = b.stats.workers ?? 0
+    if (b.key !== 'fishery' || base <= 0) return base
+    const d = VILLAGE.docks
+    return base + (this.standing('docks').some(k => Math.hypot(k.x - b.x, k.y - b.y) <= d.slotRadius) ? d.slots : 0)
+  }
+
+  /** Cottages and longhouses standing within `r` of (x, y): a market's buyers. */
+  homesNear(x: number, y: number, r: number): number {
+    let n = 0
+    for (const b of this.buildings) {
+      if ((b.key === 'cottage' || b.key === 'house') && b.level > 0 && b.alive && Math.hypot(b.x - x, b.y - y) <= r) n++
+    }
+    return n
+  }
+
+  /** Coins a second this market earns while it has surplus to sell (0 unless built, standing and selling). */
+  marketRateOf(b: Building): number {
+    if (b.key !== 'market' || b.level <= 0 || !b.alive || !VILLAGE.market.sells) return 0
+    return marketRate(b.stats.sell ?? 0, this.homesNear(b.x, b.y, VILLAGE.market.homeRadius))
+  }
+
+  /** The night's reward multiplier: 1 + every standing chapel's blessing, capped (S13b). */
+  nightBlessing(): number {
+    return blessingMultiplier(this.standing('chapel').map(b => b.stats.blessing ?? 0))
+  }
+
+  /** Whether a standing watch post's light covers any of these routes (S13b: the early warning). */
+  watchCovers(routes: readonly (readonly [number, number])[][]): boolean {
+    for (const b of this.standing('watchPost')) {
+      const r = b.stats.light ?? 0
+      if (routes.some(rt => routeNear(rt, b.x, b.y, r))) return true
+    }
+    return false
+  }
+
+  /** The outpost nearer by path than the depot (or hall door) to (x, y), else null. */
+  private nearestDrop(x: number, y: number): Building | null {
+    const outs = this.outposts()
+    if (!outs.length) return null
+    const d = this.depot, h = this.townHall
+    const home = d && d.level > 0 ? { x: d.x, y: d.y + 14 } : { x: h.x, y: h.y + 30 }
+    const cands = [{ b: null as Building | null, ...home }, ...outs.map(b => ({ b, x: b.x, y: b.y + 14 }))]
+      .map(c => ({ ...c, d: Math.hypot(c.x - x, c.y - y) }))
+      .sort((a, b) => a.d - b.d)
+    let best = Infinity
+    let pick: Building | null = null
+    for (const c of cands) {
+      // a path is never shorter than the straight line, so the rest cannot win
+      if (c.d >= best) break
+      const path = this.scene.nav.findPath(x, y, c.x, c.y, Number.isFinite(best) ? best : undefined)
+      if (!path) continue
+      const len = pathLength(path)
+      if (len < best) { best = len; pick = c.b }
+    }
+    return pick
+  }
   get townHallLevel() { return this.townHall?.level ?? 1 }
 
   countBuilt(key: BuildingKey) {
@@ -231,7 +432,7 @@ export class BuildingManager {
 
   /** A pad only shows once its zone is claimed and the hall is tall enough. */
   isPadAvailable(b: Building) {
-    if (!this.scene.zones.isUnlocked(b.zone)) return false
+    if (!this.scene.regions.claimed(b.region)) return false
     const needHall = Math.max(b.requiresTownHall, b.def.requiresTownHall ?? 0)
     return this.townHallLevel >= needHall
   }
@@ -243,10 +444,12 @@ export class BuildingManager {
     bo.prod = 0
     bo.heroDmg = 0; bo.troopDmg = 0; bo.towerDmg = 0; bo.towerRate = 0; bo.repair = 0
     bo.heal = 0; bo.healRadius = 0
+    let cottagePop = 0
     for (const b of this.buildings) {
       if (b.level === 0) continue
       const s = b.stats
-      bo.pop += s.pop ?? 0
+      if (b.key === 'cottage') cottagePop += s.pop ?? 0
+      else bo.pop += s.pop ?? 0
       bo.prod += s.prod ?? 0
       bo.carry = Math.max(bo.carry, s.carry ?? 0)
       bo.heroDmg += s.heroDmg ?? 0
@@ -256,6 +459,9 @@ export class BuildingManager {
       bo.repair += s.repair ?? 0
       if ((s.heal ?? 0) > bo.heal) { bo.heal = s.heal ?? 0; bo.healRadius = s.radius ?? 0 }
     }
+    bo.pop += Math.min(cottagePop, VILLAGE.cottagePopMax)
+    // survivors who walked in (S14)
+    bo.pop += this.scene.pois?.popBonus() ?? 0
     this.scene.res.setBuildingCarry(bo.carry)
     this.scene.applyBuildingBonuses()
   }
@@ -274,9 +480,21 @@ export class BuildingManager {
 
     if (b.key === 'farm' && b.level === 1 && !this.fielded.has(b.padId)) {
       this.fielded.add(b.padId)
-      this.scene.nodes.addField(b.x, b.y + 40, b.zone, 5)
+      this.scene.nodes.addField(b.x, b.y + 40, b.region, 5)
     }
+    if (b.key === 'outpost' || b.key === 'watchPost') this.lightOutpost(b)
+    this.syncNav(b)
     this.recomputeBonuses()
+  }
+
+  /**
+   * An outpost's lantern clears the fog round it (S11). The fog brush is
+   * ~480 px across its soft edge, so discs out to `light - 400` clear about
+   * `light` px of ground.
+   */
+  private lightOutpost(b: Building) {
+    const light = b.key === 'watchPost' ? b.stats.light ?? 0 : OUTPOST.light
+    this.scene.regions?.revealArea(b.x, b.y, Math.max(0, light - 400))
   }
 
   /** Drip resources from the hero into whatever pad they are standing in. */
@@ -320,6 +538,8 @@ export class BuildingManager {
     b.raiseT = 0
     b.raiseDur = b.level === 0 ? 1.0 : 0.7
     b.setFrameTexture()
+    // the next level's regional art bakes while the frame goes up
+    this.looks?.prebake(b, b.level + 1)
     b.sprite.setAlpha(0.92)
     this.scene.fx.dust(b.x, b.y, 10)
     this.scene.audio.play('build')
@@ -368,7 +588,7 @@ export class BuildingManager {
     const wkey = WORKER_FOR[b.key]
     if (!wkey) return
     const def = WORKERS[wkey]
-    const slots = b.stats.workers ?? 0
+    const slots = this.slotsOf(b)
     if (b.workers.length >= slots) return
     if (this.scene.popUsed + def.pop > this.bonus.pop) {
       if (b.recruitCd <= -1.4) {
@@ -386,12 +606,18 @@ export class BuildingManager {
   }
 
   // ---- towers ----------------------------------------------------------
+  /** A tower's reach with the Warden's Aegis (`tower.range`, S15). */
+  towerRange(b: Building): number {
+    const base = b.stats.range ?? 250
+    return this.scene.mods?.value('tower.range', base) ?? base
+  }
+
   private tickTower(b: Building, dt: number) {
     const s = b.stats
     const rate = (s.rate ?? 1) * (1 + this.bonus.towerRate)
     b.towerCd -= dt
     if (b.towerCd > 0) return
-    const range = s.range ?? 250
+    const range = this.towerRange(b)
     const target = this.scene.enemies.grid.nearest(b.x, b.y, range, e => e.alive)
     if (!target) return
     b.towerCd = 1 / Math.max(0.1, rate)
@@ -425,12 +651,15 @@ export class BuildingManager {
       if (b.level === 0 || !b.def.blocking) continue
       if (b.key === 'wall' || b.key === 'gate') continue // allies pass their own ramparts
       const dx = e.x - b.x
-      const dy = e.y - (b.y - b.halfH * 0.35)
-      const ox = b.halfW + e.radius - Math.abs(dx)
-      const oy = b.halfH * 0.7 + e.radius - Math.abs(dy)
+      const dy = e.y - (b.y + b.boxDy)
+      const ox = b.boxHW + e.radius - Math.abs(dx)
+      const oy = b.boxHH + e.radius - Math.abs(dy)
       if (ox > 0 && oy > 0) {
-        if (ox < oy) e.x += dx > 0 ? ox : -ox
-        else e.y += dy > 0 ? oy : -oy
+        // pushed through the NavGrid, so a building by the shore never shoves anyone into the water
+        const p = ox < oy
+          ? this.scene.nav.slide(e.x, e.y, dx > 0 ? ox : -ox, 0, walkRadius(e.radius))
+          : this.scene.nav.slide(e.x, e.y, 0, dy > 0 ? oy : -oy, walkRadius(e.radius))
+        e.x = p.x; e.y = p.y
       }
     }
   }
@@ -441,8 +670,8 @@ export class BuildingManager {
     for (const b of list) {
       if (b.level === 0 || !b.def.blocking || !b.alive) continue
       const dx = Math.abs(x - b.x)
-      const dy = Math.abs(y - (b.y - b.halfH * 0.35))
-      if (dx < b.halfW + radius && dy < b.halfH * 0.7 + radius) return b
+      const dy = Math.abs(y - (b.y + b.boxDy))
+      if (dx < b.boxHW + radius && dy < b.boxHH + radius) return b
     }
     return null
   }
@@ -475,7 +704,7 @@ export class BuildingManager {
       this.scene.fx.popup(b.x, b.y - 40, `${b.def.short} DESTROYED`, PAL.danger, 18)
       this.scene.fx.popup(b.x, b.y - 18, 'rubble remains — walk in to rebuild', PAL.uiDim, 12)
     } else {
-      b.maxHp = b.def.levels[b.level - 1].hp
+      b.maxHp = Building.hpMod(b.key, b.def.levels[b.level - 1].hp)
       b.hp = b.maxHp * 0.4
       b.alive = true
       b.applyTexture()
@@ -484,20 +713,39 @@ export class BuildingManager {
     // A fortified Hall can lose an upgrade tier and keep fighting. Only the
     // final collapse ends the defense and offers a wave restart.
     if (b.key === 'townHall' && b.level === 0) this.scene.onCoreLost()
+    this.syncNav(b)
     this.recomputeBonuses()
+  }
+
+  /**
+   * A standing wall costs the horde WALL_COST to path through (S05), so the
+   * flow field goes by the gates, or through the cheapest wall when the ring
+   * is shut. Each piece walls a capsule along its share of the line (S09b),
+   * held clear of the gates. Gates and other buildings never enter the NavGrid.
+   */
+  private syncNav(b: Building) {
+    if (b.key !== 'wall') return
+    const on = b.level > 0 && b.alive
+    const cap = b.piece?.cap
+    if (cap) this.scene.nav.setBlockerDiscs(b.padId, capDiscs(cap), WALL_CAP_R, on)
+    else if (!b.piece) this.scene.nav.setBlocker(b.padId, b.x, b.y, WALL_CAP_R, on)
   }
 
   // ---- main loop -------------------------------------------------------
   update(dt: number) {
     const player = this.scene.player
+    this.looks.update()
     this.grid.clear()
+    let sig = `${this.scene.nav.version}:`
+    for (const b of this.dropSites) sig += b.level > 0 && b.alive ? '1' : '0'
+    this.dropSig = sig
 
     let nearest: Building | null = null
     let nearestD = Infinity
 
     for (const b of this.buildings) {
       const rampart = b.key === 'wall' || b.key === 'gate'
-      const zoneOpen = this.scene.zones.isUnlocked(b.zone)
+      const zoneOpen = this.scene.regions.claimed(b.region)
       const hallNeed = this.hallGate(b)
       const hallShort = this.townHallLevel < hallNeed
       const available = zoneOpen && !hallShort
@@ -510,6 +758,8 @@ export class BuildingManager {
       // Anything already standing keeps working even if the hall is wrecked
       // back below the level that unlocked it.
       const usable = available || b.level > 0
+      // a pad the player can now raise gets its regional art baked ahead, in the idle slice
+      if (available && b.level === 0 && !this.looks.settled(b)) this.looks.prebake(b, 1)
 
       // cull far-away blueprints so the map is not a sea of ghost outlines.
       // Ramparts are the worst offender (dozens of segments), so they only
@@ -562,7 +812,8 @@ export class BuildingManager {
       if (b.damageT > 0) b.damageT -= dt
 
       if (b.level > 0) {
-        if (b.def.tower) this.tickTower(b, dt)
+        // a Lv.2 watch post shoots like a Lv.1 watchtower (S13b)
+        if (b.def.tower || (b.key === 'watchPost' && (b.stats.dmg ?? 0) > 0)) this.tickTower(b, dt)
         // slow self-repair between waves once engineers are around
         if (this.bonus.repair > 0 && !this.scene.waves.isNight && b.hp < b.maxHp) {
           b.repair(this.bonus.repair * 4 * dt)
@@ -586,7 +837,8 @@ export class BuildingManager {
           if (b.level > 0) {
             if (this.rosterFor(b).length) this.tickRecruit(b, dt)
             else if (WORKER_FOR[b.key]) this.tickHireWorker(b, dt)
-            else if (b.key === 'depot') this.tickDepotDump(b, dt)
+            // an outpost takes the pack like the depot, unless you are paying into its upgrade
+            else if (b.key === 'depot' || (b.key === 'outpost' && !b.committed)) this.tickDepotDump(b, dt)
           }
         }
       } else {
@@ -598,7 +850,21 @@ export class BuildingManager {
     }
 
     this.tickAutoHire(dt)
+    this.tickTrade(dt)
+    this.tickMarkets(dt)
 
+    this.tickRaze(nearest, dt)
+    this.updatePanel(nearest)
+  }
+
+  /**
+   * Every healing aura: the infirmary, Lv.2 outposts and chapels. GameScene
+   * calls it after the army and the crews have moved, because `healAllies`
+   * reads the ally grid, which holds soldiers and workers only once they
+   * have (S13b: from inside `update` it only ever found the hero).
+   */
+  auras(dt: number) {
+    const player = this.scene.player
     // infirmary aura
     if (this.bonus.heal > 0) {
       this.healTick -= dt
@@ -606,16 +872,37 @@ export class BuildingManager {
         this.healTick = 1
         const tent = this.buildings.find(x => x.key === 'healingTent' && x.level > 0)
         if (tent) {
-          this.scene.combat.healAllies(tent.x, tent.y, this.bonus.healRadius, this.bonus.heal)
+          const heal = this.scene.mods?.value('infirmary.heal', this.bonus.heal) ?? this.bonus.heal
+          this.scene.combat.healAllies(tent.x, tent.y, this.bonus.healRadius, heal)
           if (player.alive && dist(player.x, player.y, tent.x, tent.y) < this.bonus.healRadius) {
-            player.heal(this.bonus.heal)
+            player.heal(heal)
           }
         }
       }
     }
 
-    this.tickRaze(nearest, dt)
-    this.updatePanel(nearest)
+    this.tickOutpostAura(dt)
+    this.tickChapels(dt)
+  }
+
+  /**
+   * A Lv.2 outpost mends allies (the hero included) within OUTPOST.healRadius
+   * once a second, while no enemy is within OUTPOST.calmRadius of it (S11).
+   * `OUTPOST.heal` is the base S14's Kettle Springs raises.
+   */
+  private tickOutpostAura(dt: number) {
+    this.outpostHealT -= dt
+    if (this.outpostHealT > 0) return
+    this.outpostHealT = 1
+    for (const b of this.dropSites) {
+      if (b.key !== 'outpost' || !b.alive) continue
+      // Lv.2's own heal, plus the Kettle Springs' (a Lv.1 infirmary's) on every outpost (S14)
+      const base = b.level >= 2 ? OUTPOST.heal : 0
+      const heal = this.scene.mods?.value('outpost.heal', base) ?? base
+      if (heal <= 0) continue
+      if (this.scene.enemies.grid.nearest(b.x, b.y, OUTPOST.calmRadius, e => e.alive)) continue
+      this.scene.combat.healAllies(b.x, b.y, OUTPOST.healRadius, heal)
+    }
   }
 
   /**
@@ -635,7 +922,7 @@ export class BuildingManager {
       if (b.level === 0) continue
       const wkey = WORKER_FOR[b.key]
       if (!wkey) continue
-      const slots = b.stats.workers ?? 0
+      const slots = this.slotsOf(b)
       if (b.workers.length >= slots) continue
       // Backfilling a crew the horde killed is always automatic. Losing a
       // lumberjack should cost you wood, not force you to walk back and
@@ -763,6 +1050,7 @@ export class BuildingManager {
     b.hp = 0
     b.maxHp = 0
     b.alive = false
+    this.syncNav(b)
     b.state = 'empty'
     b.progress = {}
     b.committed = false
@@ -815,7 +1103,8 @@ export class BuildingManager {
       for (const k of RESOURCE_ORDER) {
         const need = cost[k] ?? 0
         if (need <= 0) continue
-        rows.push({ tex: TEX[k], have: Math.min(need, b.progress[k] ?? 0), need })
+        const have = Math.min(need, b.progress[k] ?? 0)
+        rows.push({ tex: TEX[k], have, need, short: have < need && res.available(k) < need - have })
       }
     }
 
@@ -890,9 +1179,15 @@ export class BuildingManager {
     } else if (b.level > 0 && WORKER_FOR[b.key]) {
       const w = WORKERS[WORKER_FOR[b.key]!]
       const costStr = RESOURCE_ORDER.filter(k => w.cost[k]).map(k => `${w.cost[k]} ${k}`).join(' · ')
-      hint = `workers ${b.workers.length}/${b.stats.workers ?? 0} — stand here to hire (${costStr})`
+      hint = `workers ${b.workers.length}/${this.slotsOf(b)} — stand here to hire (${costStr})`
     } else if (b.level > 0 && b.key === 'depot') {
       hint = `stand here to bank your pack — ${short(res.storedTotal)} in store`
+    } else if (b.level > 0 && b.key === 'tradingPost') {
+      hint = `trading · +${this.tradeRateOf(b).toFixed(1)} coins a second, day and night`
+    } else if (b.level > 0 && b.key === 'outpost') {
+      hint = b.level >= 2 ? 'banks your pack · waystone · mends allies nearby' : 'banks your pack · waystone beside it'
+    } else if (b.level > 0) {
+      hint = this.villageHint(b) ?? hint
     }
 
     this.panel.show(b, {
@@ -909,20 +1204,144 @@ export class BuildingManager {
     })
   }
 
+  // ---- trade (S13) -------------------------------------------------------
+  /**
+   * The `trade.income` multiplier on every trading post: 1 until S14 wires
+   * modifiers (`mods.value('trade.income', 1)`; the Saltmere Light adds 20%).
+   */
+  tradeIncome(): number {
+    return this.scene.mods?.value('trade.income', 1) ?? 1
+  }
+
+  /** Coins a second this post earns now (0 unless built and standing). */
+  tradeRateOf(b: Building): number {
+    if (b.key !== 'tradingPost' || b.level <= 0 || !b.alive) return 0
+    return (b.stats.income ?? 0) * this.tradeIncome() * this.localBonus('docks', b.x, b.y)
+  }
+
+  /** Coins a second from every standing trading post. */
+  tradeRate(): number {
+    let r = 0
+    for (const b of this.buildings) r += this.tradeRateOf(b)
+    return r
+  }
+
+  /** The only coins that come from time: bank whole coins as they accrue, and show them every few seconds. */
+  private tickTrade(dt: number) {
+    for (const b of this.buildings) {
+      const rate = this.tradeRateOf(b)
+      if (rate <= 0) continue
+      let t = this.trade.get(b.padId)
+      if (!t) this.trade.set(b.padId, t = { acc: 0, shown: 0, t: 0 })
+      t.acc += rate * dt
+      const n = Math.floor(t.acc)
+      if (n > 0) {
+        t.acc -= n
+        t.shown += n
+        this.scene.res.addStored('coins', n)
+      }
+      t.t += dt
+      if (t.t >= TRADE_POPUP_EVERY) {
+        if (t.shown > 0) this.scene.fx.popup(b.x, b.y - b.def.h - 20, `+${t.shown} coins`, PAL.coins, 14)
+        t.t = 0
+        t.shown = 0
+      }
+    }
+  }
+
+  // ---- village buildings (S13b) -------------------------------------------
+  /**
+   * Markets sell surplus food and wood (above VILLAGE.market.floor) for coins
+   * at their rate, a coin's worth of goods at a time. Not coins from nothing:
+   * that stays the trading post's alone. Owed coins wait at most one while
+   * there is nothing to sell, so a refill never pays out a burst.
+   */
+  private tickMarkets(dt: number) {
+    const res = this.scene.res
+    for (const b of this.buildings) {
+      const rate = this.marketRateOf(b)
+      if (rate <= 0) continue
+      let t = this.markets.get(b.padId)
+      if (!t) this.markets.set(b.padId, t = { acc: 0, shown: 0, t: 0 })
+      t.acc += rate * dt
+      while (t.acc >= 1) {
+        const good = marketGood(res.stored.food, res.stored.wood)
+        if (!good) { t.acc = 1; break }
+        res.stored[good] -= VILLAGE.market.goodsPerCoin
+        res.addStored('coins', 1)
+        t.acc -= 1
+        t.shown++
+      }
+      t.t += dt
+      if (t.t >= TRADE_POPUP_EVERY) {
+        if (t.shown > 0) this.scene.fx.popup(b.x, b.y - b.def.h - 20, `+${t.shown} coins`, PAL.coins, 14)
+        t.t = 0
+        t.shown = 0
+      }
+    }
+  }
+
+  /** Chapels mend the hero, soldiers and workers within their radius once a second (S13b). */
+  private tickChapels(dt: number) {
+    this.chapelT -= dt
+    if (this.chapelT > 0) return
+    this.chapelT = 1
+    for (const b of this.standing('chapel')) this.scene.combat.healAllies(b.x, b.y, b.stats.radius ?? 0, b.stats.mend ?? 0)
+  }
+
+  /** The dock card's effect line for a village building (S13b), or null. */
+  private villageHint(b: Building): string | null {
+    const s = b.stats
+    const pct = (v: number) => `${Math.round(v * 100)}%`
+    const near = (keys: BuildingKey[], r: number) => this.buildings
+      .filter(o => keys.includes(o.key) && o.level > 0 && o.alive && Math.hypot(o.x - b.x, o.y - b.y) <= r).length
+    switch (b.key) {
+      case 'cottage':
+        return `+${s.pop ?? 0} population · ${this.scene.popUsed}/${this.bonus.pop} housed`
+      case 'granary': {
+        const n = near(['farm', 'fishery'], s.reach ?? 0)
+        return `food crews within ${s.reach} px unload here (${n} in range)${s.haul ? ` · +${pct(s.haul)} food` : ''}`
+      }
+      case 'mill':
+        return `+${pct(s.bonus ?? 0)} farms and lumber camps within ${s.reach} px (${near(['farm', 'lumberCamp'], s.reach ?? 0)} in range)`
+      case 'market': {
+        const m = VILLAGE.market
+        if (!m.sells) return 'the stalls stand idle'
+        const homes = this.homesNear(b.x, b.y, m.homeRadius)
+        const rate = this.marketRateOf(b).toFixed(1)
+        return marketGood(this.scene.res.stored.food, this.scene.res.stored.wood)
+          ? `selling surplus · +${rate} coins a second (${homes} home${homes === 1 ? '' : 's'} near)`
+          : `nothing to sell · food and wood are at the ${m.floor} floor`
+      }
+      case 'chapel':
+        return `mends ${s.mend} hp/s within ${s.radius} px · night reward +${pct(this.nightBlessing() - 1)}`
+      case 'watchPost':
+        return `lights ${s.light} px of fog · warns ${VILLAGE.watchPost.warnEarly} s early when a route passes${s.dmg ? ' · shoots' : ''}`
+      case 'docks': {
+        const n = near(['fishery'], VILLAGE.docks.slotRadius)
+        const t = near(['tradingPost'], s.reach ?? 0)
+        return `+${VILLAGE.docks.slots} crew at ${n} fisher${n === 1 ? 'y' : 'ies'} in range · trading post +${pct(s.bonus ?? 0)}${t ? '' : ' (none in reach)'}`
+      }
+    }
+    return null
+  }
+
   private upgradeSummary(b: Building): string {
     const cur = b.def.levels[b.level - 1]?.stats ?? {}
     const nxt = b.def.levels[b.level]?.stats ?? {}
     const parts: string[] = []
     const label: Record<string, string> = {
       dmg: 'Damage', rate: 'Rate', range: 'Range', splash: 'Splash', pop: 'Pop',
-      prod: 'Output', carry: 'Carry', workers: 'Workers', heal: 'Heal',
+      prod: 'Output', carry: 'Carry', workers: 'Workers', heal: 'Heal', income: 'Coins/s',
       heroDmg: 'Hero dmg', troopDmg: 'Troop dmg', towerDmg: 'Tower dmg', unlockTier: 'Tier',
+      bonus: 'Bonus', sell: 'Coins/s', mend: 'Heal', blessing: 'Reward', light: 'Light', haul: 'Food',
     }
     for (const k of Object.keys(nxt)) {
       if (!label[k]) continue
       const a = cur[k] ?? 0, c = nxt[k] ?? 0
       if (a === c) continue
       const pct = k === 'heroDmg' || k === 'troopDmg' || k === 'towerDmg' || k === 'prod'
+        || k === 'bonus' || k === 'blessing' || k === 'haul'
       // a rate of 1 → 1.2 must not read as 1 → 1
       const fmt = (v: number) => pct ? `+${Math.round(v * 100)}%` : v < 10 && v % 1 ? v.toFixed(1) : short(v)
       parts.push(`${label[k]} ${fmt(a)} → ${fmt(c)}`)
@@ -966,6 +1385,7 @@ export class BuildingManager {
   }
 
   load(data: ReturnType<BuildingManager['toJSON']>) {
+    data = this.remapLegacyWalls(data)
     for (const d of data) {
       const b = this.byPad.get(d.padId)
       if (!b) continue
@@ -982,7 +1402,7 @@ export class BuildingManager {
       } else {
         if (b.level > d.level) {
           b.level = d.level
-          b.maxHp = b.def.levels[d.level - 1].hp
+          b.maxHp = Building.hpMod(b.key, b.def.levels[d.level - 1].hp)
         }
         while (b.level < d.level) b.completeLevel()
         b.hp = Math.max(1, Math.min(b.maxHp, d.hp))
@@ -994,10 +1414,42 @@ export class BuildingManager {
       b.peakWorkers = Math.max(0, d.peakWorkers ?? 0)
       if (b.key === 'farm' && b.level > 0 && !this.fielded.has(b.padId)) {
         this.fielded.add(b.padId)
-        this.scene.nodes.addField(b.x, b.y + 40, b.zone, 5)
+        this.scene.nodes.addField(b.x, b.y + 40, b.region, 5)
       }
+      if ((b.key === 'outpost' || b.key === 'watchPost') && b.level > 0) this.lightOutpost(b)
     }
+    for (const b of this.buildings) this.syncNav(b)
     this.recomputeBonuses()
+  }
+
+  /**
+   * Saves from before S09b name the palisade's pads `wall${i}`, laid round
+   * its bounding box with gaps by the gates. Each new piece the save does not
+   * name takes the level and hp of the nearest old pad that stood within
+   * LEGACY_WALL_REACH (LEGACY_GATE_REACH within 130 px of a gate), so a ring
+   * built under the old layout loads whole, the pieces beside the gates included.
+   */
+  private remapLegacyWalls(data: ReturnType<BuildingManager['toJSON']>) {
+    const legacy = data.filter(d => /^wall\d+$/.test(d.padId) && !this.byPad.has(d.padId) && d.level > 0)
+    if (!legacy.length) return data
+    const palisade = WALL_LINES.find(l => l.id === 'palisade')
+    if (!palisade) return data
+    const where = new Map(legacyRingPads(palisade).map(p => [p.id, p]))
+    const named = new Set(data.map(d => d.padId))
+    const out = data.filter(d => !legacy.includes(d))
+    for (const b of this.buildings) {
+      if (b.key !== 'wall' || named.has(b.padId) || !b.padId.startsWith('palisade.')) continue
+      const byGate = palisade.gates.some(g => Math.hypot(g.x - b.x, g.y - b.y) < 130)
+      let best: (typeof data)[number] | null = null, bd = byGate ? LEGACY_GATE_REACH : LEGACY_WALL_REACH
+      for (const d of legacy) {
+        const o = where.get(d.padId)
+        if (!o) continue
+        const dd = Math.hypot(o.x - b.x, o.y - b.y)
+        if (dd <= bd) { bd = dd; best = d }
+      }
+      if (best) out.push({ padId: b.padId, level: best.level, hp: best.hp, progress: {}, peakWorkers: 0, trains: undefined })
+    }
+    return out
   }
 
   /** Debug helper. */

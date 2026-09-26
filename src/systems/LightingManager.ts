@@ -17,7 +17,8 @@ const HEARTH: Partial<Record<BuildingKey, number>> = {
   townHall: 380, watchtower: 250, cannonTower: 200, blacksmith: 240, barracks: 210,
   house: 190, warehouse: 190, workshop: 190, healingTent: 200, depot: 180,
   lumberCamp: 170, farm: 170, quarry: 150, mine: 190, crystalDelve: 230,
-  archeryRange: 170, stable: 170, gate: 150,
+  archeryRange: 170, stable: 170, gate: 150, outpost: 200, fishery: 130, tradingPost: 170,
+  cottage: 90, granary: 90, mill: 110, market: 150, chapel: 140, watchPost: 170, docks: 130,
 }
 
 /** Ambient colour for a given darkness: warm afternoon, amber dusk, violet gloaming, blue night. */
@@ -172,7 +173,8 @@ export class LightingManager {
       // the horde's own fires
       for (const c of s.camps.camps) {
         if (c.destroyed) continue
-        put(c.spec.x, c.spec.y - 20, 300, 0xff7a3a, 0.9 * lamp * flicker(c.spec.x))
+        // a sleeping camp's fires are banked low
+        put(c.spec.x, c.spec.y - 20, 300, 0xff7a3a, (c.state === 'asleep' ? 0.35 : 0.9) * lamp * flicker(c.spec.x))
       }
       // crystal seams glow faintly
       for (const n of s.nodes.nodes) {

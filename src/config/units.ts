@@ -75,7 +75,7 @@ export const SOLDIERS: Record<SoldierKey, SoldierDef> = {
   },
 }
 
-export type WorkerKey = 'lumberjack' | 'farmer' | 'cutter' | 'miner' | 'delver' | 'builder'
+export type WorkerKey = 'lumberjack' | 'farmer' | 'fisher' | 'cutter' | 'miner' | 'delver' | 'builder'
 
 export interface WorkerDef {
   key: WorkerKey
@@ -92,6 +92,8 @@ export interface WorkerDef {
   colour: number
   accent: number
   home: BuildingKey
+  /** works fish shoals only (S13); every other crew leaves them alone */
+  fishes?: boolean
   desc: string
 }
 
@@ -107,6 +109,13 @@ export const WORKERS: Record<WorkerKey, WorkerDef> = {
     carry: 18, pop: 1, cost: { coins: 35, wood: 10 },
     colour: 0x9fc25c, accent: 0x55702a, home: 'farm',
     desc: 'Works the fields for grain.',
+  },
+  /** The farmer's numbers on the water (S13): a fishery mirrors a farm. */
+  fisher: {
+    key: 'fisher', name: 'Fisher', hp: 60, speed: 124, yield: 5, gatherTime: 1.8,
+    carry: 18, pop: 1, cost: { coins: 35, wood: 10 },
+    colour: 0x5a86a0, accent: 0x2e4a5a, home: 'fishery', fishes: true,
+    desc: 'Nets fish from the bank and carries them home as food.',
   },
   cutter: {
     key: 'cutter', name: 'Stonecutter', hp: 75, speed: 112, yield: 5, gatherTime: 2,
@@ -156,6 +165,7 @@ export const WORKERS: Record<WorkerKey, WorkerDef> = {
 export const WORKER_FOR: Partial<Record<BuildingKey, WorkerKey>> = {
   lumberCamp: 'lumberjack',
   farm: 'farmer',
+  fishery: 'fisher',
   quarry: 'cutter',
   mine: 'miner',
   crystalDelve: 'delver',

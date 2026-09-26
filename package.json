@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node --test tests/*.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "world:lint": "node docs/world/tools/render.mjs --quiet --no-svg",
+    "world:map": "node docs/world/tools/render.mjs"
   },
   "dependencies": {
     "@fontsource/alegreya-sans": "^5.3.0",

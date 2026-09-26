@@ -79,6 +79,12 @@ export class AbilitySystem {
     return this.ultimate.unlocked ? this.cast(this.ultimate) : false
   }
 
+  /** An ability's full cooldown: the Gallows Bell shortens the rally's (`rally.cooldown`, S15). */
+  cooldownOf(key: AbilityKey): number {
+    const base = ABILITIES[key].cooldown
+    return key === 'rally' ? this.scene.mods?.value('rally.cooldown', base) ?? base : base
+  }
+
   castByKey(key: AbilityKey): boolean {
     const s = key === ULTIMATE ? this.ultimate : this.slots.find(x => x.key === key)
     return s ? this.cast(s) : false
@@ -89,8 +95,7 @@ export class AbilitySystem {
       if (s.cd > 0) this.scene.audio.play('deny', 1, 0.5)
       return false
     }
-    const def = ABILITIES[s.key]
-    s.cd = def.cooldown
+    s.cd = this.cooldownOf(s.key)
     this.scene.audio.play('ability', 1, 1)
     const p = this.scene.player
     const dmg = p.damage

@@ -1,13 +1,20 @@
 import Phaser from 'phaser'
-import { WORLD, CAMERA, PLAYER, PICKUP } from '../config/balance'
+import { CAMERA, PLAYER, PICKUP, OUTPOST, POI } from '../config/balance'
 import { PAL } from '../config/palette'
-import { ZONES } from '../config/map'
+import { HALL, REGIONS, THRONE, WORLD, raster } from '../config/world'
 import { ABILITY_KEYS } from '../config/abilities'
 import { clamp, dist, rr, short, srand } from '../core/math'
 import { Bus } from '../core/Events'
 import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type Targetable } from '../core/types'
-import { buildTerrain } from '../world/Terrain'
+import { paintTerrainRect, warmTerrain } from '../world/Terrain'
+import { TerrainChunks } from '../world/TerrainChunks'
+import { AtlasBake } from '../world/AtlasBake'
+import { addScatter } from '../world/scatter'
+import { Culler } from '../systems/Culler'
+import { NavGrid } from '../world/NavGrid'
+import type { PathTicket, Pt } from '../world/PathFind'
+import { NavDebug } from '../world/NavDebug'
 
 import { Player } from '../entities/Player'
 import { ResourceManager } from '../systems/ResourceManager'
@@ -22,14 +29,23 @@ import { BuildingManager } from '../systems/BuildingManager'
 import { ArmyManager } from '../systems/ArmyManager'
 import { WorkerManager } from '../systems/WorkerManager'
 import { WaveManager } from '../systems/WaveManager'
-import { ZoneManager } from '../systems/ZoneManager'
+import { RegionManager } from '../systems/RegionManager'
+import { Approaches, APPROACH_IDS } from '../systems/Approaches'
+import { RouteMarks } from '../world/RouteMarks'
 import { CampManager } from '../systems/CampManager'
+import { CAUSEWAY, CausewayFire, onCauseway } from '../world/CausewayFire'
+import { Waystones } from '../systems/Waystones'
 import { AbilitySystem } from '../systems/AbilitySystem'
 import { LevelSystem } from '../systems/LevelSystem'
 import { QuestManager } from '../systems/QuestManager'
 import { SaveManager, type Settings } from '../systems/SaveManager'
 import { LightingManager } from '../systems/LightingManager'
+import { Modifiers } from '../systems/Modifiers'
+import { PoiManager } from '../systems/PoiManager'
+import { Relics } from '../systems/Relics'
+import { Building } from '../entities/Building'
 import { DPR } from '../core/device'
+import type { DockBands } from '../ui/dock'
 
 export const DEPTH = {
   terrain: -100_000,
@@ -46,9 +62,20 @@ export const DEPTH = {
 
 export interface InputVector { x: number; y: number }
 
+/** How far the Regent follows the hero from her throne: the island (r 430) and the causeway. */
+const REGENT_LEASH = 820
+
 export class GameScene extends Phaser.Scene {
   bus!: Bus
   audio!: AudioManager
+  terrain!: TerrainChunks
+  /** the world at 1/16 for the atlas and the minimap (S12) */
+  atlasBake!: AtlasBake
+  /** Hides static world objects far outside the view; see Culler. */
+  culler!: Culler
+  /** what walkers may stand on, and the horde's flow fields (S05) */
+  nav!: NavGrid
+  navDebug!: NavDebug
   fx!: EffectsManager
   res!: ResourceManager
   combat!: CombatSystem
@@ -60,8 +87,19 @@ export class GameScene extends Phaser.Scene {
   army!: ArmyManager
   workers!: WorkerManager
   waves!: WaveManager
-  zones!: ZoneManager
+  /** tonight's routes, musters and spawn points (S09) */
+  approaches!: Approaches
+  routeMarks!: RouteMarks
+  regions!: RegionManager
   camps!: CampManager
+  /** the fire on the Regent's Causeway (S10) */
+  causeway!: CausewayFire
+  /** outpost and lone waystones, fast travel (S11) */
+  waystones!: Waystones
+  /** S14: shrine (and S15 relic) bonuses by stat */
+  mods!: Modifiers
+  pois!: PoiManager
+  relics!: Relics
   abilities!: AbilitySystem
   levels!: LevelSystem
   quests!: QuestManager
@@ -84,14 +122,26 @@ export class GameScene extends Phaser.Scene {
    * banners) keep out of them, which is what stops the portrait layout from
    * stacking three panels on the same pixels.
    */
-  uiBands = { top: 104, bottom: 104 }
+  uiBands: DockBands = { top: 104, bottom: 104, dock: null }
+  /** The camera's eased shift toward the clear area beside an open dock (world px). */
+  private dockShift = { x: 0, y: 0 }
   private keys!: Record<string, Phaser.Input.Keyboard.Key>
   private objectiveArrow!: Phaser.GameObjects.Image
+  /**
+   * The walk to an off-screen quest target (S12): the arrow follows it round
+   * rivers and cliffs, and the atlas draws it. Null when the target is on
+   * screen, or when no path was found (the arrow then points straight).
+   */
+  questRoute: Pt[] | null = null
+  private questTicket: PathTicket | null = null
+  private questAsk = { x: NaN, y: NaN, tx: NaN, ty: NaN, t: 0 }
   private edgeMarkers: Phaser.GameObjects.Image[] = []
   private zoomTarget = CAMERA.baseZoom
   private harvestCd = 0
   private levelUpQueued = 0
-  private finalBossPending = false
+  /** S17: the Regent has risen on her island (the hero stood on the opened causeway); she stays until she falls */
+  private regentRisen = false
+  private finaleT = 0
   private simTimes = new Float32Array(120)
   private frameTimes = new Float32Array(120)
   private perfCursor = 0
@@ -105,7 +155,8 @@ export class GameScene extends Phaser.Scene {
   create(data: { load?: boolean; settings: Settings }) {
     this.paused = false
     this.coreLost = false
-    this.finalBossPending = false
+    this.regentRisen = false
+    this.finaleT = 0
     this.levelUpQueued = 0
     this.edgeMarkers.length = 0
     this.moveInput = { x: 0, y: 0 }
@@ -121,13 +172,25 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height)
     this.physics?.world?.setBounds(0, 0, WORLD.width, WORLD.height)
 
-    buildTerrain(this, DEPTH.terrain)
+    warmTerrain()
+    this.terrain = new TerrainChunks(this, paintTerrainRect, { width: WORLD.width, height: WORLD.height, depth: DEPTH.terrain })
+    this.atlasBake = new AtlasBake(this)
+    this.culler = new Culler()
+    this.nav = new NavGrid(raster(), { hall: HALL })
+    this.nav.field('hall')
+    this.navDebug = new NavDebug(this, this.nav)
 
     this.fx = new EffectsManager(this, DEPTH.fx)
     this.fx.quality = this.settings.quality
     this.fx.showDamage = this.settings.showDamage
     this.fx.reducedMotion = this.settings.reducedMotion
     this.res = new ResourceManager(this.bus)
+    // before anything that reads a stat: walls and gates take `wall.hp` from here
+    this.mods = new Modifiers()
+    this.res.mods = this.mods
+    // before the camps and barrows that grant them (`camp:burned`, a guardian's fall)
+    this.relics = new Relics(this)
+    Building.hpMod = (key, hp) => (key === 'wall' || key === 'gate' ? this.mods.value('wall.hp', hp) : hp)
     this.combat = new CombatSystem(this)
     this.nodes = new NodeManager(this)
     this.enemies = new EnemyManager(this, DEPTH.bars)
@@ -136,22 +199,36 @@ export class GameScene extends Phaser.Scene {
     this.buildings = new BuildingManager(this)
     this.army = new ArmyManager(this)
     this.workers = new WorkerManager(this)
-    this.zones = new ZoneManager(this, DEPTH.fog)
+    this.regions = new RegionManager(this, DEPTH.fog)
     this.camps = new CampManager(this)
+    this.approaches = new Approaches({
+      nav: this.nav,
+      claimMask: () => this.regions.claimMask(),
+      claimed: id => this.regions.claimed(id),
+      campState: id => this.camps.stateOf(id),
+      // S17: the Regent's fall closes every maw; only raids come after
+      ended: () => !!this.quests?.finalBossDefeated,
+    })
+    // each via leg's field builds once here (~36 ms each) rather than at the first warning
+    for (const id of APPROACH_IDS) for (const leg of this.approaches.legs(id)) this.nav.field(leg)
     this.waves = new WaveManager(this)
+    // above the lightmap: embers carry their own light, and the night must not swallow the warning
+    this.routeMarks = new RouteMarks(this, DEPTH.light + 1)
     this.levels = new LevelSystem(this)
     this.quests = new QuestManager(this)
     this.saves = new SaveManager(this)
     this.lighting = new LightingManager(this, DEPTH.light)
     this.lighting.quality = this.settings.quality
     this.fx.lights = this.lighting
-    this.bus.on('camp:destroyed', ({ id }) => {
-      if (id === 'campAshgate') this.scheduleFinalBoss()
-    })
+    this.bus.on('enemy:killed', ({ key }) => { if (key === 'cinderRegent') this.finale() })
 
     this.nodes.build()
     this.buildings.build()
     this.camps.build()
+    this.causeway = new CausewayFire(this)
+    this.waystones = new Waystones(this)
+    this.pois = new PoiManager(this, { fog: DEPTH.fog, light: DEPTH.light, labels: DEPTH.labels })
+    addScatter(this)
 
     this.player = new Player(this)
     this.abilities = new AbilitySystem(this)
@@ -181,10 +258,12 @@ export class GameScene extends Phaser.Scene {
 
     this.player.container.setPosition(this.player.x, this.player.y)
     cam.centerOn(this.player.x, this.player.y)
-    this.zones.update(0)
-    if (this.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)) {
-      this.scheduleFinalBoss()
-    }
+    // everything on screen at spawn is baked before the first frame; the rest streams in
+    this.terrain.prime(cam)
+    this.causeway.sync()
+    this.regions.update(0)
+    // she rose in an earlier session: she stands on her island again (her hp is in the quests' save)
+    this.regentRisen = this.quests.finalBossHp > 0 && !this.quests.finalBossDefeated && this.camps.isBurned('campAshgate')
 
     this.scene.launch('UI', { game: this })
     const saveWhenHidden = () => this.saves.save()
@@ -201,7 +280,7 @@ export class GameScene extends Phaser.Scene {
   /** The opening 15 seconds should never be empty: coins and a fight nearby. */
   private seedNewGame() {
     this.res.stored.coins = 0
-    const cx = WORLD.centerX, cy = WORLD.centerY
+    const cx = HALL.x, cy = HALL.y
     for (let i = 0; i < 26; i++) {
       const a = rr(0, Math.PI * 2)
       const r = rr(90, 300)
@@ -217,37 +296,52 @@ export class GameScene extends Phaser.Scene {
     this.fx.popup(cx, cy - 150, 'EMBERHOLD', PAL.gold, 34)
   }
 
-  /** Ashgate's ruler remains in the world until defeated, including after reload. */
-  private scheduleFinalBoss() {
-    if (this.finalBossPending || this.quests.finalBossDefeated) return
-    if (this.enemies.list.some(e => e.active && e.alive && e.key === 'cinderRegent')) return
-    this.finalBossPending = true
-    this.time.delayedCall(1600, () => {
-      this.finalBossPending = false
-      if (this.quests.finalBossDefeated) return
-      // The HUD has one boss bar. Let a night boss finish before the finale enters.
-      if (this.paused || (this.enemies.bossRef?.alive && this.enemies.bossRef.key !== 'cinderRegent')) {
-        this.scheduleFinalBoss()
-        return
-      }
-      const fortress = this.camps.camps.find(c => c.spec.id === 'campAshgate')
-      if (!fortress?.destroyed) return
-      const e = this.enemies.spawn('cinderRegent', fortress.spec.x, fortress.spec.y - 70)
-      if (!e) { this.scheduleFinalBoss(); return }
-      if (this.quests.finalBossHp > 0) e.hp = Math.min(e.maxHp, this.quests.finalBossHp)
-      this.fx.ring(e.x, e.y, 320, PAL.danger, 1.1)
-      this.fx.flash(0xff5b2d, 0.25)
-      this.fx.popup(e.x, e.y - 170, 'THE CINDER REGENT RISES', PAL.danger, 28)
-      this.audio.play('bossRoar', 0.9)
-    })
+  /**
+   * S17: the finale. The Regent waits on her island until the hero first sets
+   * foot on the causeway after Ashgate's fire goes out; then she rises at the
+   * throne and stays (a guard: a lost night leaves her standing), with the hp
+   * she last had. Checked a few times a second.
+   */
+  private updateFinale(dt: number) {
+    this.finaleT -= dt
+    if (this.finaleT > 0) return
+    this.finaleT = 0.2
+    if (this.quests.finalBossDefeated || this.regentUp()) return
+    if (!this.regentRisen) {
+      const p = this.player
+      if (!p.alive || this.nav.isSealed(CAUSEWAY) || !onCauseway(p.x, p.y)) return
+    }
+    this.raiseRegent(!this.regentRisen)
   }
 
-  /** The Ashgate fight is independent of the nightly wave and survives a loss. */
-  resumeFinalBoss() {
-    if (this.camps.camps.some(c => c.spec.id === 'campAshgate' && c.destroyed)) {
-      this.scheduleFinalBoss()
-    }
+  private regentUp() { return this.enemies.list.some(e => e.active && e.alive && e.key === 'cinderRegent') }
+
+  private raiseRegent(first: boolean) {
+    const e = this.enemies.spawn('cinderRegent', THRONE.x, THRONE.y)
+    if (!e) return
+    this.regentRisen = true
+    e.guard = true
+    e.home = { id: 'throne', x: THRONE.x, y: THRONE.y, leash: REGENT_LEASH, siege: 0 }
+    if (this.quests.finalBossHp > 0) e.hp = Math.min(e.maxHp, this.quests.finalBossHp)
+    this.quests.finalBossHp = e.hp
+    if (!first) return
+    this.fx.ring(e.x, e.y, 320, PAL.danger, 1.1)
+    this.fx.flash(0xff5b2d, 0.25)
+    this.fx.shake(0.02, 0.6)
+    this.fx.popup(this.player.x, this.player.y - 150, 'THE CINDER REGENT RISES', PAL.danger, 28)
+    this.audio.play('bossRoar', 0.9)
   }
+
+  /** Her fall: every maw closes and the approaches end (Approaches reads `finalBossDefeated`); the run summary follows. */
+  private finale() {
+    const p = this.player
+    this.fx.flash(0xffd9a0, 0.3)
+    this.fx.popup(p.x, p.y - 150, 'THE MAWS CLOSE', PAL.gold, 30)
+    this.fx.popup(p.x, p.y - 118, 'The approaches fall quiet. Only raids remain.', PAL.gold, 18)
+  }
+
+  /** A lost night leaves her standing (a guard); after a sweep, the next check raises her again. */
+  resumeFinalBoss() { this.finaleT = 0 }
 
   applySettings(s: Settings) {
     this.settings = s
@@ -337,14 +431,21 @@ export class GameScene extends Phaser.Scene {
     this.events.emit('coreLost')
   }
 
-  openChest(x: number, y: number) {
-    const tier = 1 + this.waves.wave * 0.5
+  /**
+   * Spill a supply chest. A camp's chest scales with the wave; a POI cache
+   * (S14) passes its region's tier and scales with that instead.
+   */
+  openChest(x: number, y: number, regionTier?: number) {
+    const c = POI.cache
+    const tier = regionTier === undefined ? 1 + this.waves.wave * 0.5 : 1 + regionTier * c.perTier
+    const base = regionTier === undefined ? { coins: 120, wood: 60, stone: 40, metal: 18 } : c
     const table: [typeof RESOURCE_ORDER[number], number][] = [
-      ['coins', Math.round(120 * tier)],
-      ['wood', Math.round(60 * tier)],
-      ['stone', Math.round(40 * tier)],
+      ['coins', Math.round(base.coins * tier)],
+      ['wood', Math.round(base.wood * tier)],
+      ['stone', Math.round(base.stone * tier)],
     ]
-    if (this.waves.wave >= 5) table.push(['metal', Math.round(18 * tier)])
+    if (regionTier === undefined ? this.waves.wave >= 5 : regionTier >= 2) table.push(['metal', Math.round(base.metal * tier)])
+    if ((regionTier ?? 0) >= 4) table.push(['crystal', Math.round(c.crystal * tier)])
     this.fx.explosion(x, y, 110, PAL.gold)
     this.audio.play('quest', 1.1)
     for (const [k, v] of table) {
@@ -404,15 +505,18 @@ export class GameScene extends Phaser.Scene {
   zonesNextTarget(): { x: number; y: number; hint?: string } | null {
     let unaffordable: { x: number; y: number; hint?: string } | null = null
     let gatedHall = 0
-    for (const z of ZONES) {
-      if (z.startsUnlocked || this.zones.isUnlocked(z.id)) continue
-      if (this.buildings.townHallLevel < z.requiresTownHall) {
-        if (!gatedHall || z.requiresTownHall < gatedHall) gatedHall = z.requiresTownHall
+    for (const z of REGIONS) {
+      if (this.regions.claimed(z.id)) continue
+      const check = this.regions.canClaim(z.id)
+      if (check.reason === 'hall') {
+        if (!gatedHall || z.hall < gatedHall) gatedHall = z.hall
         continue
       }
-      const c = this.zones.claimPoint(z.id)
+      // a stone you cannot reach yet, or one a standing camp still bars
+      if (check.reason === 'adjacent' || check.reason === 'camps') continue
+      const c = this.regions.claimPoint(z.id)
       if (!c) continue
-      if (this.zones.canUnlockId(z.id)) return { x: c.x, y: c.y, hint: `Claim ${z.name}` }
+      if (check.ok) return { x: c.x, y: c.y, hint: `Claim ${z.name}` }
       if (!unaffordable) {
         const price = RESOURCE_ORDER.filter(k => z.cost[k])
           .map(k => `${short(z.cost[k] ?? 0)} ${k}`).join(', ')
@@ -449,7 +553,7 @@ export class GameScene extends Phaser.Scene {
       const dmg = p.damage * bonus * (crit ? p.stats.critMult : 1)
       this.projectiles.fire(p.x, p.y - 16, baseAng + off, {
         tex: 'proj_wave', tint: p.level >= 11 ? PAL.gold : PAL.heroTrim,
-        damage: dmg, crit, knockback: p.stats.knockback, pierce: p.stats.pierce,
+        damage: dmg, crit, knockback: p.stats.knockback, pierce: this.mods.value('hero.pierce', p.stats.pierce),
         splash: p.stats.splash, speed: p.stats.projectileSpeed, faction: 'ally', fromPlayer: true,
         scale: 1 + p.stats.splash / 120,
       })
@@ -469,7 +573,8 @@ export class GameScene extends Phaser.Scene {
     const got = this.nodes.strike(node, Math.max(12, p.stats.damage * 0.6))
     const amount = Math.max(1, Math.round(got * p.stats.greed))
     for (let i = 0; i < Math.min(4, amount); i++) {
-      this.pickups.drop(node.resource, Math.ceil(amount / Math.min(4, amount)), node.x, node.y - 10, 0.8)
+      // at the gather point, so a shoal hooked from the bank lands on the bank
+      this.pickups.drop(node.resource, Math.ceil(amount / Math.min(4, amount)), node.gx, node.gy - 22, 0.8)
     }
     this.fx.slash(node.x, node.y - 16, rr(-0.4, 0.4), 0.7, 0xffffff)
     this.audio.playVaried(node.resource === 'wood' ? 'wood' : 'stone', 0.4)
@@ -488,9 +593,29 @@ export class GameScene extends Phaser.Scene {
 
     // look ahead in the direction of travel
     const p = this.player
+    // While a docked sheet is open, frame what it is about (the hero and the
+    // building, or the border stone) in the middle of the ground it leaves
+    // clear, and ease back when it closes.
+    let sx = 0, sy = 0
+    const d = this.uiBands.dock
+    const card = this.uiBands.card ?? 0
+    if (d || card) {
+      const k = DPR / cam.zoom
+      const W = cam.width / DPR, H = cam.height / DPR
+      const top = Math.max(this.uiBands.top, card)
+      const clearX = d?.side === 'right' ? d.x / 2 : W / 2
+      const clearY = d && d.side !== 'right' ? (top + d.y) / 2 : (top + H - this.uiBands.bottom) / 2
+      const f = d?.focus ?? { x: p.x, y: p.y }
+      // the camera's centre that puts f at (clearX, clearY); the offset is hero − centre
+      sx = p.x - (f.x + (W / 2 - clearX) * k)
+      sy = p.y - (f.y + (H / 2 - clearY) * k)
+    }
+    const ease = Math.min(1, dt * 5)
+    this.dockShift.x += (sx - this.dockShift.x) * ease
+    this.dockShift.y += (sy - this.dockShift.y) * ease
     cam.setFollowOffset(
-      -clamp(p.vx * CAMERA.lookAhead, -110, 110),
-      -clamp(p.vy * CAMERA.lookAhead, -110, 110),
+      -clamp(p.vx * CAMERA.lookAhead, -110, 110) + this.dockShift.x,
+      -clamp(p.vy * CAMERA.lookAhead, -110, 110) + this.dockShift.y,
     )
   }
 
@@ -503,7 +628,8 @@ export class GameScene extends Phaser.Scene {
     }
     const d = dist(p.x, p.y, v.targetX, v.targetY)
     if (d < 120) { this.objectiveArrow.setVisible(false); return }
-    const ang = Math.atan2(v.targetY - p.y, v.targetX - p.x)
+    const [ax, ay] = this.questAim(v.targetX, v.targetY)
+    const ang = Math.atan2(ay - p.y, ax - p.x)
     const r = 72 + Math.sin(this.now * 0.005) * 6
     this.objectiveArrow
       .setVisible(true)
@@ -512,6 +638,44 @@ export class GameScene extends Phaser.Scene {
       // it already points at +90°. Adding another 90° sent it the opposite way.
       .setRotation(ang - Math.PI / 2)
       .setAlpha(0.9)
+  }
+
+  /**
+   * Where the quest arrow points: straight at a target on screen; otherwise
+   * along the walk to it (`questRoute`), at the first bend 260 px or more
+   * ahead. The path is asked for again when the target moves, the hero strays
+   * 400 px from where it was asked, or every 4 s.
+   */
+  private questAim(tx: number, ty: number): [number, number] {
+    const p = this.player
+    if (this.cameras.main.worldView.contains(tx, ty)) {
+      this.questRoute = null
+      this.questTicket = null
+      return [tx, ty]
+    }
+    const a = this.questAsk
+    if (this.questTicket?.done) {
+      this.questRoute = this.questTicket.path
+      this.questTicket = null
+    }
+    const stale = a.tx !== tx || a.ty !== ty || dist(p.x, p.y, a.x, a.y) > 400 || this.now - a.t > 4000
+    if (stale && !this.questTicket) {
+      if (a.tx !== tx || a.ty !== ty) this.questRoute = null
+      this.questTicket = this.nav.requestPath(p.x, p.y, tx, ty)
+      Object.assign(a, { x: p.x, y: p.y, tx, ty, t: this.now })
+    }
+    const r = this.questRoute
+    if (!r || r.length < 2) return [tx, ty]
+    // the nearest route point to the hero, then the first one far enough past it
+    let near = 0, best = Infinity
+    for (let i = 0; i < r.length; i++) {
+      const d = dist(p.x, p.y, r[i][0], r[i][1])
+      if (d < best) { best = d; near = i }
+    }
+    for (let i = near; i < r.length; i++) {
+      if (dist(p.x, p.y, r[i][0], r[i][1]) >= 260) return r[i]
+    }
+    return [tx, ty]
   }
 
   /** Edge markers for threats you cannot see. */
@@ -530,7 +694,7 @@ export class GameScene extends Phaser.Scene {
       consider.push({ x: hall.x, y: hall.y, tint: PAL.gold, scale: 1.3 })
     }
     if (this.waves.isNight) {
-      for (const g of this.waves.nextGates()) {
+      for (const g of this.waves.nextApproaches()) {
         if (!Phaser.Geom.Rectangle.Contains(view, g.x, g.y)) {
           consider.push({ x: g.x, y: g.y, tint: PAL.danger, scale: 1 })
         }
@@ -558,11 +722,38 @@ export class GameScene extends Phaser.Scene {
     for (; i < this.edgeMarkers.length; i++) this.edgeMarkers[i].setVisible(false)
   }
 
+  /**
+   * Where the hero wakes after a fall (S11): the standing outpost nearest to
+   * where they fell, if no enemy is within OUTPOST.safeRadius of it and it is
+   * not burning (struck in the last 6 s), and it is nearer than the hall.
+   * Otherwise the hall. Reads the hero's position, which a fall leaves put.
+   */
+  respawnPoint(): { x: number; y: number; padId: string } {
+    const hall = this.buildings.townHall
+    const fx = this.player.x, fy = this.player.y
+    let best = { x: hall.x, y: hall.y + 90, padId: 'hall' }
+    let bestD = dist(fx, fy, hall.x, hall.y)
+    for (const b of this.buildings.outposts()) {
+      if (b.damageT > 0) continue
+      const d = dist(fx, fy, b.x, b.y)
+      if (d >= bestD) continue
+      if (this.enemies.grid.nearest(b.x, b.y, OUTPOST.safeRadius, e => e.alive)) continue
+      best = { x: b.x, y: b.y + 56, padId: b.padId }
+      bestD = d
+    }
+    return best
+  }
+
   // ---- main loop --------------------------------------------------------
   update(time: number, delta: number) {
     this.now = time
+    this.terrain.update(this.cameras.main)
+    this.atlasBake.update(delta / 1000)
+    this.culler.update(this.cameras.main)
+    this.navDebug.update(this.cameras.main)
     if (this.paused) return
     const simStart = performance.now()
+    this.nav.tick()
     const dt = Math.min(0.05, delta / 1000)
 
     const kb = this.readKeyboard()
@@ -579,30 +770,40 @@ export class GameScene extends Phaser.Scene {
       this.tryAttack()
       this.tryHarvest(dt)
     } else if (this.player.deadTimer <= 0) {
-      const hall = this.buildings.townHall
-      this.player.respawn(hall.x, hall.y + 90)
+      const at = this.respawnPoint()
+      this.player.respawn(at.x, at.y)
+      if (at.padId !== 'hall') this.fx.popup(at.x, at.y - 70, 'THE OUTPOST HOLDS', PAL.gold, 16)
       // small penalty: drop part of what you were carrying
       for (const k of RESOURCE_ORDER) {
         const lost = Math.floor(this.res.carried[k] * 0.35)
         if (lost > 0) {
           this.res.carried[k] -= lost
-          this.pickups.drop(k, lost, hall.x + rr(-60, 60), hall.y + rr(60, 110))
+          this.pickups.drop(k, lost, at.x + rr(-60, 60), at.y + rr(-30, 20))
         }
       }
       this.res.bumpChanged()
+      // a far wake-up cuts rather than pans the length of the map
+      this.cameras.main.centerOn(at.x, at.y)
+      this.terrain.prime(this.cameras.main)
     }
 
     this.nodes.update(dt)
     this.buildings.update(dt)
     this.workers.update(dt)
     this.army.update(dt)
+    this.buildings.auras(dt)
     this.enemies.update(dt)
     this.camps.update(dt)
+    this.causeway.update(dt)
+    this.updateFinale(dt)
     this.projectiles.update(dt)
     this.pickups.update(dt)
     this.abilities.update(dt)
     this.waves.update(dt)
-    this.zones.update(dt)
+    this.routeMarks.update()
+    this.regions.update(dt)
+    this.waystones.update(dt)
+    this.pois.update(dt)
     this.quests.update()
     this.res.tickRates(dt)
     this.fx.update(dt)
@@ -681,6 +882,10 @@ export class GameScene extends Phaser.Scene {
       workers: this.workers.count,
       pickups: this.pickups.activeCount,
       projectiles: this.projectiles.activeCount,
+      chunks: this.terrain.stats(),
+      atlas: this.atlasBake.stats(),
+      cull: this.culler.stats(),
+      nav: this.nav.stats(),
       maxPickups: PICKUP.maxActive,
       respawn: PLAYER.respawnSeconds,
     }

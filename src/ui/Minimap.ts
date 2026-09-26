@@ -1,64 +1,26 @@
 import Phaser from 'phaser'
 import { PAL } from '../config/palette'
-import { WORLD } from '../config/balance'
-import { ZONES, WALL_RING, type ZoneSpec } from '../config/map'
-import { clamp } from '../core/math'
+import { CAMPS, HALL, POIS, REGIONS, WORLD } from '../config/world'
 import { IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
-import { mix } from '../art/ink'
 import type { GameScene } from '../scenes/GameScene'
+import { FOG_KEY, FOG_SCALE } from '../systems/RegionManager'
+import { ATLAS_H, ATLAS_KEY, ATLAS_SCALE, ATLAS_W } from '../world/AtlasBake'
+import { ChartMemory, windowCrop } from './chart'
+import { CHART, POI_GLYPH, drawCamp, drawOutpost, drawStone, poiState } from './chartMarks'
 import { HERO_PLATE_H } from './HUD'
 import { PlateButton, SkinPanel } from './skin'
 import { screen } from './theme'
 
-/** The chart's inks: it is drawn as a surveyor's map on the same paper as the world's fog. */
-const CHART = {
-  wild: mix(PAL.grassA, PAL.parchment, 0.5),
-  held: mix(PAL.grassB, PAL.parchment, 0.38),
-  uncharted: PAL.vellum,
-  ink: 0x3a2616,
-  wax: PAL.wax,
-  lapis: 0x24508f,
-  gilt: 0x94580e,
-  moss: 0x3d6a24,
-}
-const OPEN_KEY = 'emberhold.minimap.v1'
-
-/**
- * The map is baked at a fixed texture resolution and then *scaled* to whatever
- * the panel works out to be, so a window resize or an orientation flip never
- * re-bakes the world — it sets a display size and moves on.
- *
- * 3400/272 and 2800/224 are both 12.5, so the aspect is exact and nothing has
- * to be letterboxed.
- */
-const TEX_W = 272
-const TEX_H = 224
-/** World pixels per baked texel. */
-const T = WORLD.width / TEX_W
-
-/**
- * Fog grid. One cell is 8 texels wide, so a shroud block always lands on a
- * texel boundary and the unexplored edge reads as a deliberate stair rather
- * than a smear.
- */
-const CELL = 8 * T
-const COLS = Math.round(WORLD.width / CELL)
-const ROWS = Math.round(WORLD.height / CELL)
-
-/**
- * How much ground walking clears. Deliberately tighter than the world's own
- * fog brush (~480px): the minimap should never know more than the screen does.
- */
-const REVEAL = 400
-/** Known ground at the start — the hold, mirroring the world's opening reveal. */
+/** The local window: this many world px round the hero, north up (S12). */
+export const MINI_RADIUS = 2400
+const SPAN = MINI_RADIUS * 2
+/** Known ground at the start: the hold, mirroring the world's opening reveal. */
 const SEED = 960
 
-/** Ceiling on re-bakes per second while the hero is walking into new ground. */
-const COLD_HZ = 4
-/** A slow sweep so a razed building or a dead camp can never linger. */
-const COLD_HEARTBEAT = 1.5
-/** Marker refresh. Well below 60Hz and still reads as live. */
+/** Marker refresh. Well below 60 Hz and still reads as live; the window itself slides every frame. */
 const FAST_HZ = 9
+/** A slow sweep so claimed ground (however it was claimed) is always known. */
+const HEARTBEAT = 1.5
 
 /** Biggest the panel is ever allowed to get, and its share of a narrow screen. */
 const MAX_W = 188
@@ -67,166 +29,88 @@ const SCREEN_SHARE = 0.34
 const MIN_H = 56
 /** Margin between the map and the frame around it: room for the gilt rule. */
 const INSET = 7
-/** Toggle chip: a full thumb target where one is wanted, tighter for a mouse. */
+/** The chip: a full thumb target where one is wanted, tighter for a mouse. */
 const CHIP_TALL = 44
 const CHIP_SHORT = 30
 const CHIP_W_TALL = 104
 const CHIP_W_SHORT = 100
 
 /**
- * A corner map of the settlement.
+ * The corner map (S12): a local window of MINI_RADIUS round the hero, north up.
  *
- * Nothing here is drawn per frame. There are three surfaces, each rebuilt only
- * when its own inputs change:
+ * Nothing heavy is drawn per frame:
+ * - `base` is the atlas bake (`atlas_bake`, 1/16 scale) and `fog` the world's
+ *   own fog page (`fog_live`), each one image cropped to the window. Sliding
+ *   the window is a new crop and position, one quad each.
+ * - `marks` is what changes (pads, camps, POIs, stones, enemies, tonight's
+ *   routes, the hero), rebuilt at FAST_HZ out of flat shapes and nudged by the
+ *   hero's drift between rebuilds.
+ * - the tray and the chip are painted textures.
  *
- * - `tray` is the lacquered frame, and the toggle is a plate button. Both are
- *   painted once into cached textures rather than drawn live, for a measured
- *   reason: a `fillRoundedRect` is a path Phaser re-triangulates on every frame
- *   it renders, and the four the old frame used cost 0.13ms — nine times
- *   everything else this class does. Painted, they cost one quad each.
- * - `cold` is the map itself: ground, territory, the rampart ring, structures,
- *   camps and the fog shroud. Re-baked at most COLD_HZ times a second, and only
- *   when something has actually changed.
- * - `unitG` is the handful of things that genuinely move — hero, camera box,
- *   enemy and crew density, the night's gates, claim rings — rebuilt at FAST_HZ
- *   out of flat rectangles, for the same reason as above.
- *
- * It deliberately does not show what you have not been to. Unexplored cells are
- * shrouded and every structure, pad and camp is culled against the same grid,
- * so the map cannot hand you the world on turn one — which is the whole point
- * of walking it.
+ * `memory` (where the hero has been) is shared with the atlas: marks show
+ * only in seen ground, so the chart never hands you the world on turn one.
+ * The chip, a tap on the map, `M` and a controller's Back open the atlas.
  */
 export class Minimap {
+  readonly memory = new ChartMemory(WORLD.width, WORLD.height)
   private tray: SkinPanel
-  private cold: Phaser.GameObjects.RenderTexture
-  private unitG: Phaser.GameObjects.Graphics
-  /** Off-list scratch surface; everything baked is drawn here first. */
-  private scratch: Phaser.GameObjects.Graphics
-
+  private base: Phaser.GameObjects.Image
+  private fog: Phaser.GameObjects.Image
+  private marks: Phaser.GameObjects.Graphics
+  private hit: Phaser.GameObjects.Zone
   private chipBtn: PlateButton
 
-  /** 1 where the hero has been, or where territory has been claimed. */
-  private explored = new Uint8Array(COLS * ROWS)
-  /** Scratch density buckets, reused every tick so the loop never allocates. */
-  private hostiles = new Uint16Array(COLS * ROWS)
-  private friends = new Uint16Array(COLS * ROWS)
-
-  private open: boolean
   private roomy = true
-  private coldDirty = true
-  private coldT = 0
   private heartbeat = 0
   private fastT = 0
-  private lastStampX = -99999
-  private lastStampY = -99999
+  /** the window centre the marks were drawn about */
+  private drawnX = 0
+  private drawnY = 0
 
   private W = 0
   private H = 0
   private mapX = 0
   private mapY = 0
-  private mapW = 0
-  private mapH = 0
+  /** panel side in CSS px (the window is square) */
+  private side = 0
   private lastTop = -1
   private lastBottom = -1
 
-  /** True while a modal owns the screen: the toggle goes dead, like the HUD's. */
+  /** True while a modal owns the screen: the chip goes dead, like the HUD's. */
   blocked = false
+  /** Harness: ms the last marks rebuild took, and the worst so far. */
+  drawMs = 0
+  worstDrawMs = 0
 
-  constructor(private ui: Phaser.Scene, private game: GameScene) {
-    this.open = !wantsTouchTargets(screen(ui).w)
-    try {
-      const saved = localStorage.getItem(OPEN_KEY)
-      if (saved === '1' || saved === '0') this.open = saved === '1'
-    } catch { /* private mode */ }
-
+  constructor(private ui: Phaser.Scene, private game: GameScene, private openAtlas: () => void) {
     // All of these sit below the floating joystick on purpose: a thumb dragging
     // over the panel should see its own stick, not have it hidden under a map.
     this.tray = new SkinPanel(ui, 'hud').setScrollFactor(0).setDepth(1_000_006)
-    this.cold = ui.add.renderTexture(0, 0, TEX_W, TEX_H)
-      .setOrigin(0, 0).setScrollFactor(0).setDepth(1_000_007)
-    this.unitG = ui.add.graphics().setScrollFactor(0).setDepth(1_000_008)
-    this.scratch = ui.make.graphics({}, false)
+    this.base = ui.add.image(0, 0, ATLAS_KEY).setOrigin(0, 0).setScrollFactor(0).setDepth(1_000_007)
+    this.fog = ui.add.image(0, 0, FOG_KEY).setOrigin(0, 0).setScrollFactor(0).setDepth(1_000_007).setAlpha(0.92)
+    this.marks = ui.add.graphics().setScrollFactor(0).setDepth(1_000_008)
+    this.hit = ui.add.zone(0, 0, 10, 10).setOrigin(0, 0).setScrollFactor(0).setDepth(1_000_008)
+    this.hit.setInteractive()
+    this.hit.on('pointerdown', () => { if (!this.blocked) this.openAtlas() })
 
     this.chipBtn = new PlateButton(ui, {
       label: 'Map', icon: 'ico_map', keyHint: IS_TOUCH ? undefined : 'M', tone: 'quiet', size: 13,
-      onClick: () => this.toggle(),
+      onClick: () => this.openAtlas(),
     }).setScrollFactor(0).setDepth(1_000_009)
 
-    ui.input.keyboard?.on('keydown-M', () => this.toggle())
-
-    // The world restores its explored fog before UI launches. Rebuild this
-    // cheaper map from those marks so travel beyond the hold stays visible on
-    // the minimap after a reload as well.
-    this.reveal(WORLD.centerX, WORLD.centerY, SEED)
-    this.restoreWorldExploration()
-    for (const z of ZONES) if (game.zones.isUnlocked(z.id)) this.revealZone(z)
-
-    game.bus.on('zone:unlocked', () => {
-      for (const z of ZONES) if (game.zones.isUnlocked(z.id)) this.revealZone(z)
-      this.coldDirty = true
-    })
-    game.bus.on('building:built', () => { this.coldDirty = true })
-    game.bus.on('camp:destroyed', () => { this.coldDirty = true })
+    // The world restores its explored fog before the UI launches: rebuild the
+    // seen grid from those marks so a reload keeps what was walked.
+    this.memory.reveal(HALL.x, HALL.y, SEED)
+    game.regions.forEachExplored((x, y) => this.memory.reveal(x, y))
+    this.sweepClaims()
+    game.bus.on('region:claimed', () => this.sweepClaims())
 
     this.layout()
     ui.scale.on('resize', () => this.layout())
   }
 
-  toggle() {
-    if (this.blocked || !this.roomy) return
-    this.open = !this.open
-    try { localStorage.setItem(OPEN_KEY, this.open ? '1' : '0') } catch { /* private mode */ }
-    this.game.audio.play('ui')
-    this.layout()
-  }
-
-  // ---- fog ---------------------------------------------------------------
-
-  private cellIndex(x: number, y: number) {
-    const c = clamp(Math.floor(x / CELL), 0, COLS - 1)
-    const r = clamp(Math.floor(y / CELL), 0, ROWS - 1)
-    return r * COLS + c
-  }
-
-  private exploredAt(x: number, y: number) {
-    return this.explored[this.cellIndex(x, y)] !== 0
-  }
-
-  private reveal(x: number, y: number, radius: number) {
-    const span = Math.ceil(radius / CELL)
-    const cc = Math.floor(x / CELL)
-    const cr = Math.floor(y / CELL)
-    const r2 = radius * radius
-    for (let r = Math.max(0, cr - span); r <= Math.min(ROWS - 1, cr + span); r++) {
-      for (let c = Math.max(0, cc - span); c <= Math.min(COLS - 1, cc + span); c++) {
-        const dx = (c + 0.5) * CELL - x
-        const dy = (r + 0.5) * CELL - y
-        if (dx * dx + dy * dy > r2) continue
-        const i = r * COLS + c
-        if (this.explored[i]) continue
-        this.explored[i] = 1
-        this.coldDirty = true
-      }
-    }
-  }
-
-  private restoreWorldExploration() {
-    this.game.zones.forEachExplored((x, y) => this.reveal(x, y, REVEAL))
-  }
-
-  private revealZone(z: ZoneSpec) {
-    const c0 = clamp(Math.floor(z.x / CELL), 0, COLS - 1)
-    const c1 = clamp(Math.ceil((z.x + z.w) / CELL) - 1, 0, COLS - 1)
-    const r0 = clamp(Math.floor(z.y / CELL), 0, ROWS - 1)
-    const r1 = clamp(Math.ceil((z.y + z.h) / CELL) - 1, 0, ROWS - 1)
-    for (let r = r0; r <= r1; r++) {
-      for (let c = c0; c <= c1; c++) {
-        const i = r * COLS + c
-        if (this.explored[i]) continue
-        this.explored[i] = 1
-        this.coldDirty = true
-      }
-    }
+  private sweepClaims() {
+    for (const z of REGIONS) if (this.game.regions.claimed(z.id)) this.memory.revealPoly(z.poly)
   }
 
   // ---- layout ------------------------------------------------------------
@@ -244,251 +128,154 @@ export class Minimap {
     this.lastTop = bands.top
     this.lastBottom = bands.bottom
 
-    // Two things have to be cleared. `uiBands.top` is the number the HUD
-    // publishes, and it already covers the objective row — which on a phone
-    // drops underneath both the health panel and the resources. It does not
-    // cover the PAUSE and stance chips in the corner, so the taller of the two
-    // wins: hero plate, a 6px gap, and a chip at its full thumb height.
+    // `uiBands.top` covers the objective row but not the PAUSE and stance
+    // chips in the corner, so the taller of the two wins.
     const stack = padT + HERO_PLATE_H + 6 + CHIP_TALL + 8
     const top = Math.max(bands.top, stack) + 6
-
     const chipH = touch ? CHIP_TALL : CHIP_SHORT
     const chipW = touch ? CHIP_W_TALL : CHIP_W_SHORT
 
     const mapY = top + chipH + 6 + INSET
     const availH = this.H - bands.bottom - 10 - INSET - mapY
-    let w = Math.min(MAX_W, this.W * SCREEN_SHARE)
-    let h = w * (WORLD.height / WORLD.width)
-    if (h > availH) {
-      h = availH
-      w = h * (WORLD.width / WORLD.height)
-    }
-    this.roomy = h >= MIN_H
+    const side = Math.min(MAX_W, this.W * SCREEN_SHARE, availH)
+    this.roomy = side >= MIN_H
     this.mapX = padL + INSET
     this.mapY = mapY
-    this.mapW = w
-    this.mapH = h
+    this.side = side
 
-    const show = this.open && this.roomy
-    this.cold.setPosition(this.mapX, mapY).setDisplaySize(w, h).setVisible(show)
-    this.unitG.setPosition(this.mapX, mapY).setVisible(show)
-
-    // One rectangle decides both where the chip draws and where it answers, so
-    // the two cannot drift — the failure this HUD has had before.
     this.chipBtn.place(padL + chipW / 2, top + chipH / 2, chipW, chipH)
-
-    this.drawChrome()
-    this.fastT = 0
-    this.coldDirty = true
-  }
-
-  /**
-   * The frame: a lacquered tray the chart sits in, and the chip's label. The
-   * tray is a cached painted texture; nothing here draws per frame.
-   */
-  private drawChrome() {
-    const show = this.open && this.roomy
     this.chipBtn.setVisible(this.roomy)
-    this.tray.setVisible(show)
-    if (!this.roomy) return
-    if (show) this.tray.place(this.mapX - INSET, this.mapY - INSET, this.mapW + INSET * 2, this.mapH + INSET * 2)
-    this.chipBtn.setLabel(this.open ? 'Map' : 'Map +')
+    this.tray.setVisible(this.roomy)
+    this.base.setVisible(this.roomy)
+    this.fog.setVisible(this.roomy)
+    this.marks.setVisible(this.roomy)
+    if (this.roomy) this.tray.place(this.mapX - INSET, mapY - INSET, side + INSET * 2, side + INSET * 2)
+    this.hit.setPosition(this.mapX, mapY).setSize(side, side)
+    this.fastT = 0
   }
 
-  // ---- the baked map -----------------------------------------------------
+  // ---- the window ---------------------------------------------------------
 
-  private drawCold() {
-    const g = this.scratch
+  /** Slide the base and the fog to the window round (cx, cy). */
+  private slide(cx: number, cy: number) {
+    const k = this.side / SPAN
+    const x0 = cx - MINI_RADIUS, y0 = cy - MINI_RADIUS
+    const b = windowCrop(x0, y0, SPAN, ATLAS_SCALE, ATLAS_W, ATLAS_H)
+    const bs = ATLAS_SCALE * k
+    this.base.setScale(bs).setCrop(b.x, b.y, b.w, b.h)
+      .setPosition(this.mapX + b.dx * k - b.x * bs, this.mapY + b.dy * k - b.y * bs)
+
+    // the world's fog page (a render texture: Phaser crops it top-down like any other)
+    const fogTex = this.game.textures.get(FOG_KEY)
+    if (this.fog.texture !== fogTex) this.fog.setTexture(FOG_KEY)
+    const f = windowCrop(x0, y0, SPAN, FOG_SCALE, this.fog.frame.width, this.fog.frame.height)
+    const fs = FOG_SCALE * k
+    this.fog.setScale(fs).setCrop(f.x, f.y, f.w, f.h)
+      .setPosition(this.mapX + f.dx * k - f.x * fs, this.mapY + f.dy * k - f.y * fs)
+  }
+
+  /** World (x, y) to panel px about the window round (cx, cy); null outside it. */
+  private toPanel(x: number, y: number, cx: number, cy: number, out: [number, number]) {
+    const dx = x - cx, dy = y - cy
+    if (dx < -MINI_RADIUS || dx > MINI_RADIUS || dy < -MINI_RADIUS || dy > MINI_RADIUS) return false
+    const k = this.side / SPAN
+    out[0] = (dx + MINI_RADIUS) * k
+    out[1] = (dy + MINI_RADIUS) * k
+    return true
+  }
+
+  private drawMarks(cx: number, cy: number) {
+    const t0 = performance.now()
+    const g = this.marks
     const gs = this.game
+    const mem = this.memory
+    const k = this.side / SPAN
+    const p: [number, number] = [0, 0]
     g.clear()
+    this.drawnX = cx
+    this.drawnY = cy
 
-    // wild ground everything sits on, washed in over the paper
-    g.fillStyle(CHART.wild, 1)
-    g.fillRect(0, 0, TEX_W, TEX_H)
-
-    for (const z of ZONES) {
-      const x = z.x / T, y = z.y / T, w = z.w / T, h = z.h / T
-      if (gs.zones.isUnlocked(z.id)) {
-        g.fillStyle(CHART.held, 1)
-        g.fillRect(x, y, w, h)
-        g.lineStyle(1, CHART.lapis, 0.55)
-      } else {
-        // each region keeps its own cast, softened into the paper
-        g.fillStyle(mix(z.tint, PAL.parchmentDark, 0.55), 0.9)
-        g.fillRect(x, y, w, h)
-        g.lineStyle(1, CHART.gilt, 0.5)
-      }
-      g.strokeRect(x, y, w, h)
+    // claim rings for the regions the hall can take now
+    for (const z of REGIONS) {
+      if (gs.regions.claimed(z.id) || gs.buildings.townHallLevel < z.hall) continue
+      const c = gs.regions.claimPoint(z.id)
+      if (!c || !this.toPanel(c.x, c.y, cx, cy, p)) continue
+      const ready = gs.regions.canClaim(z.id).ok
+      g.lineStyle(1.5, ready ? CHART.moss : CHART.gilt, ready ? 1 : 0.75)
+      g.strokeRect(p[0] - 4, p[1] - 4, 8, 8)
     }
 
-    // the rampart ring, and the four gaps the horde funnels through
-    const wr = WALL_RING
-    g.lineStyle(1.5, CHART.ink, 0.75)
-    g.strokeRect(wr.left / T, wr.top / T, (wr.right - wr.left) / T, (wr.bottom - wr.top) / T)
-    g.fillStyle(CHART.wax, 0.9)
-    for (const gate of wr.gates) g.fillRect(gate.x / T - 1.5, gate.y / T - 1.5, 3, 3)
-
-    // structures — claimed territory only, and only where you have actually been
+    // pads in their colours: built ones filled, empty ones hollow
+    const hall = gs.buildings.townHallLevel
     for (const b of gs.buildings.buildings) {
       if (b.key === 'wall' || b.key === 'gate') continue
-      if (!gs.zones.isUnlocked(b.zone)) continue
-      if (!this.exploredAt(b.x, b.y)) continue
-      const x = b.x / T, y = b.y / T
+      if (!this.toPanel(b.x, b.y, cx, cy, p) || !mem.seenAt(b.x, b.y)) continue
+      if (b.key === 'outpost' && b.level > 0 && b.alive) { drawOutpost(g, p[0], p[1], 3.2); continue }
       if (b.level > 0) {
         const colour = b.key === 'townHall' ? PAL.gilt
           : b.def.category === 'defense' ? CHART.lapis
             : b.def.category === 'military' ? PAL.lapis
               : CHART.moss
-        const s = b.key === 'townHall' ? 7 : 4.5
+        const s = b.key === 'townHall' ? 7 : 4.2
         g.fillStyle(CHART.ink, 0.9)
-        g.fillRect(x - s / 2 - 0.8, y - s / 2 - 0.8, s + 1.6, s + 1.6)
+        g.fillRect(p[0] - s / 2 - 0.8, p[1] - s / 2 - 0.8, s + 1.6, s + 1.6)
         g.fillStyle(colour, 1)
-        g.fillRect(x - s / 2, y - s / 2, s, s)
+        g.fillRect(p[0] - s / 2, p[1] - s / 2, s, s)
       } else {
-        // An empty pad: the promise of a building, drawn hollow. One the hall
-        // has not earned yet reads colder, exactly as it does out in the world.
-        const need = Math.max(b.requiresTownHall, b.def.requiresTownHall ?? 0)
-        const gated = need > gs.buildings.townHallLevel
-        g.lineStyle(1, gated ? CHART.ink : CHART.gilt, gated ? 0.3 : 0.7)
-        g.strokeRect(x - 2, y - 2, 4, 4)
+        const gated = Math.max(b.requiresTownHall, b.def.requiresTownHall ?? 0) > hall
+        g.lineStyle(1, gated ? CHART.ink : CHART.gilt, gated ? 0.3 : 0.75)
+        g.strokeRect(p[0] - 2, p[1] - 2, 4, 4)
       }
     }
 
-    for (const rec of gs.camps.camps) {
-      if (!this.exploredAt(rec.spec.x, rec.spec.y)) continue
-      const x = rec.spec.x / T, y = rec.spec.y / T
-      const s = 4
-      if (rec.destroyed) {
-        g.lineStyle(1.2, CHART.ink, 0.6)
-        g.lineBetween(x - s, y - s, x + s, y + s)
-        g.lineBetween(x - s, y + s, x + s, y - s)
-      } else {
-        g.fillStyle(CHART.ink, 0.9)
-        g.fillPoints([
-          { x, y: y - s - 1 }, { x: x + s + 1, y }, { x, y: y + s + 1 }, { x: x - s - 1, y },
-        ], true)
-        g.fillStyle(CHART.wax, 1)
-        g.fillPoints([
-          { x, y: y - s }, { x: x + s, y }, { x, y: y + s }, { x: x - s, y },
-        ], true)
-      }
+    // camps and POIs, once seen; waystones lit or dark
+    for (const spec of CAMPS) {
+      if (!this.toPanel(spec.x, spec.y, cx, cy, p) || !mem.seenAt(spec.x, spec.y)) continue
+      drawCamp(g, p[0], p[1], 3.6, gs.camps.isBurned(spec.id), spec.tier !== 'warcamp')
+    }
+    const ws = gs.waystones
+    for (const poi of POIS) {
+      if (!this.toPanel(poi.x, poi.y, cx, cy, p)) continue
+      const st = poiState(gs, mem, poi)
+      if (st === 'unseen') continue
+      if (poi.kind === 'waystone') drawStone(g, p[0], p[1], 3, ws.isActive(poi.id), ws.here === poi.id)
+      else POI_GLYPH[poi.kind](g, p[0], p[1], st === 'done' ? 2 : 2.8)
     }
 
-    // ---- the shroud ------------------------------------------------------
-    // Uncharted ground is blank vellum, the way it is out in the world: the
-    // chart simply has not been drawn there yet. Merged into runs along each
-    // row, so a map that is mostly unknown costs a couple of rectangles a row
-    // rather than one per cell.
-    g.fillStyle(CHART.uncharted, 1)
-    for (let r = 0; r < ROWS; r++) {
-      let c = 0
-      while (c < COLS) {
-        if (this.explored[r * COLS + c]) { c++; continue }
-        let end = c
-        while (end < COLS && !this.explored[r * COLS + end]) end++
-        g.fillRect(c * 8, r * 8, (end - c) * 8, 8)
-        c = end
-      }
-    }
-
-    this.cold.clear()
-    this.cold.draw([g])
-  }
-
-  // ---- the live layer ----------------------------------------------------
-
-  private drawFast() {
-    const g = this.unitG
-    g.clear()
-    if (!this.open || !this.roomy) return
-
-    const gs = this.game
-    const sx = this.mapW / WORLD.width
-    const sy = this.mapH / WORLD.height
-
-    // Claim rings sit on top of the shroud on purpose. The objective arrow
-    // already flies you to this exact point, so naming it here is not a leak —
-    // and it is the one thing the whole tycoon loop is asking you to walk to.
-    // It is `claimPoint`, never the raw banner anchor: those two differ now, and
-    // the anchor is not somewhere a hero can stand.
-    for (const z of ZONES) {
-      if (gs.zones.isUnlocked(z.id)) continue
-      if (gs.buildings.townHallLevel < z.requiresTownHall) continue
-      const c = gs.zones.claimPoint(z.id)
-      if (!c) continue
-      const ready = gs.zones.canUnlockId(z.id)
-      const colour = ready ? CHART.moss : CHART.gilt
-      g.lineStyle(1.5, colour, ready ? 1 : 0.75)
-      g.strokeEllipse(c.x * sx, c.y * sy, 9, 9, 10)
-      g.fillStyle(colour, ready ? 1 : 0.5)
-      g.fillRect(c.x * sx - 1.4, c.y * sy - 1.4, 2.8, 2.8)
-    }
-
-    // ---- density blips ---------------------------------------------------
-    // One mark per grid cell rather than one per body: at this scale a hundred
-    // enemies fifty pixels apart are the same pixel anyway, and the count is
-    // what actually tells you whether that is a patrol or the night arriving.
-    this.hostiles.fill(0)
+    // bodies: allies blue, enemies red (seen ground only)
+    g.fillStyle(CHART.lapis, 0.9)
+    for (const s of gs.army.soldiers) if (this.toPanel(s.x, s.y, cx, cy, p)) g.fillRect(p[0] - 1.2, p[1] - 1.2, 2.4, 2.4)
+    for (const w of gs.workers.workers) if (this.toPanel(w.x, w.y, cx, cy, p)) g.fillRect(p[0] - 1, p[1] - 1, 2, 2)
+    g.fillStyle(CHART.enemy, 0.95)
     gs.enemies.forEachAlive(e => {
-      if (!this.exploredAt(e.x, e.y)) return
-      this.hostiles[this.cellIndex(e.x, e.y)]++
+      if (this.toPanel(e.x, e.y, cx, cy, p) && mem.seenAt(e.x, e.y)) g.fillRect(p[0] - 1.6, p[1] - 1.6, 3.2, 3.2)
     })
-    this.friends.fill(0)
-    for (const s of gs.army.soldiers) this.friends[this.cellIndex(s.x, s.y)]++
-    for (const w of gs.workers.workers) this.friends[this.cellIndex(w.x, w.y)]++
 
-    g.fillStyle(CHART.lapis, 0.85)
-    this.blips(g, this.friends, sx, sy, 2, 2.6)
-    g.fillStyle(0xc0301c, 0.95)
-    this.blips(g, this.hostiles, sx, sy, 2.4, 4.4)
-
-    // ---- where the night is coming from ----------------------------------
+    // tonight's routes, dotted during the warning and the march
     if (gs.waves.phase !== 'day') {
-      const pulse = 0.55 + Math.sin(gs.now * 0.006) * 0.35
-      g.fillStyle(CHART.wax, pulse)
-      for (const gate of gs.waves.nextGates()) {
-        const x = gate.x * sx, y = gate.y * sy
-        g.fillPoints([
-          { x, y: y - 5 }, { x: x + 4.5, y: y + 4 }, { x: x - 4.5, y: y + 4 },
-        ], true)
+      g.fillStyle(PAL.ember, 0.95)
+      const step = Math.max(1, Math.round(5 / (k * 32))) // a dot every ~5 px; route points are a nav cell apart
+      for (const t of gs.waves.tonight) {
+        const pts = t.route
+        for (let i = 0; i < pts.length; i += step) {
+          if (this.toPanel(pts[i][0], pts[i][1], cx, cy, p)) g.fillRect(p[0] - 1, p[1] - 1, 2, 2)
+        }
       }
     }
 
-    // ---- what is on screen right now -------------------------------------
+    // what is on screen, then the hero (always the centre)
     const view = gs.cameras.main.worldView
-    g.lineStyle(1, CHART.ink, 0.5)
-    g.strokeRect(view.x * sx, view.y * sy, view.width * sx, view.height * sy)
-
-    const p = gs.player
-    if (p.alive) {
-      g.fillStyle(PAL.bone, 1)
-      g.fillRect(p.x * sx - 3.6, p.y * sy - 3.6, 7.2, 7.2)
-      g.fillStyle(CHART.ink, 1)
-      g.fillRect(p.x * sx - 2.8, p.y * sy - 2.8, 5.6, 5.6)
-      g.fillStyle(PAL.lapis, 1)
-      g.fillRect(p.x * sx - 2, p.y * sy - 2, 4, 4)
+    g.lineStyle(1, CHART.ink, 0.45)
+    g.strokeRect((view.x - cx + MINI_RADIUS) * k, (view.y - cy + MINI_RADIUS) * k, view.width * k, view.height * k)
+    const hero = gs.player
+    if (hero.alive) {
+      const hx = (hero.x - cx + MINI_RADIUS) * k, hy = (hero.y - cy + MINI_RADIUS) * k
+      g.fillStyle(PAL.bone, 1).fillRect(hx - 3.6, hy - 3.6, 7.2, 7.2)
+      g.fillStyle(CHART.ink, 1).fillRect(hx - 2.8, hy - 2.8, 5.6, 5.6)
+      g.fillStyle(PAL.lapis, 1).fillRect(hx - 2, hy - 2, 4, 4)
     }
-  }
-
-  /**
-   * Squares, not circles, and that is not a style choice. Phaser keeps a
-   * Graphics as a command list and re-walks it on every frame it renders; a
-   * `fillCircle` is a 32-point path that gets triangulated on each of those
-   * walks, and a hundred of them cost more than everything else this class
-   * does put together. A `fillRect` is one batched quad.
-   */
-  private blips(
-    g: Phaser.GameObjects.Graphics, buckets: Uint16Array,
-    sx: number, sy: number, base: number, grow: number,
-  ) {
-    for (let i = 0; i < buckets.length; i++) {
-      const n = buckets[i]
-      if (n === 0) continue
-      const c = i % COLS
-      const r = (i - c) / COLS
-      const s = base + Math.min(grow, n * 0.7)
-      g.fillRect((c + 0.5) * CELL * sx - s / 2, (r + 0.5) * CELL * sy - s / 2, s, s)
-    }
+    this.drawMs = performance.now() - t0
+    this.worstDrawMs = Math.max(this.worstDrawMs, this.drawMs)
   }
 
   // ---- loop --------------------------------------------------------------
@@ -496,59 +283,51 @@ export class Minimap {
   update(dt: number) {
     const view = screen(this.ui)
     const bands = this.game.uiBands
-    // The HUD moves its own bands about as resource rows are discovered and the
-    // objective row comes and goes, so follow them rather than laying out once.
+    // The HUD moves its own bands as resource rows and the objective come and go.
     if (view.w !== this.W || view.h !== this.H
       || bands.top !== this.lastTop || bands.bottom !== this.lastBottom) {
       this.layout()
     }
-
     this.chipBtn.setLive(!this.blocked && this.roomy)
+
+    // Seen ground is tracked whether or not the panel shows, so the atlas knows it too.
+    const hero = this.game.player
+    if (hero.alive) this.memory.reveal(hero.x, hero.y)
+    this.heartbeat -= dt
+    if (this.heartbeat <= 0) { this.heartbeat = HEARTBEAT; this.sweepClaims() }
     if (!this.roomy) return
 
-    // Fog is tracked whether the panel is open or not, so folding the map away
-    // never costs you the ground you walked while it was shut.
-    const p = this.game.player
-    if (p.alive) {
-      const dx = p.x - this.lastStampX
-      const dy = p.y - this.lastStampY
-      if (dx * dx + dy * dy > (CELL * 0.5) * (CELL * 0.5)) {
-        this.lastStampX = p.x
-        this.lastStampY = p.y
-        this.reveal(p.x, p.y, REVEAL)
-      }
-    }
-
-    if (!this.open) return
-
-    this.heartbeat -= dt
-    if (this.heartbeat <= 0) {
-      this.heartbeat = COLD_HEARTBEAT
-      // Claimed ground is known ground however it got claimed — including the
-      // silent unlocks a load or the debug panel performs, which never reach
-      // the bus. Cells already set are skipped, so after the first pass this is
-      // a read-only sweep.
-      for (const z of ZONES) if (this.game.zones.isUnlocked(z.id)) this.revealZone(z)
-      this.coldDirty = true
-    }
-    this.coldT -= dt
-    if (this.coldDirty && this.coldT <= 0) {
-      this.coldT = 1 / COLD_HZ
-      this.coldDirty = false
-      this.drawCold()
-    }
+    // round the hero; while he is down, round what the camera shows
+    const cam = this.game.cameras.main.worldView
+    const cx = hero.alive ? hero.x : cam.centerX
+    const cy = hero.alive ? hero.y : cam.centerY
+    this.slide(cx, cy)
 
     this.fastT -= dt
     if (this.fastT <= 0) {
       this.fastT = 1 / FAST_HZ
-      this.drawFast()
+      this.drawMarks(cx, cy)
+    }
+    const k = this.side / SPAN
+    this.marks.setPosition(this.mapX + (this.drawnX - cx) * k, this.mapY + (this.drawnY - cy) * k)
+  }
+
+  /** Harness: the panel's rect in CSS px and what the window centres on. */
+  inspect() {
+    return {
+      rect: { x: this.mapX, y: this.mapY, w: this.side, h: this.side },
+      roomy: this.roomy, radius: MINI_RADIUS, drawMs: Math.round(this.drawMs * 100) / 100,
+      worstDrawMs: Math.round(this.worstDrawMs * 100) / 100,
+      seen: this.memory.cells.reduce((a, b) => a + b, 0),
     }
   }
 
   destroy() {
     this.tray.destroy()
-    this.cold.destroy()
-    this.unitG.destroy()
-    this.scratch.destroy()
+    this.base.destroy()
+    this.fog.destroy()
+    this.marks.destroy()
+    this.hit.destroy()
+    this.chipBtn.destroy()
   }
 }

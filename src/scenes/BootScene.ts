@@ -7,6 +7,7 @@ import { IS_TOUCH } from '../core/device'
 import { cssCamera, screen, textStyle } from '../ui/theme'
 import { giltHeading, PlateButton, type Tone } from '../ui/skin'
 import { DUSK, paintTitleBackdrop } from '../ui/titleArt'
+import { GAME_VERSION } from '../config/version'
 
 /**
  * Drop the HTML splash once there is a real frame behind it. Baking a few
@@ -259,6 +260,13 @@ export class BootScene extends Phaser.Scene {
       }),
     ).setOrigin(0.5, tiny ? 1 : compact ? 0.9 : 0.5)
     root.add(help)
+
+    // which build this is, small in the corner, clear of the title block and the help line
+    const edge = tiny ? 8 : 12
+    const version = this.add.text(W - edge, edge, GAME_VERSION, textStyle({
+      voice: 'caps', size: tiny ? 10 : 11, weight: '700', colour: 0xc9b48e, stroke: 3,
+    })).setOrigin(1, 0).setAlpha(0.8)
+    root.add(version)
   }
 
   private showNotice(message: string) {

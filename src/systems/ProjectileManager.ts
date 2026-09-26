@@ -1,6 +1,7 @@
 import type Phaser from 'phaser'
 import { Pool } from '../core/Pool'
-import { PERF, WORLD } from '../config/balance'
+import { PERF } from '../config/balance'
+import { WORLD } from '../config/world'
 import type { Enemy } from '../entities/Enemy'
 import type { Targetable } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'
@@ -60,6 +61,7 @@ export class ProjectileManager {
   constructor(private scene: GameScene) {
     this.pool = new Pool<Projectile>(() => {
       const sprite = scene.add.image(0, 0, 'proj_arrow').setVisible(false)
+      scene.culler?.addMover(sprite) // test scenes have none
       return {
         active: false, faction: 'ally', fromPlayer: false, x: 0, y: 0, vx: 0, vy: 0, damage: 0, crit: false,
         knockback: 0, pierce: 0, splash: 0, life: 0, spin: 0, trail: false, tint: 0xffffff,

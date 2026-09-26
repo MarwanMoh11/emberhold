@@ -45,6 +45,7 @@ export class PickupManager {
   constructor(private scene: GameScene) {
     this.pool = new Pool<Pickup>(() => {
       const sprite = scene.add.image(0, 0, 'res_coins').setVisible(false)
+      scene.culler?.addMover(sprite) // test scenes have none
       return {
         active: false, kind: 'coins', amount: 1, x: 0, y: 0, vx: 0, vy: 0,
         z: 0, vz: 0, life: 0, magnet: false, toDepot: false, magnetSpeed: 0, sprite, spin: 0,

@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { Overlay } from './Overlay'
 import { PAL } from '../config/palette'
-import { QUESTS } from '../config/quests'
+import { ACTS, QUESTS, actOf } from '../config/quests'
 import type { GameScene } from '../scenes/GameScene'
 
 interface Row {
@@ -9,8 +9,12 @@ interface Row {
   note: Phaser.GameObjects.Text
 }
 
+/** The longest act: the log keeps one row per quest of the act you are in. */
+const ROWS = Math.max(...ACTS.map((_, i) => QUESTS.filter(q => actOf(q) === i + 1).length))
+
 /**
- * The whole chain at once: what you did, what you are on, what is left.
+ * The act you are in at once: what you did, what you are on, what is left.
+ * (Campaign 2.0 has 50-odd quests: the whole chain no longer fits a phone.)
  *
  * Only the single live objective was ever visible, which made a twenty-step
  * campaign feel like an endless corridor of one-line errands. One line per
@@ -36,7 +40,7 @@ export class QuestLog extends Overlay {
     this.heading = this.text(26, PAL.uiText, true)
     this.sub = this.text(12, PAL.uiDim)
     this.sub.setFontStyle('italic 500')
-    for (let i = 0; i < QUESTS.length; i++) {
+    for (let i = 0; i < ROWS; i++) {
       this.rows.push({
         title: this.text(12, PAL.uiText, false, 0, 0.5),
         note: this.text(11, PAL.uiDim, true, 1, 0.5),
@@ -50,8 +54,11 @@ export class QuestLog extends Overlay {
   protected layout() {
     if (!this.built) return
     const c = this.compact
+    const q = this.game.quests
+    const act = Math.min(ACTS.length, q.current ? actOf(q.current) : ACTS.length)
+    const list = QUESTS.filter(d => actOf(d) === act)
     const cols = this.W >= 560 ? 2 : 1
-    const perCol = Math.ceil(QUESTS.length / cols)
+    const perCol = Math.ceil(list.length / cols)
 
     const w = Math.min(cols === 2 ? 680 : 420, this.W - 24)
     const headH = c ? 58 : 84
@@ -63,14 +70,15 @@ export class QuestLog extends Overlay {
     const cx = this.W / 2
     this.drawCard(x, y, w, h, PAL.wax)
 
-    const q = this.game.quests
     const view = q.view()
-    this.heading.setText('Quest Log').setPosition(cx, y + (c ? 25 : 36))
+    const a = ACTS[act - 1]
+    const doneHere = list.filter(d => q.done.has(d.id)).length
+    this.heading.setText(`Act ${a.roman} · ${a.name}`).setPosition(cx, y + (c ? 25 : 36))
     this.fitText(this.heading, c ? 22 : 28, w - 44)
     this.sub
       .setText(q.index >= QUESTS.length
         ? `All ${QUESTS.length} done  ·  the nights keep coming`
-        : `${q.index} of ${QUESTS.length} done  ·  ${view?.hint ?? ''}`)
+        : `${doneHere} of ${list.length} done  ·  ${view?.hint ?? ''}`)
       .setPosition(cx, y + (c ? 44 : 60))
     this.fitText(this.sub, c ? 11 : 13, w - 40)
 
@@ -89,14 +97,17 @@ export class QuestLog extends Overlay {
     }
     const INK = 0x2a1b10
     for (let i = 0; i < this.rows.length; i++) {
-      const def = QUESTS[i]
+      const def = list[i]
       const r = this.rows[i]
+      r.title.setVisible(!!def)
+      r.note.setVisible(!!def)
+      if (!def) continue
       const col = Math.floor(i / perCol)
       const bx = x + padX + col * (colW + gap)
       const by = top + (i % perCol) * pitch + pitch / 2
 
       const done = q.done.has(def.id)
-      const active = !done && i === q.index
+      const active = !done && def === q.current
 
       if (active) {
         // a gilt wash behind the line you are on

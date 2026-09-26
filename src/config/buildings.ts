@@ -5,6 +5,8 @@ export type BuildingKey =
   | 'barracks' | 'archeryRange' | 'stable' | 'house' | 'warehouse'
   | 'blacksmith' | 'workshop' | 'healingTent'
   | 'watchtower' | 'cannonTower' | 'wall' | 'gate'
+  | 'outpost' | 'fishery' | 'tradingPost'
+  | 'cottage' | 'granary' | 'mill' | 'market' | 'chapel' | 'watchPost' | 'docks'
 
 export type BuildingCategory = 'core' | 'production' | 'military' | 'support' | 'defense'
 
@@ -45,10 +47,10 @@ const B = (
 export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
   townHall: B('townHall', 'Command Hall', 'HALL', 'core', 92, 78, [
     { cost: {}, hp: 1400, stats: { pop: 4, unlockTier: 1, prod: 0 }, label: 'Ember Tent' },
-    { cost: { coins: 320, wood: 200 }, hp: 2200, stats: { pop: 8, unlockTier: 2, prod: 0.1 }, label: 'Timber Hall' },
-    { cost: { coins: 800, wood: 500, stone: 260 }, hp: 3400, stats: { pop: 12, unlockTier: 3, prod: 0.25 }, label: 'Stone Hall' },
-    { cost: { coins: 1800, wood: 900, stone: 700, metal: 180 }, hp: 5200, stats: { pop: 18, unlockTier: 4, prod: 0.45 }, label: 'Bastion Hall' },
-    { cost: { coins: 4200, stone: 1600, metal: 600, crystal: 40 }, hp: 8000, stats: { pop: 26, unlockTier: 5, prod: 0.7 }, label: 'Citadel' },
+    { cost: { coins: 500, wood: 320 }, hp: 2200, stats: { pop: 8, unlockTier: 2, prod: 0.1 }, label: 'Timber Hall' },
+    { cost: { coins: 1300, wood: 800, stone: 420 }, hp: 3400, stats: { pop: 12, unlockTier: 3, prod: 0.25 }, label: 'Stone Hall' },
+    { cost: { coins: 2900, wood: 1450, stone: 1100, metal: 290 }, hp: 5200, stats: { pop: 18, unlockTier: 4, prod: 0.45 }, label: 'Bastion Hall' },
+    { cost: { coins: 6700, stone: 2600, metal: 960, crystal: 64 }, hp: 8000, stats: { pop: 26, unlockTier: 5, prod: 0.7 }, label: 'Citadel' },
   ], 'Heart of the hold. Upgrading unlocks new structures, territory and population.', { blocking: true }),
 
   // Single level on purpose: the depot is a drop-off, so it must never
@@ -72,6 +74,84 @@ export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
     { cost: { coins: 1200, wood: 800, stone: 320, metal: 80 }, hp: 1300, stats: { workers: 7, rate: 2.5 } },
   ], 'Farmers grow grain. Food recruits soldiers and sustains the hold.',
     { workerSlots: 2, gathers: 'food', requiresTownHall: 1, blocking: true }),
+
+  // A farm on the water (S13): the farm's crew, rates and hp, a cheaper
+  // first level (05 §New buildings). Not blocking: it is a jetty, and its
+  // fishers stand on the bank right beside it.
+  fishery: B('fishery', 'Fishery', 'FISHERY', 'production', 64, 50, [
+    { cost: { coins: 100, wood: 80 }, hp: 420, stats: { workers: 2, rate: 1 }, label: 'Fishing Jetty' },
+    { cost: { coins: 240, wood: 200 }, hp: 640, stats: { workers: 3, rate: 1.4 }, label: 'Net Shed' },
+    { cost: { coins: 560, wood: 420, stone: 140 }, hp: 900, stats: { workers: 5, rate: 1.9 }, label: 'Fish Market' },
+  ], 'Fishers net the shoals off the bank and carry the catch home as food.',
+    { workerSlots: 2, gathers: 'food' }),
+
+  // The only building that makes coins from time (S13), and only on
+  // Saltmere's old quay. `income` is coins a second; BuildingManager.tickTrade
+  // banks it through `tradeIncome()` (the `trade.income` stat, S14).
+  tradingPost: B('tradingPost', 'Trading Post', 'TRADE', 'support', 72, 58, [
+    { cost: { coins: 400, wood: 300, stone: 120 }, hp: 700, stats: { income: 0.6 }, label: 'Trading Post' },
+    { cost: { coins: 900, wood: 500, stone: 300 }, hp: 1000, stats: { income: 1.2 }, label: 'Quay Warehouse' },
+    { cost: { coins: 2000, stone: 700, metal: 200 }, hp: 1400, stats: { income: 2 }, label: 'Merchant House' },
+  ], 'Ships still come if someone keeps the lamp lit: coins every second, day and night.',
+    { blocking: true }),
+
+  // ---- a settled country (S13b, 05 §New building types) -----------------
+  // First-pass numbers; S20 tunes them. None has a crew of its own (docks lend
+  // fisheries one), so density adds buildings, not crowds. Radii and caps that
+  // do not change with the level live in `VILLAGE` (config/balance.ts).
+
+  // `pop` flows through the same bonus as the Longhouse (capped by VILLAGE.cottagePopMax).
+  cottage: B('cottage', 'Cottage', 'COTTAGE', 'support', 40, 34, [
+    { cost: { wood: 40, coins: 20 }, hp: 260, stats: { pop: 2 }, label: 'Cottage' },
+    { cost: { wood: 90, coins: 50, stone: 30 }, hp: 380, stats: { pop: 3 }, label: 'Stone Cottage' },
+  ], 'A one-room home. Cheap, so a village is mostly cottages: raises the population cap.',
+    { blocking: true }),
+
+  // `reach` (straight px) is how near a food hauler must be to unload here;
+  // `haul` is the extra food on each delivery it takes (BuildingManager.dropoffFor, haulMultiplier).
+  granary: B('granary', 'Granary', 'GRANARY', 'support', 46, 40, [
+    { cost: { wood: 80, coins: 40 }, hp: 420, stats: { reach: 900 }, label: 'Granary' },
+    { cost: { wood: 180, coins: 110, stone: 60 }, hp: 620, stats: { reach: 900, haul: 0.1 }, label: 'Tithe Barn' },
+  ], 'Farm and fishery crews nearby unload their food here instead of walking home.',
+    { blocking: true }),
+
+  // `bonus` on the gather of farms and lumber camps within `reach`; the best mill counts (localBonus).
+  mill: B('mill', 'Mill', 'MILL', 'production', 50, 44, [
+    { cost: { wood: 100, coins: 60 }, hp: 460, stats: { bonus: 0.15, reach: 600 }, label: 'Mill' },
+    { cost: { wood: 220, coins: 150, stone: 60 }, hp: 680, stats: { bonus: 0.25, reach: 600 }, label: 'Great Mill' },
+    { cost: { wood: 400, coins: 320, stone: 180 }, hp: 940, stats: { bonus: 0.35, reach: 600 }, label: 'Stone Mill' },
+  ], 'Grinds for the farms and saws for the lumber camps round it: they gather more.',
+    { blocking: true }),
+
+  // `sell` is coins a second while food and wood stand above VILLAGE.market.floor.
+  market: B('market', 'Market', 'MARKET', 'support', 62, 50, [
+    { cost: { coins: 120, wood: 80 }, hp: 480, stats: { sell: 0.2 }, label: 'Market Stalls' },
+    { cost: { coins: 300, wood: 200, stone: 80 }, hp: 700, stats: { sell: 0.4 }, label: 'Market Cross' },
+    { cost: { coins: 700, wood: 400, stone: 250 }, hp: 980, stats: { sell: 0.6 }, label: 'Market Hall' },
+  ], 'Sells the surplus food and wood above a floor for coins. Homes nearby bring more buyers.',
+    { blocking: true }),
+
+  // `mend` hp a second within `radius` (not `heal`: that stat is the infirmary's
+  // settlement-wide aura); `blessing` on the night's reward, capped in VILLAGE.chapel.
+  chapel: B('chapel', 'Chapel', 'CHAPEL', 'support', 50, 46, [
+    { cost: { stone: 120, coins: 60 }, hp: 560, stats: { mend: 2, radius: 280, blessing: 0.1 }, label: 'Chapel' },
+    { cost: { stone: 300, coins: 200, wood: 80 }, hp: 820, stats: { mend: 4, radius: 280, blessing: 0.2 }, label: 'Bell Chapel' },
+  ], 'Mends the hero, soldiers and workers nearby, and blesses the night\'s reward.',
+    { blocking: true }),
+
+  // `light` px of fog cleared; Lv.2 shoots like a Lv.1 watchtower (dmg, rate, range).
+  watchPost: B('watchPost', 'Watch Post', 'WATCH', 'defense', 34, 34, [
+    { cost: { wood: 60 }, hp: 360, stats: { light: 600 }, label: 'Watch Post' },
+    { cost: { wood: 150, coins: 100 }, hp: 600, stats: { light: 900, dmg: 12, rate: 1, range: 250, splash: 0 }, label: 'Watch Tower' },
+  ], 'A lantern on the road in: clears the fog round it, and warns early when the horde comes past.',
+    { blocking: true }),
+
+  // Shore pads only: VILLAGE.docks.slots on fisheries within slotRadius; `bonus`
+  // on a trading post within `reach` (the best docks counts). A jetty, so not blocking.
+  docks: B('docks', 'Docks', 'DOCKS', 'support', 60, 46, [
+    { cost: { wood: 120, coins: 60 }, hp: 480, stats: { bonus: 0.15, reach: 1500 }, label: 'Docks' },
+    { cost: { wood: 260, coins: 160, stone: 80 }, hp: 700, stats: { bonus: 0.25, reach: 1500 }, label: 'Harbour Docks' },
+  ], 'Moorings and a crane: nearby fisheries take one more crew, and a trading post in reach earns more.'),
 
   quarry: B('quarry', 'Stone Quarry', 'QUARRY', 'production', 68, 56, [
     { cost: { coins: 300, wood: 220 }, hp: 520, stats: { workers: 2, rate: 1 } },
@@ -170,6 +250,16 @@ export const BUILDINGS: Record<BuildingKey, BuildingDef> = {
     { cost: { coins: 1200, stone: 400, food: 400 }, hp: 1050, stats: { heal: 32, radius: 320 } },
   ], 'Mends you and any troops standing in its light.',
     { requiresTownHall: 1, blocking: true }),
+
+  // One per region beyond the hold (S11): a drop-off, a waystone, a place to
+  // wake up after a fall, and a lantern the fog gives way to. Its heal aura
+  // (Lv.2) is `OUTPOST.heal` in balance, not a stat here: a `heal` stat would
+  // compete with the infirmary for the settlement-wide bonus.
+  outpost: B('outpost', 'Outpost', 'OUTPOST', 'support', 60, 50, [
+    { cost: { coins: 150, wood: 100 }, hp: 800, stats: { light: 600 }, label: 'Outpost' },
+    { cost: { coins: 300, stone: 150 }, hp: 1200, stats: { light: 600, aura: 1 }, label: 'Fortified Outpost' },
+  ], 'Drop hauls here, travel from its waystone, and wake here after a fall if it is safe.',
+    { blocking: true }),
 
   watchtower: B('watchtower', 'Watchtower', 'TOWER', 'defense', 46, 46, [
     { cost: { wood: 150, coins: 100 }, hp: 600, stats: { dmg: 12, rate: 1, range: 250, splash: 0 } },

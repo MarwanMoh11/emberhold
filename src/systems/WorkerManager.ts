@@ -2,10 +2,13 @@ import { Worker } from '../entities/Worker'
 import { WORKERS, WORKER_FOR, type WorkerKey } from '../config/units'
 import { PAL } from '../config/palette'
 import type { ResourceType } from '../core/types'
-import { WORLD } from '../config/balance'
+import { WORLD } from '../config/world'
+import { walkRadius } from '../world/NavGrid'
+import { pathLength } from '../world/PathFind'
 import { clamp, rr } from '../core/math'
 import type { Building } from '../entities/Building'
 import type { GameScene } from '../scenes/GameScene'
+import type { ResourceNode } from './NodeManager'
 
 /**
  * Workers only bolt from something practically on top of them. A wide radius
@@ -43,8 +46,15 @@ export class WorkerManager {
   workers: Worker[] = []
   private free: Worker[] = []
   totalHired = 0
+  /** walking distance from a camp to a node, per `homeId:nodeId`; Infinity past SEARCH_RADIUS. Emptied when the NavGrid changes. */
+  private reach = new Map<string, number>()
+  private reachVersion = -1
 
   constructor(private scene: GameScene) {}
+
+  /** The Overseer's Lash (S15): crews walk (`worker.speed`) and gather (`worker.gather`) faster. */
+  speedMod(): number { return this.scene.mods?.value('worker.speed', 1) ?? 1 }
+  gatherMod(): number { return this.scene.mods?.value('worker.gather', 1) ?? 1 }
 
   get count() { return this.workers.length }
   get popUsed() {
@@ -153,10 +163,11 @@ export class WorkerManager {
     if (w.def.yield > 0) {
       const rate = (home!.stats.rate ?? 1) * (1 + scene.buildings.bonus.prod) * SHELTER_RATE
       w.gatherT += dt
-      if (w.gatherT >= w.def.gatherTime / rate) {
+      if (w.gatherT >= w.def.gatherTime / (rate * this.gatherMod())) {
         w.gatherT = 0
         const yieldPer = NODE_YIELD[w.carryType] ?? 6
-        const got = Math.max(1, Math.round(yieldPer * (w.def.yield / 6) * rate))
+        const got = Math.max(1, Math.round(yieldPer * (w.def.yield / 6) * rate
+          * scene.buildings.haulMultiplier(home, w.carryType, home!.x, home!.y)))
         scene.res.addStored(w.carryType, got)
         scene.fx.damage(dropX, dropY - 40, got, false, '#9ff07a')
       }
@@ -175,14 +186,14 @@ export class WorkerManager {
       const w = this.workers[i]
       if (!w.alive) { this.releaseHomeSlot(w); this.remove(w); i--; continue }
 
-      // Workers stock their own site rather than trekking to the depot: the
-      // short loop is what makes the settlement look busy instead of empty.
+      // Hauls go to the drop-off (`dropoffFor`, S06); the camp is where the
+      // crew takes cover and works from indoors while the horde is loose.
       const home = scene.buildings.byPad.get(w.homeId)
       const homeUp = !!home && home.level > 0
-      const dropX = homeUp ? home!.x : fallbackX
-      const dropY = homeUp ? home!.y + 26 : fallbackY
+      const campX = homeUp ? home!.x : fallbackX
+      const campY = homeUp ? home!.y + 26 : fallbackY
 
-      if (w.sheltered && this.tickShelter(w, dt, home, dropX, dropY)) continue
+      if (w.sheltered && this.tickShelter(w, dt, home, campX, campY)) continue
 
       scene.allyGrid.insert(w)
 
@@ -192,6 +203,7 @@ export class WorkerManager {
 
       let tx = w.x, ty = w.y
       let moving = true
+      let steered = false
 
       if (w.fleeT > 0) {
         w.fleeT -= dt
@@ -205,7 +217,9 @@ export class WorkerManager {
         const hall = scene.buildings.townHall
         const doorX = homeUp ? home!.x : hall.x + (w.id % 5 - 2) * 26
         const doorY = homeUp ? home!.y + 12 : hall.y + 58
-        tx = doorX; ty = doorY
+        // the door may be a river away now that hauls go to the depot: path to it
+        ;({ x: tx, y: ty } = this.steer(w, doorX, doorY, dt))
+        steered = true
         if (threat) {
           const ax = w.x - threat.x, ay = w.y - threat.y
           const ad = Math.hypot(ax, ay) || 1
@@ -213,7 +227,7 @@ export class WorkerManager {
           ty = w.y + (ay / ad) * 160 * 0.35 + (ty - w.y) * 0.65
         }
         if (Math.hypot(doorX - w.x, doorY - w.y) < 42) {
-          this.enterShelter(w, dropX, dropY)
+          this.enterShelter(w, campX, campY)
           continue
         }
         // Once the danger passes, hand control back to the work loop. Without
@@ -243,8 +257,7 @@ export class WorkerManager {
       } else {
         switch (w.state) {
           case 'seek': {
-            const node = scene.nodes.findFor(w.carryType, w.homeX, w.homeY, SEARCH_RADIUS, w.id)
-              ?? scene.nodes.findAny(w.carryType, w.homeX, w.homeY, SEARCH_RADIUS)
+            const node = this.pickNode(w, w.id) ?? this.pickNode(w, null)
             if (node) {
               node.claimedBy = w.id
               w.node = node
@@ -259,7 +272,7 @@ export class WorkerManager {
           case 'travel': {
             const node = w.node
             if (!node || !node.alive) { w.node = null; w.state = 'seek'; break }
-            tx = node.x; ty = node.y + 12
+            tx = node.gx; ty = node.gy
             if (Math.hypot(tx - w.x, ty - w.y) < 30) { w.state = 'gather'; w.gatherT = 0 }
             break
           }
@@ -278,7 +291,7 @@ export class WorkerManager {
             // camp level and settlement-wide output bonuses both speed the crew up
             const rate = (home && home.level > 0 ? (home.stats.rate ?? 1) : 1)
               * (1 + scene.buildings.bonus.prod)
-            if (w.gatherT >= w.def.gatherTime / rate) {
+            if (w.gatherT >= w.def.gatherTime / (rate * this.gatherMod())) {
               w.gatherT = 0
               const got = scene.nodes.strike(node, node.maxHp / 3)
               w.carrying += Math.max(1, Math.round(got * (w.def.yield / 6) * rate))
@@ -288,7 +301,8 @@ export class WorkerManager {
             break
           }
           case 'carry': {
-            tx = dropX; ty = dropY
+            const drop = scene.buildings.dropoffFor(w.x, w.y, w.carryType)
+            tx = drop.x; ty = drop.y
             if (Math.hypot(tx - w.x, ty - w.y) < 44) w.state = 'deposit'
             break
           }
@@ -300,13 +314,17 @@ export class WorkerManager {
             break
           case 'deposit': {
             moving = false
-            const added = scene.res.addStored(w.carryType, w.carrying)
+            const drop = scene.buildings.dropoffFor(w.x, w.y, w.carryType)
+            // a mill by the camp and a Lv.2 granary at the drop add to the haul (S13b)
+            const haul = Math.round(w.carrying * scene.buildings.haulMultiplier(home, w.carryType, w.x, w.y))
+            const added = scene.res.addStored(w.carryType, haul)
             if (added > 0) {
-              scene.fx.flyResource(w.x, w.y - 18, dropX, dropY - 22, TEX[w.carryType], 0, undefined, 0.8)
-              scene.fx.damage(dropX, dropY - 40, added, false, '#9ff07a')
+              scene.fx.flyResource(w.x, w.y - 18, drop.x, drop.y - 22, TEX[w.carryType], 0, undefined, 0.8)
+              scene.fx.damage(drop.x, drop.y - 40, added, false, '#9ff07a')
               scene.audio.play('deposit', rr(1, 1.25), 0.35)
+              this.delivered++
             } else {
-              scene.fx.popup(dropX, dropY - 48, 'STORE FULL', PAL.danger, 14)
+              scene.fx.popup(drop.x, drop.y - 48, 'STORE FULL', PAL.danger, 14)
             }
             w.carrying = 0
             w.state = 'seek'
@@ -315,16 +333,18 @@ export class WorkerManager {
         }
       }
 
+      // walk the long way round water and cliffs (S06)
+      if (moving && !steered) ({ x: tx, y: ty } = this.steer(w, tx, ty, dt))
       const dx = tx - w.x, dy = ty - w.y
       const d = Math.hypot(dx, dy)
-      const speed = w.def.speed * (w.fleeT > 0 ? 1.6 : 1)
+      const speed = w.def.speed * (w.fleeT > 0 ? 1.6 : 1) * this.speedMod()
       const wantsToMove = moving && d > 5
       if (wantsToMove) {
         const ux = dx / d, uy = dy / d
         let ax = ux, ay = uy
-        // There is no pathfinder here on purpose. Instead: a worker who has
-        // been shoving into something solid for a beat sidesteps along its
-        // face until they slip past. Without it a lumberjack whose tree sits
+        // Paths go round terrain, not buildings: a worker who has been
+        // shoving into something solid for a beat sidesteps along its face
+        // until they slip past. Without it a lumberjack whose tree sits
         // directly behind his own camp walks into the wall forever, and the
         // wood counter quietly stops climbing.
         if (w.detourT > 0) {
@@ -346,8 +366,11 @@ export class WorkerManager {
       }
 
       const prevX = w.x, prevY = w.y
-      w.x = clamp(w.x + w.vx * dt, 20, WORLD.width - 20)
-      w.y = clamp(w.y + w.vy * dt, 20, WORLD.height - 20)
+      // terrain collision (S05); paths keep workers off the banks, the detour below frees any that snag
+      const slow = scene.nav.allySpeedAt(w.x, w.y)
+      const p = scene.nav.slide(w.x, w.y, w.vx * dt * slow, w.vy * dt * slow, walkRadius(w.radius))
+      w.x = clamp(p.x, 20, WORLD.width - 20)
+      w.y = clamp(p.y, 20, WORLD.height - 20)
       scene.buildings.resolveCollision(w)
 
       if (wantsToMove) {
@@ -396,6 +419,71 @@ export class WorkerManager {
     }
   }
 
+  /** Deliveries to a drop-off since boot (harness). */
+  delivered = 0
+
+  /**
+   * The node a worker should walk to: nearest by walking distance from its
+   * camp, within SEARCH_RADIUS. Straight-line candidates come first, and a
+   * candidate is only path-checked while it could still beat the best found
+   * (a path is never shorter than the line). With a null claimer, claimed
+   * nodes count too.
+   */
+  private pickNode(w: Worker, claimer: number | null): ResourceNode | null {
+    const scene = this.scene
+    let best: ResourceNode | null = null, bestLen = Infinity
+    for (const n of scene.nodes.candidates(w.carryType, w.homeX, w.homeY, SEARCH_RADIUS, claimer, w.def.fishes === true)) {
+      if (Math.hypot(n.x - w.homeX, n.y - w.homeY) >= bestLen) break
+      const L = this.reachOf(w, n)
+      if (L < bestLen) { bestLen = L; best = n }
+    }
+    return best
+  }
+
+  /** Walking distance from the worker's camp door to a node, cached per camp and node. */
+  private reachOf(w: Worker, n: ResourceNode): number {
+    const nav = this.scene.nav
+    if (this.reachVersion !== nav.version) { this.reach.clear(); this.reachVersion = nav.version }
+    const k = `${w.homeId}:${n.id}`
+    let L = this.reach.get(k)
+    if (L === undefined) {
+      const p = nav.findPath(w.homeX, w.homeY + 24, n.gx, n.gy, SEARCH_RADIUS)
+      L = p ? pathLength(p) : Infinity
+      if (L > SEARCH_RADIUS) L = Infinity
+      this.reach.set(k, L)
+    }
+    return L
+  }
+
+  /**
+   * Where to steer this frame on the way to (tx, ty). Straight when the
+   * worker can see it; otherwise a queued path, walked waypoint by
+   * waypoint, and asked for again if the worker stops closing on it.
+   */
+  private steer(w: Worker, tx: number, ty: number, dt: number): { x: number; y: number } {
+    const nav = this.scene.nav
+    if (Math.hypot(tx - w.pathTx, ty - w.pathTy) > 48) {
+      w.pathTx = tx; w.pathTy = ty
+      w.follower.clear()
+      w.pathTicket = null
+      w.losT = 0
+    }
+    if (w.pathTicket?.done) { w.follower.set(w.pathTicket.path); w.pathTicket = null }
+    if (w.follower.active) {
+      const s = w.follower.step(w.x, w.y, dt)
+      if (w.follower.stuck > 1.5) { w.follower.clear(); w.losT = 0 }
+      else if (!s.done) return s
+    }
+    if (!w.pathTicket && Math.hypot(tx - w.x, ty - w.y) > 40) {
+      w.losT -= dt
+      if (w.losT <= 0) {
+        w.losT = 0.6
+        if (!nav.paths.segClear(w.x, w.y, tx, ty, walkRadius(w.radius))) w.pathTicket = nav.requestPath(w.x, w.y, tx, ty)
+      }
+    }
+    return { x: tx, y: ty }
+  }
+
   /**
    * What the standing crew earns per second, per resource. Used for the
    * away-from-keyboard catch-up and for sanity-checking the economy.
@@ -408,10 +496,12 @@ export class WorkerManager {
       if (!home || home.level === 0) continue
       const nodeYield = NODE_YIELD[w.carryType] ?? 6
       const rate = (home.stats.rate ?? 1) * prod
+      const mill = this.scene.buildings.localBonus('mill', home.x, home.y)
       const perCycle = nodeYield * (w.def.yield / 6) * rate
-      const cycle = w.def.gatherTime / rate
+      const cycle = w.def.gatherTime / (rate * this.gatherMod())
       // 0.62 accounts for walking between the node and the stockpile
-      const perSec = (perCycle / cycle) * 0.62
+      const perSec = (perCycle / cycle) * 0.62 * (home.key === 'farm' || home.key === 'lumberCamp' ? mill : 1)
+        * this.scene.buildings.yieldMod(home)
       out[w.carryType] = (out[w.carryType] ?? 0) + perSec
     }
     return out

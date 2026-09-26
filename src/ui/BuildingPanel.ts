@@ -1,18 +1,13 @@
 import Phaser from 'phaser'
 import { PAL } from '../config/palette'
-import { short as shortNum } from '../core/math'
 import type { Building } from '../entities/Building'
-import { DPR, wantsTouchTargets } from '../core/device'
+import { DPR } from '../core/device'
 import { screen, setColour, textStyle } from './theme'
-import { PlateButton, SkinBar, SkinPanel } from './skin'
+import { PlateButton, SkinBar } from './skin'
+import { CostChips, DockSheet, StatLine, compactH, type DockBands, type DockRow, type DockTarget } from './dock'
 
-interface Row {
-  icon: Phaser.GameObjects.Image
-  bar: SkinBar
-  label: Phaser.GameObjects.Text
-}
-
-export interface PanelRow { tex: string; have: number; need: number }
+/** `short`: the stores cannot cover what is left of this line (drawn red). */
+export interface PanelRow { tex: string; have: number; need: number; short?: boolean }
 
 /** One unit on a muster line. */
 export interface PanelChip {
@@ -48,111 +43,155 @@ export interface PanelHandlers {
   raze(b: Building, holding: boolean): void
 }
 
-const W = 272
-const ROW_H = 22
+
 /** Barracks has the longest roster. */
 const MAX_CHIPS = 3
+/** The header's primary action: UPGRADE, or the funding bar on a build site. */
+const PRIMARY_W = 118
+
+/** The Game scene, as far as the panel needs it. */
+type Host = Phaser.Scene & { uiBands: DockBands; player: { x: number; y: number } }
 
 /**
- * The world-space card that appears over whatever pad you are standing in.
+ * The card for the pad you are standing in, docked (S09b).
  *
  * Still not a build menu: it never lists things to place, it reports the state
- * of the one site you are physically inside. What it added are the two choices
+ * of the one site you are physically inside. What it adds are the two choices
  * standing there cannot express on its own — which unit this muster line turns
  * out next, and whether the pad should come back down. The deposit itself
  * still happens by standing there.
  *
- * It is a lacquered callout pointing down at the building, the same chrome as
- * the HUD, so it reads as part of the interface rather than part of the world.
+ * It used to float over the building in world space, and on a phone it hid the
+ * building, the hero and the fight. It now draws into a `DockSheet` on the
+ * HUD's scene: collapsed, the title and the one primary action (UPGRADE, or how
+ * much of the site is funded); expanded, the costs, the unit chips, the hint
+ * and the hold-to-demolish bar. `PanelView` is unchanged.
  */
 export class BuildingPanel {
-  private root: Phaser.GameObjects.Container
-  private bg: SkinPanel
-  private title: Phaser.GameObjects.Text
-  private sub: Phaser.GameObjects.Text
-  private hint: Phaser.GameObjects.Text
-  private rows: Row[] = []
+  private sheet: DockSheet | null = null
+  private ui: Phaser.Scene | null = null
   private shown = false
+  private current: Building | null = null
 
-  private btn: PlateButton
-  private btnGlow: Phaser.GameObjects.Image
-
+  private btn!: PlateButton
+  private btnGlow!: Phaser.GameObjects.Image
+  private fund!: SkinBar
+  private fundText!: Phaser.GameObjects.Text
+  private stat!: StatLine
+  private costs!: CostChips
+  private hint!: StatLine
   private chips: PlateButton[] = []
   private chipKeys: string[] = []
+  private chipRow!: DockRow
+  private raze!: SkinBar
+  private razeText!: Phaser.GameObjects.Text
+  private razeZone!: Phaser.GameObjects.Zone
+  private razeRow!: DockRow
+  private razeData: PanelView['demolish']
 
-  private raze: SkinBar
-  private razeText: Phaser.GameObjects.Text
-  private razeZone: Phaser.GameObjects.Zone
+  constructor(private scene: Phaser.Scene, private on: PanelHandlers) {}
 
-  private current: Building | null = null
-  /** Height of the card as last drawn, for the hit test below. */
-  private cardH = 0
-  /** Counter-zoom applied to the card, so hit tests match what is drawn. */
-  private cardScale = 1
+  /**
+   * Build the sheet on the HUD's scene the first time it is wanted, and again
+   * after that scene restarts (a new run relaunches it). Before the HUD is up
+   * there is nothing to draw on, and the card simply waits a frame.
+   */
+  private ensure(): boolean {
+    if (this.sheet && !this.sheet.dead) return true
+    const ui = this.scene.scene.get('UI')
+    if (!ui || !ui.sys.isActive()) return false
+    this.ui = ui
+    const sheet = this.sheet = new DockSheet(ui, (this.scene as Host).uiBands)
 
-  constructor(private scene: Phaser.Scene, private on: PanelHandlers) {
-    this.root = scene.add.container(0, 0).setDepth(900_000).setVisible(false)
-    this.bg = new SkinPanel(scene, 'callout')
-    this.title = scene.add.text(0, 0, '', textStyle({ voice: 'display', size: 19, colour: PAL.bone, shadow: true }))
-      .setOrigin(0.5, 0)
-    this.sub = scene.add.text(0, 0, '', textStyle({ size: 13, weight: '500', colour: PAL.uiDim, align: 'center', wrap: W - 32 }))
-      .setOrigin(0.5, 0)
-    this.hint = scene.add.text(0, 0, '', textStyle({ size: 13, weight: '700', colour: PAL.gold, align: 'center', wrap: W - 32 }))
-      .setOrigin(0.5, 0)
-    this.root.add([this.bg.img, this.title, this.sub, this.hint])
+    // Breathe when the cost is already banked: a soft gilt light behind the
+    // button, rather than redrawing its border every frame.
+    this.btnGlow = ui.add.image(0, 0, 'fx_glow_gold').setBlendMode(Phaser.BlendModes.ADD).setVisible(false)
+    this.btn = new PlateButton(ui, {
+      label: 'Upgrade', tone: 'plain', size: 'compact', icon: 'ico_tower',
+      onClick: () => { if (this.current) this.on.upgrade(this.current) },
+    })
+    this.btn.setVisible(false)
+    this.fund = new SkinBar(ui, PAL.gold)
+    this.fund.setVisible(false)
+    this.fundText = ui.add.text(0, 0, '', textStyle({ voice: 'caps', size: 12, weight: '800', colour: PAL.uiText }))
+      .setOrigin(0.5, 1).setVisible(false)
+    sheet.add([this.btnGlow, ...this.btn.objects(), ...this.fund.objects(), this.fundText])
 
-    for (let i = 0; i < 4; i++) {
-      const icon = scene.add.image(0, 0, 'res_coins').setVisible(false)
-      const bar = new SkinBar(scene, PAL.gold)
-      const label = scene.add.text(0, 0, '', textStyle({ size: 13, weight: '800', colour: PAL.uiText }))
-        .setOrigin(1, 0.5).setVisible(false)
-      this.root.add([...bar.objects(), icon, label])
-      bar.setVisible(false)
-      this.rows.push({ icon, bar, label })
-    }
+    this.stat = new StatLine(ui, { weight: '600' })
+    this.costs = new CostChips(ui)
+    this.hint = new StatLine(ui, { colour: PAL.gold })
+    sheet.add([...this.stat.objects(), ...this.costs.objects(), ...this.hint.objects()])
 
     // The muster line. Tapping a chip only changes who the next recruit will
     // be — it spends nothing — so a mis-tap here costs a tap, not a treasury.
+    this.chips = []
     for (let i = 0; i < MAX_CHIPS; i++) {
-      const chip = new PlateButton(scene, {
-        label: '', tone: 'quiet', size: 13,
+      const chip = new PlateButton(ui, {
+        label: '', tone: 'quiet', size: 'compact',
         onClick: () => {
           const key = this.chipKeys[i]
           if (this.current && key) this.on.pickUnit(this.current, key)
         },
       })
-      this.root.add(chip.objects())
       chip.setVisible(false)
+      sheet.add(chip.objects())
       this.chips.push(chip)
     }
-
-    // Breathe when the cost is already banked: a soft gilt light behind the
-    // button, rather than redrawing its border every frame.
-    this.btnGlow = scene.add.image(0, 0, 'fx_glow_gold').setBlendMode(Phaser.BlendModes.ADD).setVisible(false)
-    this.btn = new PlateButton(scene, {
-      label: 'Upgrade', tone: 'plain', size: 15, icon: 'ico_tower',
-      onClick: () => { if (this.current) this.on.upgrade(this.current) },
-    })
-    this.root.add([this.btnGlow, ...this.btn.objects()])
-    this.btn.setVisible(false)
+    this.chipRow = {
+      measure: () => (this.chipKeys.length ? compactH(screen(ui).w) : 0),
+      place: (x, y, w) => {
+        const n = Math.min(this.chipKeys.length, MAX_CHIPS)
+        const gap = 6
+        const cw = (w - gap * (n - 1)) / n
+        const ch = compactH(screen(ui).w)
+        for (let i = 0; i < n; i++) this.chips[i].place(Math.round(x + i * (cw + gap) + cw / 2), y + ch / 2, Math.floor(cw), ch)
+      },
+      setVisible: v => { for (let i = 0; i < this.chips.length; i++) this.chips[i].setVisible(v && i < this.chipKeys.length) },
+      objects: () => [],
+    }
 
     // Demolish. Every other control on this card is a tap; this one is a hold,
     // its target is exactly the bar with no slop around it, and letting go at
     // any point empties it. Losing a building you spent a night funding must
     // never be one stray thumb away.
-    this.raze = new SkinBar(scene, 0xb03a22, { inset: 3 })
-    this.razeText = scene.add.text(0, 0, '', textStyle({ voice: 'caps', size: 12, weight: '800', colour: PAL.danger, align: 'center' }))
+    this.raze = new SkinBar(ui, 0xb03a22, { inset: 3 })
+    this.raze.setVisible(false)
+    this.razeText = ui.add.text(0, 0, '', textStyle({ voice: 'caps', size: 12, weight: '800', colour: PAL.danger, align: 'center' }))
       .setOrigin(0.5).setVisible(false).setLineSpacing(-1)
-    this.razeZone = scene.add.zone(0, 0, 1, 1).setInteractive({ useHandCursor: true })
+    this.razeZone = ui.add.zone(0, 0, 1, 1).setInteractive({ useHandCursor: true })
     this.razeZone.on('pointerdown', () => { if (this.current) this.on.raze(this.current, true) })
     this.razeZone.on('pointerout', () => this.release())
-    this.root.add([...this.raze.objects(), this.razeText, this.razeZone])
-    this.raze.setVisible(false)
+    sheet.add([...this.raze.objects(), this.razeText, this.razeZone])
+    this.razeRow = {
+      measure: () => (this.razeData ? Math.max(38, compactH(screen(ui).w)) : 0),
+      place: (x, y, w) => {
+        const d = this.razeData
+        if (!d) return
+        const bh = Math.max(38, compactH(screen(ui).w))
+        const holding = d.hold > 0
+        this.raze.place(x, y, w, bh)
+        this.raze.set(Math.min(1, d.hold))
+        // Two lines inside the bar: what the hold does, and what it pays back.
+        this.razeText.setText(`${holding ? 'Keep holding…' : 'Hold to demolish'}\nsalvage  +${d.salvage}`)
+          .setPosition(x + w / 2, y + bh / 2)
+        setColour(this.razeText, holding ? PAL.uiText : PAL.danger)
+        // No slop, unlike UPGRADE: this is the one control where a near miss
+        // must miss, so the zone is exactly the bar and not a pixel more.
+        this.razeZone.setPosition(x + w / 2, y + bh / 2).setSize(w, bh)
+      },
+      setVisible: v => {
+        this.raze.setVisible(v)
+        this.razeText.setVisible(v)
+        if (!v) this.razeZone.setSize(1, 1)
+      },
+      objects: () => [],
+    }
 
     // A finger that slides off the bar, or lifts outside the canvas entirely,
     // still has to count as letting go.
-    scene.input.on('pointerup', this.release, this)
-    scene.input.on('pointerupoutside', this.release, this)
+    ui.input.on('pointerup', this.release, this)
+    ui.input.on('pointerupoutside', this.release, this)
+    return true
   }
 
   private release() {
@@ -164,79 +203,79 @@ export class BuildingPanel {
     this.release()
     this.shown = false
     this.current = null
-    this.btn.setVisible(false)
-    this.razeZone.setSize(1, 1)
-    for (const c of this.chips) c.setVisible(false)
-    this.root.setVisible(false)
+    if (this.sheet && !this.sheet.dead) {
+      this.btn.setVisible(false)
+      this.btnGlow.setVisible(false)
+      this.fund.setVisible(false)
+      this.fundText.setVisible(false)
+      this.razeZone.setSize(1, 1)
+      for (const c of this.chips) c.setVisible(false)
+      this.sheet.hide()
+    }
   }
 
   get isShown() { return this.shown }
 
   /**
-   * Does this world point land on the card? The movement stick asks before it
-   * claims a touch: a thumb that misses UPGRADE should do nothing, not walk
-   * the hero off the pad and cancel the upgrade it was reaching for.
+   * Does this world point land on the sheet? The movement stick asks before it
+   * claims a touch (the HUD scene's own hit test catches the sheet too).
    */
   containsWorldPoint(x: number, y: number) {
-    if (!this.shown) return false
-    const k = this.cardScale
-    return x >= this.root.x - (W / 2) * k && x <= this.root.x + (W / 2) * k
-      && y >= this.root.y && y <= this.root.y + this.cardH * k
+    if (!this.shown || !this.sheet) return false
+    const cam = this.scene.cameras.main
+    const k = cam.zoom / DPR
+    return this.sheet.contains((x - cam.worldView.x) * k, (y - cam.worldView.y) * k)
   }
 
   show(b: Building, v: PanelView) {
-    const appearing = !this.shown
+    if (!this.ensure()) return
+    const sheet = this.sheet!
+    const ui = this.ui!
     this.shown = true
     this.current = b
-    this.root.setVisible(true)
 
-    const fat = wantsTouchTargets(screen(this.scene).w)
+    // What the camera frames beside the sheet: the hero and the building's body.
+    const p = (this.scene as Host).player
+    sheet.focus = { x: (p.x + b.x) / 2, y: (p.y + b.y - b.def.h * 0.5) / 2 }
 
-    this.title.setText(v.title)
-    this.sub.setText(v.sub)
-    setColour(this.hint.setText(v.hint), v.hintBad ? PAL.danger : PAL.gold)
+    const locked = !!v.hintBad && !v.upgrade && b.level === 0
+    const name = v.title.split('  ·  ')[0]
+    const level = locked ? v.hint
+      : b.level === 0 ? 'Build site'
+        : b.isMax ? `Level ${b.level} · fully upgraded` : `Level ${b.level} → ${b.level + 1}`
 
-    const n = Math.min(v.rows.length, this.rows.length)
-    let y = 12
-    this.title.setPosition(0, y)
-    y += Math.max(22, this.title.height) + 2
-    this.sub.setPosition(0, y)
-    y += Math.max(16, this.sub.height) + 8
+    // The primary action: UPGRADE on a standing building, the funding on a site.
+    const funding = b.level === 0 && !locked && v.rows.length > 0
+    const primaryW = v.upgrade || funding ? PRIMARY_W : 0
 
-    const barX = -W / 2 + 40
-    const barW = W - 40 - 18 - 64
-    for (let i = 0; i < this.rows.length; i++) {
-      const r = this.rows[i]
-      if (i >= n) {
-        r.icon.setVisible(false); r.bar.setVisible(false); r.label.setVisible(false)
-        continue
-      }
-      const d = v.rows[i]
-      const cy = y + ROW_H / 2
-      // the interface's own copy of the pickup, painted at 3x for a sharp icon
-      const tex = this.scene.textures.exists(`ui_${d.tex}`) ? `ui_${d.tex}` : d.tex
-      r.icon.setVisible(true).setTexture(tex).setPosition(-W / 2 + 24, cy).setDisplaySize(20, 20)
-      const p = d.need > 0 ? Math.min(1, d.have / d.need) : 1
-      r.bar.setVisible(true).place(barX, cy - 5, barW, 10)
-      r.bar.set(p, p >= 1 ? PAL.good : PAL.gold)
-      setColour(r.label.setVisible(true).setPosition(W / 2 - 16, cy).setText(`${shortNum(d.have)}/${shortNum(d.need)}`),
-        p >= 1 ? PAL.good : PAL.uiText)
-      y += ROW_H
-    }
+    this.stat.set(v.sub, b.level === 0 ? PAL.uiDim : PAL.uiText)
+    this.costs.set(v.rows)
+    this.hint.set(locked ? '' : v.hint, v.hintBad ? PAL.danger : PAL.gold)
+    this.chipKeys = (v.chips ?? []).slice(0, MAX_CHIPS).map(c => c.key)
+    ;(v.chips ?? []).slice(0, MAX_CHIPS).forEach((d, i) => {
+      this.chips[i]
+        .setTone(d.selected ? 'primary' : 'quiet')
+        .setTextColour(d.selected ? undefined : d.locked ? 0x8a7a64 : d.affordable ? PAL.uiText : PAL.uiDim)
+        .setLabel(d.label)
+    })
+    for (let i = this.chipKeys.length; i < this.chips.length; i++) this.chips[i].setVisible(false)
+    this.razeData = v.demolish
+    if (!v.demolish) { this.raze.setVisible(false); this.razeText.setVisible(false); this.razeZone.setSize(1, 1) }
 
-    if (n > 0) y += 6
-    y = this.layoutChips(v.chips ?? [], y, fat)
+    const rows: DockRow[] = []
+    if (v.sub) rows.push(this.stat)
+    if (v.rows.length) rows.push(this.costs)
+    if (this.chipKeys.length) rows.push(this.chipRow)
+    if (!locked && v.hint) rows.push(this.hint)
+    if (v.demolish) rows.push(this.razeRow)
+    // rows left out this frame must not linger from the last one
+    for (const r of [this.stat, this.costs, this.chipRow, this.hint, this.razeRow]) if (!rows.includes(r)) r.setVisible(false)
 
-    this.hint.setPosition(0, y)
-    y += Math.max(16, this.hint.height) + 8
+    sheet.layout({ title: name, level, levelColour: locked ? PAL.danger : undefined, primaryW }, rows)
+    const slot = sheet.primary
+    const cx = slot.x + slot.w / 2, cy = slot.y + slot.h / 2
 
     if (v.upgrade) {
-      // A 30px-tall button is about 5mm on a phone — far under a thumb. Missing
-      // it landed on the card background, which is not a control, so the move
-      // stick popped up instead and the press looked like it did nothing.
-      const bw = fat ? 204 : 156
-      const bh = fat ? 46 : 34
-      const by = y + bh / 2
       // Breathe when the cost is already banked. "I have the wood and nothing
       // is happening" is the single most confusing moment on a build site, and
       // a button that visibly wants pressing answers it without a tutorial.
@@ -244,122 +283,48 @@ export class BuildingPanel {
       this.btn.setVisible(true)
         .setTone(v.upgrade.committed ? 'good' : ready ? 'primary' : 'plain')
         .setLabel(v.upgrade.committed ? 'Upgrading' : 'Upgrade')
-        .place(0, by, bw, bh)
-      this.btnGlow.setVisible(ready).setPosition(0, by).setDisplaySize(bw * 1.5, bh * 2.6)
-      if (ready) this.btnGlow.setAlpha(0.25 + Math.abs(Math.sin(this.scene.time.now * 0.004)) * 0.45)
-      // Local coordinates: the zone is a child of `root`, so setting it to the
-      // container's own world position offset it twice and left the tap target
-      // far from the drawn button. The button simply never worked.
-      // The tap target is deliberately larger than the drawn button: a near
-      // miss should still press it rather than grab the movement stick.
-      const slop = fat ? 22 : 6
-      this.btn.zone.setSize(bw + slop * 2, bh + slop).setPosition(0, by)
-      // Clear of the demolish bar below, so UPGRADE's generous target can
-      // never overlap the one control that must be aimed at exactly.
-      y += bh + slop / 2 + 8
+        .place(cx, cy, slot.w, slot.h)
+      this.btnGlow.setVisible(ready).setPosition(cx, cy).setDisplaySize(slot.w * 1.4, slot.h * 2.2)
+      if (ready) this.btnGlow.setAlpha(0.25 + Math.abs(Math.sin(ui.time.now * 0.004)) * 0.45)
     } else {
       this.btn.setVisible(false)
       this.btnGlow.setVisible(false)
     }
 
-    y = this.layoutRaze(v.demolish, y, fat)
-
-    const h = y + 8
-    this.cardH = h
-    this.bg.place(-W / 2, 0, W, h)
-
-    // Keep the card on screen. It normally floats above the structure, but a
-    // pad near the top or bottom of the frame pushed half the card — UPGRADE
-    // button included — off the edge. Clamp to the playfield *between* the
-    // fixed HUD bands, not to the raw camera edges, or the card lands on top
-    // of the objective banner and neither is readable.
-    const cam = this.scene.cameras.main
-    const view = cam.worldView
-
-    // Everything above is laid out in world units, but the camera zooms — at
-    // 0.72 on a phone a 46-unit button is only 33 real pixels, which is how a
-    // "thumb-sized" target ended up thumb-sized in name only. Counter-scaling
-    // the card by DPR/zoom makes every number here mean CSS pixels, the same
-    // units as the HUD bands it clears.
-    const k = DPR / cam.zoom
-    this.cardScale = k
-    this.root.setScale(k)
-
-    const bands = (this.scene as unknown as { uiBands: { top: number; bottom: number } }).uiBands
-    const topBand = (bands?.top ?? 104) * k
-    const bottomBand = (bands?.bottom ?? 104) * k
-    const sideBand = (W / 2 + 10) * k
-    const cardH = h * k
-    const topY = b.y - b.def.h - 52 * k - cardH
-    const minY = view.y + topBand
-    const maxY = Math.max(minY, view.bottom - bottomBand - cardH)
-    const minX = view.x + sideBand
-    const x = Phaser.Math.Clamp(b.x, minX, Math.max(minX, view.right - sideBand))
-    this.root.setPosition(Math.round(x), Math.round(Phaser.Math.Clamp(topY, minY, maxY)))
-
-    // the card rises into place the first time you step onto a pad
-    if (appearing) {
-      this.root.setAlpha(0)
-      this.scene.tweens.killTweensOf(this.root)
-      this.scene.tweens.add({ targets: this.root, alpha: 1, duration: 140, ease: 'Sine.easeOut' })
+    if (funding) {
+      let have = 0, need = 0
+      for (const r of v.rows) { have += Math.min(r.have, r.need); need += r.need }
+      const f = need > 0 ? have / need : 1
+      this.fund.setVisible(true).place(slot.x, cy + 2, slot.w, 10)
+      this.fund.set(f, f >= 1 ? PAL.good : PAL.gold)
+      this.fundText.setVisible(true).setText(`Funded ${Math.floor(f * 100)}%`).setPosition(cx, cy - 1)
+    } else {
+      this.fund.setVisible(false)
+      this.fundText.setVisible(false)
     }
   }
 
-  /** A row of unit plates: who this muster line turns out next. */
-  private layoutChips(chips: PanelChip[], y: number, fat: boolean): number {
-    this.chipKeys = chips.map(c => c.key)
-    const n = Math.min(chips.length, MAX_CHIPS)
-    const inner = W - 28
-    const gap = 6
-    const cw = n > 0 ? (inner - gap * (n - 1)) / n : 0
-    const ch = fat ? 38 : 30
-
-    for (let i = 0; i < this.chips.length; i++) {
-      const c = this.chips[i]
-      if (i >= n) {
-        c.setVisible(false)
-        continue
-      }
-      const d = chips[i]
-      const cx = -inner / 2 + i * (cw + gap) + cw / 2
-      c.setVisible(true)
-        .setTone(d.selected ? 'primary' : 'quiet')
-        .setTextColour(d.selected ? undefined : d.locked ? 0x8a7a64 : d.affordable ? PAL.uiText : PAL.uiDim)
-        .setLabel(d.label)
-        .place(cx, y + ch / 2, cw, ch)
+  /** For the harness: the sheet, its tappable targets and the fonts it draws. */
+  inspect(): { rect: { x: number; y: number; w: number; h: number }; collapsed: boolean; side: string; targets: DockTarget[]; fonts: number[] } | null {
+    const s = this.sheet
+    if (!this.shown || !s || s.dead) return null
+    const t: DockTarget[] = [...s.targets()]
+    const zoneOf = (name: string, z: Phaser.GameObjects.Zone) => {
+      if (z.width > 1) t.push({ name, x: z.x - z.width / 2, y: z.y - z.height / 2, w: z.width, h: z.height })
     }
-    return n > 0 ? y + ch + 8 : y
+    if (this.btn.label.visible) zoneOf('upgrade', this.btn.zone)
+    this.chips.forEach((c, i) => { if (c.label.visible) zoneOf(`unit:${this.chipKeys[i]}`, c.zone) })
+    if (this.raze.well.img.visible) zoneOf('demolish', this.razeZone)
+    return { rect: { ...s.rect }, collapsed: s.collapsed, side: s.side, targets: t, fonts: s.fonts() }
   }
 
-  /** Hold-to-demolish: a bar that fills while pressed, and does nothing until it is full. */
-  private layoutRaze(d: PanelView['demolish'], y: number, fat: boolean): number {
-    if (!d) {
-      this.raze.setVisible(false)
-      this.razeText.setVisible(false)
-      this.razeZone.setSize(1, 1)
-      return y
-    }
-    const bw = W - 48
-    // Two lines inside the bar: what the hold does, and what it pays back.
-    const bh = fat ? 42 : 36
-    const by = y + bh / 2
-    const holding = d.hold > 0
-
-    this.raze.setVisible(true).place(-bw / 2, y, bw, bh)
-    this.raze.set(Math.min(1, d.hold))
-    this.razeText.setVisible(true)
-      .setText(`${holding ? 'Keep holding…' : 'Hold to demolish'}\nsalvage  +${d.salvage}`)
-      .setPosition(0, by).setFontSize(fat ? 13 : 12)
-    setColour(this.razeText, holding ? PAL.uiText : PAL.danger)
-    // No slop, unlike UPGRADE: this is the one control where a near miss must
-    // miss, so the zone is exactly the bar and not a pixel more.
-    this.razeZone.setSize(bw, bh).setPosition(0, by)
-    return y + bh + 6
-  }
+  /** The sheet's chevron, for the harness. */
+  toggle() { this.sheet?.toggle() }
 
   destroy() {
-    this.scene.input.off('pointerup', this.release, this)
-    this.scene.input.off('pointerupoutside', this.release, this)
-    this.root.destroy()
+    this.ui?.input?.off('pointerup', this.release, this)
+    this.ui?.input?.off('pointerupoutside', this.release, this)
+    this.sheet?.destroy()
+    this.sheet = null
   }
 }

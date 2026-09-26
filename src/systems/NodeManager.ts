@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
-import { NODE_CLUSTERS, NODE_DEFS, type ZoneId } from '../config/map'
+import { NODE_CLUSTERS, NODE_DEFS, PADS, raster, type RegionId } from '../config/world'
+import { placeFish } from '../world/fish'
 import type { ResourceType } from '../core/types'
 import { Grid } from '../core/Grid'
 import { rnd, rr, srand, ri } from '../core/math'
@@ -8,22 +9,27 @@ import type { GameScene } from '../scenes/GameScene'
 
 export interface ResourceNode {
   id: number
-  type: 'tree' | 'rock' | 'ore' | 'crystal' | 'crop'
+  type: NodeKind
   resource: ResourceType
   x: number
   y: number
+  /** where a worker stands to work it: under it on land, on the bank for fish (S13) */
+  gx: number
+  gy: number
   hp: number
   maxHp: number
   yield: number
   respawnIn: number
   alive: boolean
-  zone: ZoneId
+  region: RegionId
   radius: number
   sprite: Phaser.GameObjects.Image
   /** claimed by a worker so several don't pile onto one tree */
   claimedBy: number
   shakeT: number
 }
+
+export type NodeKind = 'tree' | 'rock' | 'ore' | 'crystal' | 'crop' | 'fish'
 
 const CROP_DEF = { resource: 'food' as const, hp: 45, yield: 6, respawn: 6, radius: 16 }
 
@@ -42,39 +48,58 @@ export class NodeManager {
   build() {
     srand(20260917)
     for (const c of NODE_CLUSTERS) {
+      if (c.type === 'fish') continue
       for (let i = 0; i < c.count; i++) {
         const a = rnd() * Math.PI * 2
         const r = Math.sqrt(rnd()) * c.radius
-        this.add(c.type, c.x + Math.cos(a) * r, c.y + Math.sin(a) * r * 0.78, c.zone)
+        this.add(c.type, c.x + Math.cos(a) * r, c.y + Math.sin(a) * r * 0.78, c.region)
       }
+    }
+    // Fish last, on their own seed, so the land fields keep the positions
+    // they had before S13. Each field's crew fishes from its fishery's bank.
+    srand(20260925)
+    const r = raster()
+    const fisheries = PADS.filter(p => p.key === 'fishery')
+    for (const c of NODE_CLUSTERS) {
+      if (c.type !== 'fish') continue
+      let pad = null as (typeof fisheries)[number] | null
+      for (const p of fisheries) {
+        if (!pad || Math.hypot(p.x - c.x, p.y - c.y) < Math.hypot(pad.x - c.x, pad.y - c.y)) pad = p
+      }
+      for (const f of placeFish(r, c, pad, rnd)) this.add('fish', f.x, f.y, c.region, f.gx, f.gy)
     }
   }
 
-  add(type: ResourceNode['type'], x: number, y: number, zone: ZoneId): ResourceNode {
+  add(type: NodeKind, x: number, y: number, region: RegionId, gx = x, gy = y + 12): ResourceNode {
     const d = type === 'crop' ? CROP_DEF : NODE_DEFS[type]
     const tex = type === 'tree' ? `tree${ri(0, 2)}`
       : type === 'rock' ? `rock${ri(0, 1)}`
       : type === 'ore' ? 'ore0'
       : type === 'crystal' ? 'crystal0'
+      : type === 'fish' ? `fish${ri(0, 1)}`
       : 'crop'
     const sprite = this.scene.add.image(x, y, tex)
     sprite.setOrigin(0.5, 1 - 8 / sprite.height)
+    // a shoal leaps toward the bank its crew stands on
+    if (type === 'fish') sprite.setFlipX(gx < x)
     sprite.setDepth(y)
+    // regrowth tweens scale from 0.3 to 1, so the full size bounds it
+    this.scene.culler.add(sprite, x, y - sprite.height / 2, Math.max(sprite.width, sprite.height))
     const node: ResourceNode = {
-      id: this.nextNodeId++, type, resource: d.resource, x, y,
+      id: this.nextNodeId++, type, resource: d.resource, x, y, gx, gy,
       hp: d.hp, maxHp: d.hp, yield: d.yield, respawnIn: 0, alive: true,
-      zone, radius: d.radius, sprite, claimedBy: 0, shakeT: 0,
+      region, radius: d.radius, sprite, claimedBy: 0, shakeT: 0,
     }
     this.nodes.push(node)
     return node
   }
 
   /** Farm fields: crops laid out around the farm so farmers have work on site. */
-  addField(x: number, y: number, zone: ZoneId, count = 6) {
+  addField(x: number, y: number, region: RegionId, count = 6) {
     const made: ResourceNode[] = []
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2
-      made.push(this.add('crop', x + Math.cos(a) * 62, y + Math.sin(a) * 44 + 12, zone))
+      made.push(this.add('crop', x + Math.cos(a) * 62, y + Math.sin(a) * 44 + 12, region))
     }
     return made
   }
@@ -90,7 +115,7 @@ export class NodeManager {
       node.alive = false
       node.respawnIn = d.respawn
       node.claimedBy = 0
-      this.scene.fx.deathBurst(node.x, node.y - 16, node.type === 'tree' ? 0x4a8f45 : 0x9aa4ad, 1.2)
+      this.scene.fx.deathBurst(node.x, node.y - 16, node.type === 'tree' ? 0x4a8f45 : node.type === 'fish' ? 0x9ccbe0 : 0x9aa4ad, 1.2)
       if (node.type === 'tree') {
         node.sprite.setTexture('stump')
         node.sprite.setOrigin(0.5, 1 - 8 / node.sprite.height)
@@ -137,22 +162,29 @@ export class NodeManager {
     return this.grid.nearest(x, y, radius, n =>
       n.alive && n.resource === resource &&
       (n.claimedBy === 0 || n.claimedBy === claimer) &&
-      this.scene.zones.isUnlocked(n.zone))
+      this.scene.regions.claimed(n.region))
   }
 
-  /** Fallback when every nearby node is already claimed — crews share rather
-   *  than stand idle, so the income counter never stalls. */
-  findAny(resource: ResourceType, x: number, y: number, radius: number): ResourceNode | null {
-    return this.grid.nearest(x, y, radius, n =>
-      n.alive && n.resource === resource && this.scene.zones.isUnlocked(n.zone))
+  /**
+   * Live nodes of a resource within `radius` (straight line) in claimed
+   * regions, nearest first. With a `claimer`, only nodes free or already its
+   * own; with null, any (crews share rather than stand idle). `fish` picks
+   * shoals only (a fishery's crew) or everything but shoals (the rest).
+   */
+  candidates(resource: ResourceType, x: number, y: number, radius: number, claimer: number | null, fish = false): ResourceNode[] {
+    const out = this.grid.query(x, y, radius, []).filter(n =>
+      n.resource === resource && (n.type === 'fish') === fish &&
+      (claimer === null || n.claimedBy === 0 || n.claimedBy === claimer) &&
+      this.scene.regions.claimed(n.region))
+    return out.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))
   }
 
   /** Hero auto-harvest: anything the player brushes against. */
   nearestInRange(x: number, y: number, radius: number): ResourceNode | null {
-    return this.grid.nearest(x, y, radius, n => n.alive && this.scene.zones.isUnlocked(n.zone))
+    return this.grid.nearest(x, y, radius, n => n.alive && this.scene.regions.claimed(n.region))
   }
 
-  countAlive(type: ResourceNode['type']) {
+  countAlive(type: NodeKind) {
     let c = 0
     for (const n of this.nodes) if (n.alive && n.type === type) c++
     return c

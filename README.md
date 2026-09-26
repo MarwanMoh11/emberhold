@@ -27,7 +27,8 @@ Then open <http://localhost:5180>.
 | Hire, recruit | stand on the camp or barracks |
 | Abilities | `SPACE`, `Q`, `E`, `F`, `G`, ultimate on `R` |
 | Army follow / hold | `H`, or the stance button under the health bar |
-| Minimap | `M`, or the MAP chip under the stance button |
+| Atlas | `M`, or the MAP chip on the minimap: the whole frontier as you have explored it |
+| Travel | walk onto a lit waystone (every outpost has one), or pick a lit stone in the atlas |
 | Pause | `ESC` or `P`, or PAUSE under the health bar |
 | Debug panel | `F2` |
 
@@ -47,10 +48,25 @@ The loop: sweep up coins and wood by hand → walk the load to the depot or a
 build site → raise a camp → the crew there works on its own → spend the income
 on soldiers, towers and walls → survive the night → claim the next territory.
 
-The 21-objective campaign culminates at Ashgate Fortress. Destroying it wakes
-the Cinder Regent, whose ground warnings mark the fire attacks before they
-land. The final fight's remaining health is saved, and endless nights continue
-after the campaign victory.
+The campaign runs five acts and 53 quests across the frontier. Burning Ashgate
+Fortress puts out the fire on the Regent's Causeway; cross it to the island and
+the Cinder Regent rises, her ground warnings marking the fire attacks before
+they land. The final fight's remaining health is saved, and endless nights
+continue after the campaign victory.
+
+## The frontier
+
+![The frontier](docs/world/map.svg)
+
+A 10240×9216 map of 17 regions. Rivers and cliffs open only at named crossings
+(bridges, fords, stairs and gates), the horde marches on the hold along
+approaches from its warcamps, and each night the fronts that come are named
+at dusk. Claim a region at its border stone once the hall is tall enough;
+burn its camps; raise outposts, whose waystones you can travel between; fish,
+trade and settle villages; and find about 60 points of interest: caches, lore,
+shrines, barrows with relics, survivors. The map above is drawn from
+[`src/config/world/blueprint.ts`](src/config/world/blueprint.ts) by
+`npm run world:map`; how it was built is in [docs/world/](docs/world/README.md).
 
 Two rules do most of the work:
 

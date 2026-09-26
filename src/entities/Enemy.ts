@@ -2,6 +2,8 @@ import Phaser from 'phaser'
 import type { EnemyDef, EnemyKey } from '../config/enemies'
 import type { Targetable } from '../core/types'
 import { nextId } from '../core/ids'
+import type { FieldTarget } from '../world/NavGrid'
+import type { KitState } from '../systems/bosses'
 
 export type EnemyState = 'move' | 'attack' | 'stun' | 'dead'
 
@@ -10,6 +12,10 @@ export type EnemyState = 'move' | 'attack' | 'stun' | 'dead'
  * detection all run through the spatial grid, which is what keeps several
  * hundred of these cheap.
  */
+/** The camp a patrol belongs to (S10). */
+import type { PathTicket } from '../world/PathFind'
+export interface CampHome { id: string; x: number; y: number; leash: number; siege: number }
+
 export class Enemy implements Targetable {
   active = false
   readonly id = nextId()
@@ -38,6 +44,8 @@ export class Enemy implements Targetable {
   retargetIn = 0
   /** true = smashes walls, false = tries to flow toward a gate */
   sapper = false
+  /** the straight line to the target is clear of water, cliffs and walls; else follow the hall's flow field (S05) */
+  los = false
 
   flashT = 0
   burnT = 0
@@ -47,12 +55,18 @@ export class Enemy implements Targetable {
   auraDamage = 1
   auraSpeed = 1
   auraT = 0
+  /** S16: an ash priest's heal (hp/s) and the buffed tint; `auraFrame` marks this frame's merge */
+  auraHeal = 0
+  auraTint = 0xd0a8ff
+  auraFrame = -1
 
   bossPhase = 0
   bossTimer = 0
   telegraphT = 0
   chargeT = 0
-  bossAttack: 'slam' | 'charge' | 'shockwave' | 'cinderVolley' | 'cinderNova' | null = null
+  bossAttack: 'slam' | 'charge' | 'shockwave' | 'cinderVolley' | 'cinderNova' | 'cleave' | 'rootLash' | 'whipcrack' | 'bash' | null = null
+  /** S17: a stronghold boss's kit state (systems/bosses.ts), made on its first update */
+  kit: KitState | null = null
   chargeVX = 0
   chargeVY = 0
   chargeHits = new Set<number>()
@@ -63,11 +77,36 @@ export class Enemy implements Targetable {
   bobSeed = 0
   /** true when this one belongs to the current night's wave */
   fromWave = false
+  /**
+   * On a night march (S09): MARCH_SPEED, following `route`, deaf to aggro.
+   * Cleared by a hit or by the first claimed cell.
+   */
+  marching = false
+  /** the approach it came by, for the arrival log; null for camp patrols and ring spawns */
+  approach: string | null = null
+  /** fields to follow in order (each via crossing, then the hall) until claimed ground; null after */
+  route: FieldTarget[] | null = null
+  /** index into `route` */
+  leg = 0
+  /** a camp patrol's (or guard's) camp: it roams within `leash` and besieges within `siege` (S10); null otherwise */
+  home: CampHome | null = null
+  /** heading back to `home` after straying past the leash */
+  returning = false
+  /** where an idle patrol is strolling to, and how long before it picks another spot */
+  wanderX = 0; wanderY = 0; wanderT = 0
+  /** a camp's guard (its boss or a brazier): a failed night's sweep leaves it standing */
+  guard = false
+  /** takes no damage (a stronghold while its boss lives, the fortress while a brazier burns) */
+  shielded = false
+  /** a patrol's path round what blocks its straight line (S06's queue), where it was aimed, and the next waypoint */
+  path: PathTicket | null = null
+  pathX = 0; pathY = 0; pathI = 0
 
   sprite!: Phaser.GameObjects.Image
 
   constructor(scene: Phaser.Scene) {
     this.sprite = scene.add.image(0, 0, 'enm_grunt').setVisible(false)
+    ;(scene as any).culler?.addMover(this.sprite)
   }
 
   spawn(def: EnemyDef, x: number, y: number, hpMult: number, dmgMult: number) {
@@ -88,6 +127,7 @@ export class Enemy implements Targetable {
     this.state = 'move'
     this.stunT = 0
     this.target = null
+    this.los = false
     this.retargetIn = Math.random() * 0.3
     this.sapper = def.prefers === 'structures' || Math.random() < 0.42
     this.flashT = 0
@@ -96,17 +136,31 @@ export class Enemy implements Targetable {
     this.auraDamage = 1
     this.auraSpeed = 1
     this.auraT = 0
+    this.auraHeal = 0
+    this.auraTint = 0xd0a8ff
+    this.auraFrame = -1
     this.bossPhase = 0
     this.bossTimer = def.boss ? 4 : 0
     this.telegraphT = 0
     this.chargeT = 0
     this.bossAttack = null
+    this.kit = null
     this.chargeVX = this.chargeVY = 0
     this.chargeHits.clear()
     this.bossAimX = this.bossAimY = 0
     this.spawnT = 0.35
     this.bobSeed = Math.random() * 10
     this.fromWave = false
+    this.marching = false
+    this.approach = null
+    this.route = null
+    this.leg = 0
+    this.home = null
+    this.returning = false
+    this.wanderT = 0
+    this.guard = false
+    this.shielded = false
+    this.path = null
 
     const tex = `enm_${def.key}`
     this.sprite.setTexture(tex)
@@ -118,7 +172,8 @@ export class Enemy implements Targetable {
   }
 
   applyDamage(amount: number, srcX: number, srcY: number, knockback = 0): boolean {
-    if (!this.alive) return false
+    if (!this.alive || this.shielded) return false
+    this.marching = false
     this.hp -= amount
     this.flashT = 0.09
     if (knockback > 0) {

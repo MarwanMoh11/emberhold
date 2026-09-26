@@ -11,7 +11,7 @@ import { bake, css, fill, form, glow, line, lightOf, mix, P, Rng, rimLight, shad
 
 const FOOT = 8
 
-function groundShadow(x: Ctx, cx: number, by: number, rx: number, ry: number, a = 0.28) {
+export function groundShadow(x: Ctx, cx: number, by: number, rx: number, ry: number, a = 0.28) {
   const g = x.createRadialGradient(cx, by, 0, cx, by, rx)
   g.addColorStop(0, css(0x1a1208, a))
   g.addColorStop(0.7, css(0x1a1208, a * 0.6))
@@ -25,7 +25,7 @@ function groundShadow(x: Ctx, cx: number, by: number, rx: number, ry: number, a 
 
 // ---- trees ----------------------------------------------------------------
 
-function trunk(x: Ctx, cx: number, by: number, w: number, h: number, c = 0x6e4a2c) {
+export function trunk(x: Ctx, cx: number, by: number, w: number, h: number, c = 0x6e4a2c) {
   form(x, x2 => {
     x2.moveTo(cx - w * 0.9, by)
     x2.quadraticCurveTo(cx - w * 0.5, by - h * 0.15, cx - w * 0.5, by - h)
@@ -61,7 +61,7 @@ function oak(x: Ctx, cx: number, by: number, base: number, r: Rng) {
   ], base, r)
 }
 
-function pine(x: Ctx, cx: number, by: number, base: number) {
+export function pine(x: Ctx, cx: number, by: number, base: number) {
   trunk(x, cx, by, 4, 16, 0x5e3e26)
   const tiers = [[by - 12, 22, 22], [by - 28, 18, 20], [by - 42, 14, 18], [by - 54, 9, 15]]
   for (const [ty, hw, th] of tiers) {
@@ -87,7 +87,7 @@ function birch(x: Ctx, cx: number, by: number, base: number, r: Rng) {
 
 // ---- rocks and seams --------------------------------------------------------
 
-function boulder(x: Ctx, cx: number, by: number, s: number, base: number, r: Rng, moss = false) {
+export function boulder(x: Ctx, cx: number, by: number, s: number, base: number, r: Rng, moss = false) {
   const pts = [
     [cx - 22 * s, by], [cx - 21 * s, by - 16 * s], [cx - 10 * s, by - 29 * s], [cx + 6 * s, by - 31 * s],
     [cx + 19 * s, by - 20 * s], [cx + 23 * s, by - 6 * s], [cx + 18 * s, by],
@@ -256,6 +256,46 @@ export function buildPropTextures(scene: Phaser.Scene) {
     })
   }
 
+  // ---- a shoal (S13): rings on the water, one fish leaping or finning ------
+  {
+    const w = 46, h = 42, cx = w / 2, by = h - FOOT
+    const SILVER = 0xa9c0cc, RING = 0xe8f4f8
+    const rings = (x: Ctx, rx: number, n: number) => {
+      fill(x, P.ellipse(cx, by - 1, rx + 2, (rx + 2) * 0.3), 0x1c3a4a, 0.22)
+      for (let i = 0; i < n; i++) {
+        const k = 1 - i * 0.3
+        line(x, P.ellipse(cx, by - 1, rx * k, rx * k * 0.3), 1.1, RING, 0.75 - i * 0.15)
+      }
+    }
+    bake(scene, 'fish0', w, h, {
+      under: x => rings(x, 18, 3),
+      body: x => {
+        // leaping up and away from the bank: head up-left, tail by the ring
+        const fx = cx - 2, fy = by - 15, rot = 0.7, ax = Math.cos(rot), ay = Math.sin(rot)
+        const tx = fx + ax * 10, ty = fy + ay * 10
+        form(x, P.poly([[tx, ty], [tx + 7, ty - 1], [tx + 4, ty + 3], [tx + 3, ty + 8]]), 0x7a98a8, { rim: 0.5, core: 1 })
+        form(x, P.ellipse(fx, fy, 10.5, 4.2, rot), SILVER, { rim: 1, core: 2.4, light: 0xffffff, dark: 0x4e6a7a })
+        form(x, P.poly([[fx - 2, fy - 4], [fx + 3, fy - 8], [fx + 5, fy - 2]]), 0x7a98a8, { rim: 0.4, core: 0.8 })
+        line(x, x2 => { x2.moveTo(fx - ax * 7 + 1, fy - ay * 7 + 3); x2.quadraticCurveTo(fx + 1, fy + 4, fx + ax * 7, fy + ay * 7 + 1) }, 0.9, 0xf2f6f0, 0.8)
+        fill(x, P.circle(fx - ax * 7 + 1.2, fy - ay * 7 + 0.6, 1.1), INK)
+        for (const [dx, dy, r] of [[8, -4, 1.4], [12, -9, 1], [3, -2, 1.1], [-6, -3, 0.9]]) fill(x, P.circle(cx + dx, by + dy, r), RING)
+      },
+      outline: 1.2,
+      grain: 0.06,
+    })
+    bake(scene, 'fish1', w, h, {
+      under: x => rings(x, 15, 2),
+      body: x => {
+        // a back and a tail breaking the surface
+        form(x, P.poly([[cx - 8, by - 2], [cx - 3, by - 11], [cx + 1, by - 2]]), 0x6a8898, { rim: 0.5, core: 1.2, light: 0xdfeef4 })
+        form(x, P.poly([[cx + 6, by - 2], [cx + 7, by - 6], [cx + 4, by - 12], [cx + 9, by - 8], [cx + 13, by - 12], [cx + 11, by - 5], [cx + 11, by - 2]]), 0x7a98a8, { rim: 0.5, core: 1 })
+        for (const [dx, dy, r] of [[-11, -5, 1], [15, -6, 1.2], [2, -8, 0.9]]) fill(x, P.circle(cx + dx, by + dy, r), RING)
+      },
+      outline: 1.2,
+      grain: 0.06,
+    })
+  }
+
   // ---- resource pickups ----------------------------------------------------
   const pickup = (key: string, colour: number, shape: PickupShape) => {
     const S = 24, c = S / 2
@@ -363,6 +403,45 @@ export function buildPropTextures(scene: Phaser.Scene) {
       },
       outline: 2.4,
       grain: 0.14,
+    })
+  }
+
+  // ---- the fortress's warding brazier (S10): a stone drum, an iron bowl, a tall fire
+  {
+    const w = 72, h = 112, cx = w / 2, by = h - 8
+    bake(scene, 'enm_brazier', w, h, {
+      under: x => groundShadow(x, cx, by, 26, 8, 0.4),
+      body: x => {
+        form(x, P.round(cx - 18, by - 30, 36, 30, 4), 0x4a4440, { rim: 1.2, core: 6, hatch: 0.25 })
+        for (const sy of [by - 21, by - 11]) line(x, x2 => { x2.moveTo(cx - 17, sy); x2.lineTo(cx + 17, sy) }, 1, 0x2e2a28, 0.8)
+        form(x, P.poly([[cx - 24, by - 46], [cx + 24, by - 46], [cx + 15, by - 30], [cx - 15, by - 30]]), 0x2e2a2c, { rim: 1.2, core: 3 })
+        for (const s of [-1, 1]) {
+          form(x, P.poly([[cx + s * 24, by - 46], [cx + s * 30, by - 54], [cx + s * 26, by - 44]]), 0x2e2a2c, { rim: 0.6, core: 1 })
+        }
+      },
+      over: x => {
+        glow(x, cx, by - 62, 30, 0xff7a2e, 0.9)
+        fill(x, P.blob([[cx - 20, by - 46], [cx - 12, by - 76], [cx - 5, by - 64], [cx, by - 100], [cx + 6, by - 66], [cx + 13, by - 82], [cx + 20, by - 46]], 0.8), 0xff8a34)
+        fill(x, P.blob([[cx - 12, by - 46], [cx - 5, by - 70], [cx, by - 84], [cx + 6, by - 68], [cx + 12, by - 46]], 0.8), 0xffc050)
+        fill(x, P.blob([[cx - 6, by - 46], [cx, by - 64], [cx + 6, by - 46]], 0.8), 0xfff0b0)
+      },
+      outline: 2,
+      grain: 0.12,
+    })
+  }
+
+  // ---- a tongue of the causeway's fire wall (S10) -----------------------------------
+  {
+    const w = 56, h = 96, cx = w / 2, by = h - 6
+    bake(scene, 'fx_firewall', w, h, {
+      under: x => glow(x, cx, by - 30, 30, 0xff5a1e, 0.8),
+      body: x => {
+        fill(x, P.blob([[cx - 22, by], [cx - 16, by - 44], [cx - 7, by - 34], [cx - 2, by - 88], [cx + 6, by - 40], [cx + 14, by - 60], [cx + 22, by]], 0.8), 0xe0461a)
+        fill(x, P.blob([[cx - 14, by], [cx - 6, by - 50], [cx + 1, by - 66], [cx + 8, by - 44], [cx + 14, by]], 0.8), 0xff9a34)
+        fill(x, P.blob([[cx - 7, by], [cx, by - 34], [cx + 7, by]], 0.8), 0xfff0b0)
+      },
+      outline: 0,
+      grain: 0,
     })
   }
 

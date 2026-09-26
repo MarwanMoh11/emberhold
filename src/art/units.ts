@@ -3,6 +3,7 @@ import { PAL } from '../config/palette'
 import { ENEMIES } from '../config/enemies'
 import { SOLDIERS, WORKERS } from '../config/units'
 import { bake, css, fill, form, glow, line, lightOf, mix, P, rimLight, shade, shadowOf, INK, type Ctx, type PathFn } from './ink'
+import { BOSS_PAINTERS } from './bosses'
 
 /**
  * Characters.
@@ -459,6 +460,12 @@ interface HordeLook {
   /** second tone for plates, masks, robes */
   kit?: number
   build: 'husk' | 'runner' | 'brute' | 'slinger' | 'bulwark' | 'keg' | 'champion' | 'caller' | 'warlord' | 'regent'
+  /** S16: the caller's robe, cape and hood in this cloth instead (the ash priest's ashen robe) */
+  robe?: number
+  /** S16: what tops the caller's staff (default the war banner and orb) */
+  staff?: 'banner' | 'brazier'
+  /** S16: bog slime running off the body, in this colour (the wretch) */
+  drip?: number
 }
 
 const SOOT = 0x382c2e
@@ -533,7 +540,7 @@ function paintHorde(x: Ctx, cx: number, by: number, L: HordeLook, R: HordeRig) {
 
   // cape / robe behind
   if (L.build === 'champion' || L.build === 'warlord' || L.build === 'regent' || L.build === 'caller') {
-    const capeC = L.build === 'regent' ? 0x6a2416 : L.build === 'caller' ? 0x2e2650 : L.build === 'champion' ? 0x3a2448 : 0x4a1016
+    const capeC = L.robe !== undefined ? shade(L.robe, -0.2) : L.build === 'regent' ? 0x6a2416 : L.build === 'caller' ? 0x2e2650 : L.build === 'champion' ? 0x3a2448 : 0x4a1016
     const cape: PathFn = x2 => {
       x2.moveTo(cx - tw * 0.45, shY - H * 0.08)
       x2.lineTo(cx + tw * 0.3, shY - H * 0.1)
@@ -591,10 +598,17 @@ function paintHorde(x: Ctx, cx: number, by: number, L: HordeLook, R: HordeRig) {
       x2.lineTo(cx - bw * 0.9, by - H * 0.01)
       x2.closePath()
     }
-    const robeC = L.build === 'regent' ? 0x3e1c14 : 0x2a2446
+    const robeC = L.robe ?? (L.build === 'regent' ? 0x3e1c14 : 0x2a2446)
     form(x, robe, robeC, { rim: 1.2, core: H * 0.12, hatch: 0.16 })
     rimLight(x, robe, mix(g, robeC, 0.3), Math.max(1.4, H * 0.05))
     fill(x, P.rect(cx - H * 0.04, shY + H * 0.02, H * 0.08, by - shY - H * 0.06), mix(g, 0x000000, 0.2), 0.85)
+    if (L.robe !== undefined) {
+      // ash settled in the folds, and a scorched hem
+      for (const [fx, fy, fr] of [[-0.3, 0.22, 0.03], [0.12, 0.34, 0.025], [-0.12, 0.5, 0.035], [0.3, 0.46, 0.022], [-0.4, 0.62, 0.028], [0.18, 0.66, 0.03]]) {
+        fill(x, P.circle(cx + tw * fx, shY + H * fy, H * fr), mix(robeC, 0xf0e8e0, 0.45), 0.75)
+      }
+      fill(x, P.rect(cx - bw * 0.9, by - H * 0.07, bw * 1.75, H * 0.05), shade(robeC, -0.45), 0.8)
+    }
   } else {
     form(x, torso, SOOT, { ...sootForm, rim: Math.max(1, H * 0.04), core: H * 0.13 })
     rimLight(x, torso, emberLip, Math.max(1.2, H * 0.045))
@@ -691,7 +705,7 @@ function paintHorde(x: Ctx, cx: number, by: number, L: HordeLook, R: HordeRig) {
     }
     case 'caller': {
       const hood: PathFn = P.blob([[hx - r * 1.15, hy + r * 0.9], [hx - r * 0.35, hy - r * 2.5], [hx + r * 0.25, hy - r * 2.6], [hx + r * 1.2, hy + r * 0.9]], 0.4)
-      form(x, hood, 0x2a2446, { rim: 1, core: 2.4 })
+      form(x, hood, L.robe ?? 0x2a2446, { rim: 1, core: 2.4 })
       fill(x, P.ellipse(hx + r * 0.05, hy + r * 0.15, r * 0.75, r * 0.7), 0x0c0810)
       fill(x, P.poly([[hx - r * 0.2, hy - r * 1.5], [hx, hy - r * 1.95], [hx + r * 0.2, hy - r * 1.5], [hx, hy - r * 1.1]]), g)
       break
@@ -744,7 +758,14 @@ function paintHorde(x: Ctx, cx: number, by: number, L: HordeLook, R: HordeRig) {
     case 'caller':
     case 'regent': {
       form(x, P.round(handX - 1.2 * k, handY - 27 * k, 2.4 * k, 35 * k, 1), 0x3a2618, small)
-      if (L.build === 'caller') {
+      if (L.staff === 'brazier') {
+        // an iron fire-bowl on three prongs
+        const bt = handY - 27 * k
+        for (const o of [-4, 0, 4]) line(x, x2 => { x2.moveTo(handX, bt + 5 * k); x2.lineTo(handX + o * k, bt) }, 1.1 * k, 0x2a2624, 1)
+        form(x, P.poly([[handX - 6.5 * k, bt - 1.5 * k], [handX + 6.5 * k, bt - 1.5 * k], [handX + 3.8 * k, bt + 3.4 * k], [handX - 3.8 * k, bt + 3.4 * k]]), 0x46403c, { rim: 0.8, core: 1.8 })
+        fill(x, P.rect(handX - 7 * k, bt - 2.4 * k, 14 * k, 1.6 * k), 0x6a625c)
+        fill(x, P.ellipse(handX, bt - 2.2 * k, 5.2 * k, 1.5 * k), 0xff7a2a)
+      } else if (L.build === 'caller') {
         const bx = handX + 1 * k, byy = handY - 26 * k
         form(x, P.poly([[bx, byy], [bx + 12 * k, byy + 1 * k], [bx + 10 * k, byy + 6 * k], [bx + 13 * k, byy + 12 * k], [bx, byy + 13 * k]]), 0x3c3070, { rim: 0.8, core: 2 })
         fill(x, P.circle(bx + 5.5 * k, byy + 6.5 * k, 2.2 * k), g)
@@ -754,6 +775,163 @@ function paintHorde(x: Ctx, cx: number, by: number, L: HordeLook, R: HordeRig) {
     default: break
   }
   form(x, P.circle(handX, handY, H * 0.075), 0x221819, small)
+  if (L.drip !== undefined) paintDrips(x, cx, by, R, L.drip)
+}
+
+/** S16: the bog wretch's slime, running off the shoulders, the arms and the hem and pooling in bulbs. */
+function paintDrips(x: Ctx, cx: number, by: number, R: HordeRig, c: number) {
+  const { H, shY, hipY, tw, bw, handX, handY } = R
+  // weed hanging over the hump
+  for (const [ox, len] of [[-0.42, 0.3], [-0.12, 0.24], [0.18, 0.2]]) {
+    line(x, x2 => {
+      const sx = cx + tw * ox, sy = shY - H * 0.12
+      x2.moveTo(sx, sy)
+      x2.bezierCurveTo(sx - H * 0.05, sy + H * len * 0.4, sx + H * 0.04, sy + H * len * 0.7, sx - H * 0.02, sy + H * len)
+    }, Math.max(1, H * 0.035), shade(c, -0.35), 0.95)
+  }
+  const runs: number[][] = [
+    [cx - tw * 0.48, shY + H * 0.3, 0.2],
+    [cx - tw * 0.16, shY - H * 0.08, 0.3],
+    [cx + tw * 0.3, shY - H * 0.02, 0.22],
+    [handX - H * 0.02, handY + H * 0.02, 0.16],
+    [cx - bw * 0.32, hipY + H * 0.06, 0.13],
+    [cx + bw * 0.3, hipY + H * 0.04, 0.1],
+  ]
+  const w = Math.max(1.1, H * 0.04)
+  for (const [dx, ty, f] of runs) {
+    const len = H * f
+    const run = P.blob([
+      [dx - w, ty], [dx + w, ty], [dx + w * 0.45, ty + len * 0.75], [dx + w * 1.15, ty + len],
+      [dx, ty + len + w * 1.5], [dx - w * 1.15, ty + len], [dx - w * 0.45, ty + len * 0.75],
+    ], 0.6)
+    form(x, run, c, { rim: 0.8, core: 1, light: mix(c, 0xe8f0c0, 0.4), dark: shade(c, -0.4) })
+    fill(x, P.ellipse(dx - w * 0.35, ty + len - w * 0.1, w * 0.35, w * 0.5), mix(c, 0xffffff, 0.55), 0.85)
+  }
+  // a drop falling from the hand, and the puddle it feeds
+  fill(x, P.ellipse(handX + H * 0.01, handY + H * 0.3, w * 0.8, w * 1.1), c)
+  form(x, P.ellipse(cx + H * 0.02, by - H * 0.01, bw * 0.95, H * 0.035), shade(c, -0.25), { rim: 0.6, core: 0.8 })
+}
+
+/** S16: thornlings, a knot of bramble on twig legs, all thorns and two coals for eyes. */
+function bakeThornling(scene: Phaser.Scene, key: string, H: number, g: number) {
+  const w = Math.ceil(H * 2 + 18), h = Math.ceil(H * 1.7 + FOOT + 8)
+  const cx = w / 2, by = h - FOOT
+  const k = H / 16
+  const BARK = 0x3e2c1e, TWIG = 0x2a1e14, THORN = 0xd6c490
+  const cy = by - 12 * k
+  bake(scene, key, w, h, {
+    body: x => {
+      for (const s of [-1, 1]) {
+        line(x, x2 => { x2.moveTo(cx + s * 2 * k, by - 7 * k); x2.quadraticCurveTo(cx + s * 5 * k, by - 4 * k, cx + s * 4.5 * k, by) }, 1.7 * k, TWIG, 1)
+        line(x, x2 => { x2.moveTo(cx + s * 4.5 * k, by); x2.lineTo(cx + s * 6.5 * k, by - 0.5 * k) }, 1.2 * k, TWIG, 1)
+      }
+      // the back arm, then the knot, then the reaching arm
+      line(x, x2 => { x2.moveTo(cx - 3 * k, cy - 1 * k); x2.quadraticCurveTo(cx - 8 * k, cy + 1 * k, cx - 9 * k, cy + 5 * k) }, 1.4 * k, shade(TWIG, -0.2), 1)
+      for (let i = 0; i < 11; i++) {
+        const a = -Math.PI * 0.95 + (i / 10) * Math.PI * 1.9 - Math.PI / 2
+        const r0 = 5.5 * k, r1 = (i % 2 ? 9 : 11) * k
+        const bx = cx + Math.cos(a) * r0, byy = cy + Math.sin(a) * r0 * 1.1
+        const tx = cx + Math.cos(a) * r1, ty = cy + Math.sin(a) * r1 * 1.1
+        const nx = -Math.sin(a) * 1.1 * k, ny = Math.cos(a) * 1.1 * k
+        fill(x, P.poly([[bx + nx, byy + ny], [tx, ty], [bx - nx, byy - ny]]), THORN)
+      }
+      const knot = P.cluster([[cx - 3 * k, cy + 2 * k, 4.6 * k], [cx + 3 * k, cy + 1.5 * k, 4.8 * k], [cx, cy - 3.5 * k, 5.4 * k], [cx + 4.5 * k, cy - 4 * k, 3.8 * k]])
+      form(x, knot, BARK, { rim: 1, core: 2.2, hatch: 0.2, light: 0x70543a, dark: 0x1c140e })
+      rimLight(x, knot, mix(g, BARK, 0.45), 1.1)
+      // vines wound round the knot
+      for (const [a, b] of [[[-5, -3], [5, 2]], [[-4, 4], [6, -5]], [[-2, -8], [3, 5]]]) {
+        line(x, x2 => { x2.moveTo(cx + a[0] * k, cy + a[1] * k); x2.quadraticCurveTo(cx, cy - 1 * k, cx + b[0] * k, cy + b[1] * k) }, 1.1 * k, 0x241810, 0.9)
+      }
+      line(x, x2 => { x2.moveTo(cx + 4 * k, cy); x2.quadraticCurveTo(cx + 9 * k, cy - 1 * k, cx + 10 * k, cy + 4 * k) }, 1.5 * k, TWIG, 1)
+      for (const [tx, ty] of [[10, 4], [11.5, 2.5], [9, 5.5]]) fill(x, P.poly([[cx + 10 * k, cy + 4 * k], [cx + (tx + 1.5) * k, cy + (ty + 0.8) * k], [cx + tx * k, cy + (ty + 1.6) * k]]), THORN)
+      // one sour leaf
+      form(x, P.ellipse(cx - 4.5 * k, cy - 7 * k, 2.6 * k, 1.3 * k, -0.7), 0x6a8a3a, { rim: 0.6, core: 0.8 })
+    },
+    over: x => emberEyes(x, cx + 1.8 * k, cy - 3.5 * k, 3.2 * k, 1.2 * k, g),
+    outline: 1.3,
+    grain: 0.12,
+  })
+}
+
+/** S16: the cinder hound, a lean soot dog cracked with fire, a mane of embers down its spine. */
+function bakeHound(scene: Phaser.Scene, key: string, H: number, g: number) {
+  const w = Math.ceil(H * 2.2 + 24), h = Math.ceil(H * 1.3 + FOOT + 12)
+  const cx = w / 2 - H * 0.08, by = h - FOOT
+  const bodyY = by - H * 0.56
+  const x0 = cx - H * 0.62, x1 = cx + H * 0.46
+  const hx = x1 + H * 0.26, hy = bodyY - H * 0.3
+  const small = { ...sootForm, rim: Math.max(0.8, H * 0.03), core: Math.max(1.2, H * 0.06) }
+  const emberLip = mix(g, SOOT, 0.35)
+  const lw = H * 0.065
+  const foreLeg = (fx: number): PathFn => P.blob([
+    [fx - lw * 1.3, bodyY], [fx + lw * 1.3, bodyY], [fx + H * 0.03 + lw, by - H * 0.22],
+    [fx + H * 0.07 + lw, by - H * 0.02], [fx + H * 0.07 - lw, by - H * 0.02], [fx + H * 0.02 - lw, by - H * 0.22],
+  ], 0.5)
+  const hindLeg = (fx: number): PathFn => P.blob([
+    [fx - lw * 1.8, bodyY - H * 0.04], [fx + lw * 1.6, bodyY - H * 0.04], [fx - H * 0.06 + lw, by - H * 0.22],
+    [fx - H * 0.01 + lw, by - H * 0.02], [fx - H * 0.01 - lw, by - H * 0.02], [fx - H * 0.12 - lw, by - H * 0.24],
+  ], 0.5)
+  const paw = (fx: number) => P.ellipse(fx + H * 0.04, by - H * 0.025, lw * 1.9, lw * 0.9)
+  const spine = [[x0 + H * 0.08, bodyY - H * 0.14], [cx - H * 0.2, bodyY - H * 0.2], [cx + H * 0.08, bodyY - H * 0.24], [x1 - H * 0.04, bodyY - H * 0.3], [x1 + H * 0.12, bodyY - H * 0.4]]
+  bake(scene, key, w, h, {
+    body: x => {
+      // far legs, in shadow
+      form(x, foreLeg(x1 - H * 0.2), shade(SOOT, -0.2), small)
+      form(x, hindLeg(x0 + H * 0.2), shade(SOOT, -0.2), small)
+      // the tail, a whip with a coal at the end
+      line(x, x2 => { x2.moveTo(x0 + H * 0.04, bodyY - H * 0.08); x2.bezierCurveTo(x0 - H * 0.2, bodyY - H * 0.1, x0 - H * 0.22, bodyY - H * 0.4, x0 - H * 0.36, bodyY - H * 0.46) }, Math.max(1.6, H * 0.06), SOOT, 1)
+      // the barrel: deep chest, tucked belly
+      const body = P.blob([
+        [x0, bodyY - H * 0.1], [cx - H * 0.15, bodyY - H * 0.2], [x1 - H * 0.06, bodyY - H * 0.26], [x1 + H * 0.12, bodyY - H * 0.02],
+        [x1 - H * 0.02, bodyY + H * 0.2], [cx - H * 0.06, bodyY + H * 0.08], [x0 + H * 0.02, bodyY + H * 0.14],
+      ], 0.8)
+      form(x, body, SOOT, { ...sootForm, rim: Math.max(1, H * 0.04), core: H * 0.12 })
+      rimLight(x, body, emberLip, Math.max(1.2, H * 0.045))
+      // neck and head: a long wedge of a skull, ears swept back
+      const neck = P.blob([[x1 - H * 0.12, bodyY - H * 0.2], [x1 + H * 0.02, bodyY - H * 0.34], [hx - H * 0.02, hy - H * 0.08], [hx + H * 0.04, hy + H * 0.1], [x1 + H * 0.12, bodyY + H * 0.06]], 0.7)
+      form(x, neck, SOOT, small)
+      for (const o of [0, 0.07]) form(x, P.poly([[hx - H * (0.08 + o), hy - H * 0.06], [hx - H * (0.3 + o), hy - H * 0.26], [hx - H * (0.02 + o), hy - H * 0.1]]), shade(SOOT, -0.1 - o), small)
+      const head = P.blob([[hx - H * 0.12, hy - H * 0.09], [hx + H * 0.04, hy - H * 0.13], [hx + H * 0.3, hy - H * 0.01], [hx + H * 0.28, hy + H * 0.04], [hx + H * 0.04, hy + H * 0.1], [hx - H * 0.1, hy + H * 0.08]], 0.6)
+      form(x, head, SOOT, { ...small, core: H * 0.06 })
+      rimLight(x, head, emberLip, 1.1)
+      // the jaw hangs open on the fire inside
+      form(x, P.poly([[hx + H * 0.02, hy + H * 0.06], [hx + H * 0.24, hy + H * 0.06], [hx + H * 0.2, hy + H * 0.13], [hx + H * 0.02, hy + H * 0.11]]), 0x221819, small)
+      fill(x, P.poly([[hx + H * 0.04, hy + H * 0.055], [hx + H * 0.26, hy + H * 0.035], [hx + H * 0.22, hy + H * 0.075]]), mix(g, 0xfff0c0, 0.3))
+      for (let i = 0; i < 3; i++) fill(x, P.poly([[hx + H * (0.1 + i * 0.05), hy + H * 0.04], [hx + H * (0.12 + i * 0.05), hy + H * 0.08], [hx + H * (0.14 + i * 0.05), hy + H * 0.04]]), 0xe8dcc0)
+      // near legs
+      form(x, hindLeg(x0 + H * 0.26), SOOT, small)
+      rimLight(x, hindLeg(x0 + H * 0.26), emberLip, 1)
+      form(x, foreLeg(x1 - H * 0.14), SOOT, small)
+      rimLight(x, foreLeg(x1 - H * 0.14), emberLip, 1)
+      for (const fx of [x1 - H * 0.2, x0 + H * 0.2 - H * 0.05, x1 - H * 0.14, x0 + H * 0.26 - H * 0.05]) form(x, paw(fx), 0x221819, small)
+      // the mane: a ridge of soot spikes down the spine
+      for (let i = 0; i < spine.length; i++) {
+        const [sx, sy] = spine[i]
+        const t = H * (0.1 + (i % 2) * 0.05)
+        form(x, P.poly([[sx - H * 0.06, sy + H * 0.04], [sx - H * 0.1, sy - t], [sx + H * 0.05, sy + H * 0.03]]), 0x221819, small)
+      }
+      // fire under the hide
+      crack(x, [[x0 + H * 0.1, bodyY - H * 0.02], [cx - H * 0.18, bodyY + H * 0.02], [cx - H * 0.02, bodyY - H * 0.08], [cx + H * 0.18, bodyY - H * 0.02]], g, Math.max(1, H * 0.035))
+      crack(x, [[x1 - H * 0.06, bodyY - H * 0.14], [x1 + H * 0.04, bodyY - H * 0.02], [x1 - H * 0.02, bodyY + H * 0.1]], g, Math.max(0.9, H * 0.03))
+      crack(x, [[x0 + H * 0.24, bodyY + H * 0.08], [x0 + H * 0.2, by - H * 0.22]], g, Math.max(0.8, H * 0.025))
+    },
+    over: x => {
+      glow(x, hx + H * 0.06, hy - H * 0.04, H * 0.14, g, 0.75)
+      fill(x, P.ellipse(hx + H * 0.06, hy - H * 0.04, H * 0.045, H * 0.03, -0.3), mix(g, 0xffffff, 0.3))
+      fill(x, P.circle(hx + H * 0.065, hy - H * 0.045, H * 0.018), 0xfffbe8)
+      glow(x, hx + H * 0.16, hy + H * 0.08, H * 0.12, g, 0.6)
+      glow(x, x0 - H * 0.36, bodyY - H * 0.46, H * 0.12, g, 0.9)
+      fill(x, P.circle(x0 - H * 0.36, bodyY - H * 0.46, H * 0.035), 0xffd24a)
+      for (let i = 0; i < spine.length; i++) {
+        const [sx, sy] = spine[i]
+        const t = H * (0.1 + (i % 2) * 0.05)
+        glow(x, sx - H * 0.09, sy - t + H * 0.02, H * 0.07, g, 0.85)
+        fill(x, P.circle(sx - H * 0.095, sy - t + H * 0.02, H * 0.018), 0xffd88a)
+      }
+    },
+    outline: Math.max(1.5, Math.min(3, H * 0.05)),
+    grain: 0.14,
+  })
 }
 
 function hordeOver(x: Ctx, cx: number, by: number, L: HordeLook, R: HordeRig) {
@@ -767,7 +945,15 @@ function hordeOver(x: Ctx, cx: number, by: number, L: HordeLook, R: HordeRig) {
     glow(x, handX, handY - 12 * k, 7 * k, 0xff9a3a, 0.95)
     fill(x, P.circle(handX, handY - 12 * k, 2.2 * k), 0xffd24a)
   }
-  if (L.build === 'caller' || L.build === 'regent') {
+  if (L.staff === 'brazier') {
+    // the brazier's fire: three tongues over the coals, and the light they throw
+    const fy = handY - 29.5 * k
+    glow(x, handX, fy - 3 * k, 13 * k, 0xff8a2a, 0.9)
+    for (const [o, t] of [[-3, 7], [0, 10], [3, 6.5]]) {
+      fill(x, P.poly([[handX + (o - 2.2) * k, fy + 1 * k], [handX + o * 0.6 * k, fy - t * k], [handX + (o + 2.2) * k, fy + 1 * k]]), 0xff9a3a, 0.9)
+    }
+    fill(x, P.poly([[handX - 1.6 * k, fy + 1 * k], [handX, fy - 6 * k], [handX + 1.6 * k, fy + 1 * k]]), 0xffe8a0)
+  } else if (L.build === 'caller' || L.build === 'regent') {
     const orbY = handY - 28 * k
     glow(x, handX, orbY, 10 * k, L.build === 'regent' ? 0xff8a2a : L.glow, 0.95)
     fill(x, P.circle(handX, orbY, 3.2 * k), mix(L.glow, 0xffffff, 0.55))
@@ -892,6 +1078,7 @@ function soldierLook(key: string, colour: number, accent: number, scale: number)
 const WORKER_LOOKS: Record<string, (colour: number, accent: number) => Look> = {
   lumberjack: c => ({ h: 26, body: 0xa8402c, apron: undefined, band: undefined, helm: 'cap', helmColour: 0x3a5a2e, weapon: 'axe', skin: SKINS[1], legs: 0x5a4632, belt: c }),
   farmer: () => ({ h: 26, body: 0x7f9a44, helm: 'straw', weapon: 'scythe', skin: SKINS[2], legs: 0x6a5a3e, apron: 0xd8c898 }),
+  fisher: () => ({ h: 26, body: 0x5a86a0, helm: 'hood', helmColour: 0x2e4a5a, weapon: 'spear', skin: SKINS[1], legs: 0x4a4436, apron: 0xc8b890 }),
   cutter: () => ({ h: 26, body: 0x8a8c8e, helm: 'cap', helmColour: 0x5a5e62, weapon: 'hammer', skin: SKINS[0], apron: 0x6e4a2e }),
   miner: () => ({ h: 26, body: 0x9a7248, helm: 'miner', weapon: 'pick', skin: SKINS[3], legs: 0x4a3a2a }),
   delver: () => ({ h: 26, body: 0x7a5aa8, helm: 'hood', helmColour: 0x4e3a78, weapon: 'chisel', skin: SKINS[1] }),
@@ -909,6 +1096,9 @@ const HORDE: Record<string, Omit<HordeLook, 'h' | 'glow'>> = {
   commander: { build: 'caller', bulk: 1.05, hunch: 0.02 },
   warlord: { build: 'warlord', bulk: 1.3, hunch: 0.04 },
   cinderRegent: { build: 'regent', bulk: 1.2, hunch: 0.0 },
+  // S16
+  bogWretch: { build: 'husk', bulk: 1.3, hunch: 0.24, kit: 0x3a4a2a, drip: 0x5e7a36 },
+  ashPriest: { build: 'caller', bulk: 1.0, hunch: 0.1, robe: 0x747069, staff: 'brazier' },
 }
 
 export function buildUnitTextures(scene: Phaser.Scene) {
@@ -931,6 +1121,10 @@ export function buildUnitTextures(scene: Phaser.Scene) {
     const h = 28 * def.scale
     if (def.key === 'swarm') { bakeSwarm(scene, 'enm_swarm', h, def.colour); continue }
     if (def.key === 'siegeBeast') { bakeSiegeBeast(scene, 'enm_siegeBeast', h, def.colour); continue }
+    if (def.key === 'thornling') { bakeThornling(scene, 'enm_thornling', h, def.colour); continue }
+    if (def.key === 'cinderHound') { bakeHound(scene, 'enm_cinderHound', h, def.colour); continue }
+    const boss = BOSS_PAINTERS[def.key]
+    if (boss) { boss(scene, `enm_${def.key}`, h, def.colour); continue } // S17: the stronghold bosses
     const spec = HORDE[def.key] ?? { build: 'husk' as const }
     bakeHorde(scene, `enm_${def.key}`, { ...spec, h, glow: def.colour })
   }

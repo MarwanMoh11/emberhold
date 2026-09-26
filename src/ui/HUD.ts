@@ -2,7 +2,9 @@ import Phaser from 'phaser'
 import { PAL } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { ABILITIES, ABILITY_KEYS, ABILITY_SLOTS } from '../config/abilities'
-import { PLAYER } from '../config/balance'
+import { PLAYER, POI } from '../config/balance'
+import { POIS, REGION_BY_ID } from '../config/world'
+import { CAMP_BANNERS } from '../config/quests'
 import { clamp, short } from '../core/math'
 import { DPR, IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
 import { ABILITY_ICON } from '../art/icons'
@@ -95,6 +97,9 @@ export class HUD {
   private hintText: Phaser.GameObjects.Text
   private toastRibbon: SkinPanel
   private toastText: Phaser.GameObjects.Text
+  /** The line under the ribbon: a claimed region's blurb. */
+  private toastSub: Phaser.GameObjects.Text
+  private toastDur = 3.2
   private comboText: Phaser.GameObjects.Text
   private statsText: Phaser.GameObjects.Text
   private lowHp: Phaser.GameObjects.Image
@@ -119,6 +124,12 @@ export class HUD {
   private padL = 16
   private padR = 16
   private toastT = 0
+  private toastQueue: [string, string, number][] = []
+  /** S14: a lore stone's line, on a parchment page under the ribbon */
+  private lorePanel: SkinPanel
+  private loreTitle: Phaser.GameObjects.Text
+  private loreText: Phaser.GameObjects.Text
+  private loreT = 0
   private hintT = 0
   private lastCarryHint = -9999
   private flashCarry = 0
@@ -179,6 +190,11 @@ export class HUD {
     this.hintText = t({ voice: 'caps', size: 14, weight: '800', colour: PAL.uiText, align: 'center' }, 0.5, 0.5)
     this.toastRibbon = panel('ribbon', D.toast)
     this.toastText = t({ voice: 'display', size: 22, colour: PAL.bone, shadow: true }).setDepth(D.toast + 1)
+    this.toastSub = t({ size: 15, weight: 'italic 500', colour: PAL.bone, stroke: 4, align: 'center', wrap: 460 }, 0.5, 0).setDepth(D.toast + 1)
+    this.lorePanel = panel('page', D.toast)
+    this.loreTitle = t({ voice: 'caps', size: 13, weight: '800', colour: ON_PAGE.gilt }, 0.5, 0).setDepth(D.toast + 1)
+    this.loreText = t({ size: 16, weight: 'italic 600', colour: ON_PAGE.text, align: 'center', wrap: 380 }, 0.5, 0).setDepth(D.toast + 1)
+    this.lorePanel.setVisible(false)
     this.comboText = t({ voice: 'display', size: 26, colour: PAL.gold, stroke: 5 })
     this.statsText = t({ size: 11, weight: '500', colour: PAL.uiDim, stroke: 3 }, 0, 1)
     this.lowHp = ui.add.image(0, 0, vignetteTexture(ui, 0x7a1408)).setOrigin(0, 0)
@@ -207,10 +223,32 @@ export class HUD {
       // The bar going red does not explain why loot stopped coming to you.
       if (this.game.time.now - this.lastCarryHint > 6000) {
         this.lastCarryHint = this.game.time.now
-        this.hint('Pack full — empty it at the depot')
+        this.hint('Pack full — empty it at the depot or an outpost')
       }
     })
-    this.game.bus.on('zone:unlocked', () => this.toast('New territory claimed'))
+    // the region banner: its name on the ribbon, its blurb beneath
+    this.game.bus.on('region:claimed', ({ id }) => {
+      const r = REGION_BY_ID.get(id)
+      if (r) this.toast(r.name, r.blurb, 4.6)
+    })
+    // points of interest (S14): a lore stone's page; a ribbon for a shrine, survivors or a landmark
+    this.game.bus.on('poi:lore', ({ name, text }) => this.lore(name, text))
+    this.game.bus.on('poi:done', ({ id, kind }) => {
+      const poi = POIS.find(p => p.id === id)
+      if (!poi) return
+      if (kind === 'shrine') this.toast(`${titleCase(poi.name)} restored`, poi.effect ?? '', 4.6)
+      else if (kind === 'survivors') this.toast(titleCase(poi.name), poi.effect ?? '', 4.2)
+      else if (kind === 'landmark') this.toast(titleCase(poi.name), '', 3.2)
+    })
+    this.game.bus.on('crossing:opened', ({ id }) => {
+      if (id === 'calderaCauseway') this.toast('The fire on the causeway dies.', '', 4.6)
+    })
+    // Campaign 2.0 (S18): an act's banner, and the camps whose burning changes the nights
+    this.game.bus.on('act:begun', ({ roman, name, blurb }) => this.toast(`Act ${roman} · ${name}`, blurb, 5.2))
+    this.game.bus.on('camp:burned', ({ id }) => {
+      const b = CAMP_BANNERS[id]
+      if (b) this.toast(b[0], b[1], 4.6)
+    })
 
     this.layout()
     ui.scale.on('resize', () => this.layout())
@@ -252,11 +290,28 @@ export class HUD {
   private get medalR() { return this.W < 720 ? 20 : 22 }
   private get plateW() { return this.medalR * 2 + 16 + this.barW + 12 }
 
-  toast(msg: string) {
+  /**
+   * The ribbon. News that lands while one is up waits its turn (an act's
+   * banner and the causeway's, say, come in the same frame), up to three.
+   */
+  toast(msg: string, sub = '', secs = 3.2) {
+    if (this.toastT > 0.6) {
+      if (this.toastQueue.length < 3) this.toastQueue.push([msg, sub, secs])
+      return
+    }
     this.toastText.setText(msg)
-    this.toastT = 3.2
+    this.toastSub.setText(sub)
+    this.toastT = this.toastDur = secs
     this.toastRibbon.setAlpha(0)
     this.toastText.setAlpha(0)
+    this.toastSub.setAlpha(0)
+  }
+
+  /** A lore stone's line on a parchment page (S14). */
+  lore(name: string, text: string) {
+    this.loreTitle.setText(name.toUpperCase())
+    this.loreText.setText(`“${text}”`)
+    this.loreT = POI.loreShow
   }
 
   hint(msg: string) {
@@ -351,6 +406,13 @@ export class HUD {
     this.hintSig = ''
   }
 
+  /** The lowest the floating lines may sit: above the hotbar band, or above a docked bottom sheet. */
+  private floorY() {
+    const bands = this.game.uiBands
+    const d = bands.dock
+    return Math.min(this.H - bands.bottom, d && d.side === 'bottom' ? d.y - 8 : Infinity)
+  }
+
   private setButton(b: AbilityBtn, x: number, y: number, r: number) {
     b.x = x; b.y = y; b.r = r
     b.zone.setPosition(x, y).setSize(r * 2, r * 2)
@@ -440,11 +502,12 @@ export class HUD {
     const secs = Math.floor(w.timeLeft % 60)
     const clock = `${mins}:${secs.toString().padStart(2, '0')}`
     if (w.phase === 'night') {
-      setColour(this.phaseText.setText(`Night ${w.wave}   ·   ${w.enemiesRemaining} left`), PAL.danger)
+      setColour(this.phaseText.setText(`Night ${w.wave}   ·   ${w.enemiesRemaining} ${w.marching ? 'marching' : 'left'}`), PAL.danger)
       this.phaseIcon.setTexture('ico_moon')
     } else if (w.phase === 'warning') {
       const flash = Math.sin(this.game.now * 0.02) > 0
-      const words = w.bannerText.charAt(0).toUpperCase() + w.bannerText.slice(1).toLowerCase()
+      const shout = w.bannerText === w.bannerText.toUpperCase()
+      const words = shout ? w.bannerText.charAt(0) + w.bannerText.slice(1).toLowerCase() : w.bannerText
       setColour(this.phaseText.setText(`${words}   ${Math.ceil(w.timeLeft)}`), flash ? PAL.danger : PAL.gold)
       this.phaseIcon.setTexture('ico_moon')
     } else {
@@ -536,14 +599,14 @@ export class HUD {
         continue
       }
       const def = ABILITIES[slot.key]
-      this.drawButton(btn, ABILITY_ICON[slot.key], def.colour, slot.cd, def.cooldown, false)
+      this.drawButton(btn, ABILITY_ICON[slot.key], def.colour, slot.cd, g.abilities.cooldownOf(slot.key), false)
       btn.key.setText(keyName(ABILITY_KEYS[b] ?? ''))
       btn.zone.setSize(live ? btn.r * 2 : 1, live ? btn.r * 2 : 1)
     }
     if (g.abilities.ultimate.unlocked) {
       const def = ABILITIES[g.abilities.ultimate.key]
       this.drawButton(this.ultBtn, ABILITY_ICON[g.abilities.ultimate.key], def.colour,
-        g.abilities.ultimate.cd, def.cooldown, true)
+        g.abilities.ultimate.cd, g.abilities.cooldownOf(g.abilities.ultimate.key), true)
       this.ultBtn.key.setText('R')
       this.ultBtn.zone.setSize(live ? this.ultBtn.r * 2 : 1, live ? this.ultBtn.r * 2 : 1)
     } else {
@@ -590,7 +653,7 @@ export class HUD {
       // belongs to the fight and to the build card that floats over it.
       const hintUp = this.hintPanel.img.visible ? 40 : 0
       this.comboText.setVisible(true).setText(`${combo} Kill Streak`).setAlpha(0.92)
-        .setPosition(this.W / 2, this.H - g.uiBands.bottom - 22 - hintUp)
+        .setPosition(this.W / 2, this.floorY() - 22 - hintUp)
     } else {
       this.comboText.setVisible(false)
     }
@@ -599,7 +662,7 @@ export class HUD {
     // A ribbon unfurls with the news and lifts away when it is done.
     if (this.toastT > 0) {
       this.toastT -= dt
-      const age = 3.2 - this.toastT
+      const age = this.toastDur - this.toastT
       const a = Math.min(1, age / 0.18, this.toastT / 0.5)
       const drop = (1 - Math.min(1, age / 0.25)) * -14
       const tw = Math.min(this.W - 24, this.toastText.width + 90)
@@ -609,9 +672,34 @@ export class HUD {
       this.toastRibbon.setVisible(true).setAlpha(a).place(this.W / 2 - tw / 2, ty - th / 2, tw, th)
       this.fit(this.toastText, 22, tw - 70)
       this.toastText.setVisible(true).setAlpha(a).setPosition(this.W / 2, ty - 1)
+      if (this.toastSub.text) {
+        this.toastSub.setWordWrapWidth(Math.min(this.W - 32, 460), true)
+        this.toastSub.setVisible(true).setAlpha(a).setPosition(this.W / 2, ty + th / 2 + 6)
+      } else this.toastSub.setVisible(false)
+    } else if (this.toastQueue.length) {
+      const [msg, sub, secs] = this.toastQueue.shift()!
+      this.toast(msg, sub, secs)
     } else {
       this.toastRibbon.setVisible(false)
       this.toastText.setVisible(false)
+      this.toastSub.setVisible(false)
+    }
+
+    if (this.loreT > 0) {
+      this.loreT -= dt
+      const a = Math.min(1, (POI.loreShow - this.loreT) / 0.2, this.loreT / 0.5)
+      const pw = Math.min(this.W - 32, 440)
+      this.loreText.setWordWrapWidth(pw - 48, true)
+      const ph = Math.ceil(this.loreText.height) + 58
+      // low on the view, clear of the hero, the ribbon and the quest card
+      const py = Math.max(g.uiBands.top + 8, this.floorY() - ph - 6)
+      this.lorePanel.setVisible(true).setAlpha(a).place(this.W / 2 - pw / 2, py, pw, ph)
+      this.loreTitle.setVisible(true).setAlpha(a).setPosition(this.W / 2, py + 16)
+      this.loreText.setVisible(true).setAlpha(a).setPosition(this.W / 2, py + 38)
+    } else if (this.loreTitle.visible) {
+      this.lorePanel.setVisible(false)
+      this.loreTitle.setVisible(false)
+      this.loreText.setVisible(false)
     }
 
     if (this.hintT > 0 && !this.blocked) {
@@ -619,7 +707,7 @@ export class HUD {
       const a = Math.min(1, this.hintT, (4.5 - this.hintT) / 0.2)
       const hw = Math.ceil(this.hintText.width) + 36
       const hh = Math.ceil(this.hintText.height) + 16
-      const hy = this.H - this.game.uiBands.bottom + 8 - hh
+      const hy = this.floorY() + 8 - hh
       const sig = `${hw}x${hh}@${hy}`
       if (sig !== this.hintSig) {
         this.hintSig = sig

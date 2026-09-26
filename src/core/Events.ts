@@ -1,6 +1,8 @@
 import Phaser from 'phaser'
 import type { ResourceType } from './types'
 import type { BuildingKey } from '../config/buildings'
+import type { RegionId } from '../config/world'
+import type { PoiKind, Pt } from '../config/world/blueprint'
 
 export interface GameEvents {
   'res:gained': { type: ResourceType; amount: number }
@@ -12,16 +14,35 @@ export interface GameEvents {
   'building:built': { key: BuildingKey; level: number }
   'soldier:recruited': { key: string }
   'worker:hired': { key: string }
+  /** `warningSeconds` before dusk (S09): tonight's approach ids and their routes from the spawn point to the hall. */
+  'night:warning': { approaches: string[]; routes: Pt[][] }
   'wave:start': { wave: number }
   'wave:cleared': { wave: number }
-  'camp:destroyed': { id: string }
-  'zone:unlocked': { id: string }
+  /** A camp burned (S10: with its tier, and a stronghold's boss key for S15's relic drop). */
+  'camp:burned': { id: string; tier?: 'warcamp' | 'stronghold' | 'fortress'; boss?: string }
+  /** A sealed crossing opened (S10: the Regent's Causeway, when Ashgate burns). */
+  'crossing:opened': { id: string }
+  /** S11: a waystone lit by the hero's touch; the hero (and escort) arrived by waystone */
+  'waystone:lit': { id: string }
+  'waystone:travelled': { from: string; to: string; escort: number }
+  /** A sleeping camp woke: its region was claimed or the hero came within `WAKE_RADIUS` (S08). */
+  'camp:woke': { id: string }
+  'region:claimed': { id: RegionId }
+  /** S14: a POI came out of the fog; a POI was opened, read, restored, joined or reached */
+  'poi:seen': { id: string; kind: PoiKind }
+  'poi:done': { id: string; kind: PoiKind }
+  /** S14: a lore stone was read (each time); the HUD shows its line on a parchment page */
+  'poi:lore': { id: string; name: string; text: string }
+  /** S15: a relic was won (a barrow's guardian fell, or a stronghold burned) */
+  'relic:granted': { id: string; name: string }
   'quest:complete': { id: string }
   'boss:spawned': { name: string }
   'boss:killed': { name: string }
   'achievement': { id: string; title: string }
   /** The last quest in the chain just landed. Not an ending — a milestone. */
   'campaign:complete': { wave: number }
+  /** S18: the quest chain entered an act (a new game plays Act I's); the HUD's banner */
+  'act:begun': { act: number; roman: string; name: string; blurb: string }
 }
 
 /** Thin typed wrapper so systems can talk without importing each other. */

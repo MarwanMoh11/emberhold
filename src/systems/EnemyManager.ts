@@ -1,11 +1,16 @@
 import Phaser from 'phaser'
-import { Enemy } from '../entities/Enemy'
-import { ENEMIES, type EnemyKey } from '../config/enemies'
-import { PERF, WORLD } from '../config/balance'
+import { Enemy, type CampHome } from '../entities/Enemy'
+import { ENEMIES, type EnemyDef, type EnemyKey } from '../config/enemies'
+import { PERF } from '../config/balance'
 import { MAX_ENEMIES } from '../core/device'
 import { PAL } from '../config/palette'
-import { WALL_RING } from '../config/map'
+import { WORLD } from '../config/world'
+import { walkRadius, type FlowField } from '../world/NavGrid'
+import { MARCH_SPEED, VIA_REACH, viaMid } from './Approaches'
 import { Grid } from '../core/Grid'
+import { applySlow, auraHealed, mergeAura, noAura, type Slow } from './walkers'
+import { BossKits } from './BossKits'
+import { BOSS_BAR_RANGE } from './bosses'
 import { clamp, rr } from '../core/math'
 import type { Targetable } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'
@@ -16,36 +21,91 @@ import type { GameScene } from '../scenes/GameScene'
  *  - target re-acquisition is staggered across frames per enemy
  *  - separation is capped to a handful of neighbours
  */
+/** How often a burning patch bites (s). */
+const PATCH_TICK = 0.5
+
+export interface EmberPatch { x: number; y: number; r: number; dps: number; t: number; life: number; tick: number }
+
 export class EnemyManager {
   readonly list: Enemy[] = []
   grid = new Grid<Enemy>(PERF.gridCell)
 
   private free: Enemy[] = []
   private scratch: Enemy[] = []
+  private allyScratch: Targetable[] = []
   private bars: Phaser.GameObjects.Graphics
   private frame = 0
+
+  /** S16: cinder hounds' burning patches, and the layer they are drawn on */
+  readonly patches: EmberPatch[] = []
+  private patchG: Phaser.GameObjects.Graphics
+  private auraFx = noAura()
 
   aliveCount = 0
   /** alive enemies excluding stationary camps — this is what "wave cleared" means */
   walkerCount = 0
   bossRef: Enemy | null = null
+  /** S17: the stronghold bosses' kits */
+  readonly kits: BossKits
 
   constructor(private scene: GameScene, depth: number) {
+    this.kits = new BossKits(scene)
     this.bars = scene.add.graphics().setDepth(depth)
+    // on the ground: over the terrain and fields, under anything standing (depth = y)
+    this.patchG = scene.add.graphics().setDepth(-10)
+  }
+
+  /** S16: a burning patch (a cinder hound's death), hurting the hero and soldiers inside. */
+  addPatch(x: number, y: number, p: NonNullable<EnemyDef['deathPatch']>) {
+    this.patches.push({ x, y, r: p.radius, dps: p.dps, t: p.seconds, life: p.seconds, tick: 0 })
+  }
+
+  private updatePatches(dt: number) {
+    const g = this.patchG
+    g.clear()
+    if (!this.patches.length) return
+    const combat = this.scene.combat
+    for (let i = this.patches.length - 1; i >= 0; i--) {
+      const p = this.patches[i]
+      p.t -= dt
+      if (p.t <= 0) { this.patches.splice(i, 1); continue }
+      p.tick -= dt
+      if (p.tick <= 0) {
+        p.tick += PATCH_TICK
+        const hit = this.scene.allyGrid.query(p.x, p.y, p.r, this.allyScratch)
+        for (const a of hit.slice()) {
+          if (a.alive && (a.kind === 'player' || a.kind === 'soldier')) combat.damageAlly(a, p.dps * PATCH_TICK, p.x, p.y)
+        }
+        this.scene.fx.embers(p.x + rr(-p.r, p.r) * 0.6, p.y + rr(-p.r, p.r) * 0.3, 2)
+      }
+      const f = Math.min(1, p.t / 0.6) // fades in its last 0.6 s
+      const flick = 0.85 + Math.sin(this.scene.now * 0.02 + p.x) * 0.15
+      g.fillStyle(0x2a1410, 0.5 * f).fillEllipse(p.x, p.y, p.r * 2.1, p.r * 1.15)
+      g.fillStyle(0xff5a1e, 0.38 * f * flick).fillEllipse(p.x, p.y, p.r * 1.8, p.r * 0.95)
+      g.fillStyle(0xffb04a, 0.42 * f * flick).fillEllipse(p.x, p.y, p.r * 0.95, p.r * 0.5)
+    }
   }
 
   get count() { return this.aliveCount }
 
-  spawn(key: EnemyKey, x: number, y: number, hpMult = 1, dmgMult = 1): Enemy | null {
+  /** `def` overrides the key's own (a stronghold's stand-in boss is a renamed elite until S17). */
+  spawn(key: EnemyKey, x: number, y: number, hpMult = 1, dmgMult = 1, def: EnemyDef = ENEMIES[key]): Enemy | null {
     if (this.aliveCount >= MAX_ENEMIES) return null
-    const def = ENEMIES[key]
     let e = this.free.pop()
     if (!e) {
       if (this.list.length >= MAX_ENEMIES + 40) return null
       e = new Enemy(this.scene)
       this.list.push(e)
     }
-    e.spawn(def, clamp(x, 40, WORLD.width - 40), clamp(y, 40, WORLD.height - 40), hpMult, dmgMult)
+    x = clamp(x, 40, WORLD.width - 40)
+    y = clamp(y, 40, WORLD.height - 40)
+    const nav = this.scene.nav
+    if (!def.structure && !nav.passableAt(x, y)) {
+      // ring spawns and camp musters can land in water: stand on the nearest bank
+      const i = nav.nearestPassable(x, y)
+      if (i >= 0) [x, y] = nav.r.xy(i)
+    }
+    e.spawn(def, x, y, hpMult, dmgMult)
     this.aliveCount++
     if (def.boss) {
       this.bossRef = e
@@ -72,7 +132,7 @@ export class EnemyManager {
   /** Clear a failed night without awarding kills or erasing standing camps. */
   clearWalkers() {
     for (const e of this.list) {
-      if (e.active && !e.def.structure) this.despawn(e)
+      if (e.active && !e.def.structure && !e.guard) this.despawn(e)
     }
   }
 
@@ -83,6 +143,7 @@ export class EnemyManager {
 
   // ---- targeting -------------------------------------------------------
   private acquire(e: Enemy): Targetable | null {
+    if (e.home) return this.acquirePatrol(e, e.home)
     const s = this.scene
     const prefs = e.def.prefers
     let t: Targetable | null = null
@@ -104,14 +165,89 @@ export class EnemyManager {
     return t
   }
 
-  private nearestGate(x: number, y: number) {
-    let best = WALL_RING.gates[0]
-    let bd = Infinity
-    for (const g of WALL_RING.gates) {
-      const d = (g.x - x) ** 2 + (g.y - y) ** 2
-      if (d < bd) { bd = d; best = g }
+  /**
+   * A camp's patrol (S10) only fights inside its leash: the hero or an ally
+   * within it, else the nearest structure within the camp's siege radius.
+   * Nothing there: null, and it strolls about the camp.
+   */
+  private acquirePatrol(e: Enemy, h: CampHome): Targetable | null {
+    const s = this.scene
+    const inside = (t: { x: number; y: number }) => (t.x - h.x) ** 2 + (t.y - h.y) ** 2 <= h.leash * h.leash
+    // arrows sail over structures, so only a walker that strikes in person besieges
+    const siege = () => (e.def.ranged ? null : s.buildings.nearestStructure(h.x, h.y, h.siege, e.sapper))
+    if (e.def.prefers === 'structures') { const b = siege(); if (b) return b }
+    const p = s.player
+    if (p.alive && inside(p) && (p.x - e.x) ** 2 + (p.y - e.y) ** 2 < 520 * 520) return p
+    return s.allyGrid.nearest(e.x, e.y, 440, a => a.alive && a.kind !== 'building' && inside(a)) ?? siege()
+  }
+
+  /** Past the leash with nothing inside it to fight: walk home. */
+  private strayed(e: Enemy, h: CampHome) {
+    const far = (x: number, y: number, r: number) => (x - h.x) ** 2 + (y - h.y) ** 2 > r * r
+    if (e.returning) {
+      if (!far(e.x, e.y, h.leash * 0.5)) e.returning = false
+    } else if (far(e.x, e.y, h.leash + 60) || (e.target && far(e.target.x, e.target.y, h.leash + 40))) {
+      e.returning = true
+      e.target = null
+      e.los = this.scene.nav.lineClear(e.x, e.y, h.x, h.y)
     }
-    return best
+    return e.returning
+  }
+
+  /** Somewhere to stroll inside the leash; home itself when heading back. */
+  private wanderGoal(e: Enemy, h: CampHome, dt: number): { x: number; y: number } {
+    if (e.returning) return h
+    e.wanderT -= dt
+    if (e.wanderT <= 0) {
+      e.wanderT = rr(4, 9)
+      const a = rr(0, Math.PI * 2), r = rr(90, h.leash * 0.45)
+      const x = h.x + Math.cos(a) * r, y = h.y + Math.sin(a) * r
+      const ok = this.scene.nav.passableAt(x, y)
+      e.wanderX = ok ? x : h.x
+      e.wanderY = ok ? y : h.y + 90
+      e.los = this.scene.nav.lineClear(e.x, e.y, e.wanderX, e.wanderY)
+    }
+    return { x: e.wanderX, y: e.wanderY }
+  }
+
+  /**
+   * The next waypoint on a patrol's path to (gx, gy), asked of the path queue
+   * when the goal moves. Null while the path is pending (it walks straight
+   * meanwhile); an unreachable goal is given up.
+   */
+  private patrolWay(e: Enemy, gx: number, gy: number): [number, number] | null {
+    if (!e.path || Math.hypot(gx - e.pathX, gy - e.pathY) > 64) {
+      e.path = this.scene.nav.requestPath(e.x, e.y, gx, gy)
+      e.pathX = gx; e.pathY = gy; e.pathI = 1
+    }
+    if (!e.path.done) return null
+    const p = e.path.path
+    if (!p || p.length < 2) {
+      e.path = null
+      if (e.target) { e.target = null; e.retargetIn = 1.5 } else { e.wanderT = 0; e.returning = false }
+      return null
+    }
+    while (e.pathI < p.length - 1 && Math.hypot(p[e.pathI][0] - e.x, p[e.pathI][1] - e.y) < 24) e.pathI++
+    return p[Math.min(e.pathI, p.length - 1)]
+  }
+
+  /**
+   * Can e walk straight at t? The line stops short of t's body, so a wall
+   * you are aiming at does not hide itself.
+   */
+  private sight(e: Enemy, t: Targetable): boolean {
+    const dx = t.x - e.x, dy = t.y - e.y
+    const d = Math.hypot(dx, dy)
+    const stop = Math.min(d, t.radius + 24)
+    if (d - stop < 1) return true
+    return this.scene.nav.lineClear(e.x, e.y, t.x - (dx / d) * stop, t.y - (dy / d) * stop)
+  }
+
+  /** Aim at a wall and hold it for a while: the flow field said the way on is through it. */
+  private latch(e: Enemy, wall: Targetable) {
+    e.target = wall
+    e.los = true
+    e.retargetIn = Math.max(e.retargetIn, 1.5)
   }
 
   // ---- main loop -------------------------------------------------------
@@ -132,6 +268,8 @@ export class EnemyManager {
           const dx = e.x - this.scene.player.x
           const dy = e.y - this.scene.player.y
           const d2 = dx * dx + dy * dy
+          // a boss at its post (a stronghold's, the Regent) only takes the bar when the hero is near
+          if (e.home && d2 > BOSS_BAR_RANGE * BOSS_BAR_RANGE) continue
           if (d2 < nearestBossD2) { nearestBossD2 = d2; nearestBoss = e }
         }
       }
@@ -140,20 +278,33 @@ export class EnemyManager {
     // Show the one the player is actually fighting in the single HUD bar.
     this.bossRef = nearestBoss
 
-    // commander auras: few of them, so a direct pass is fine
+    // commander and priest auras: few of them, so a direct pass is fine.
+    // Overlaps take the strongest of each effect (mergeAura), never the product.
     for (let i = 0; i < list.length; i++) {
       const e = list[i]
       if (!e.active || !e.alive || !e.def.aura) continue
-      const near = this.grid.query(e.x, e.y, e.def.aura.radius, this.scratch)
+      const a = e.def.aura
+      const near = this.grid.query(e.x, e.y, a.radius, this.scratch)
       for (let k = 0; k < near.length; k++) {
         const o = near[k]
-        o.auraDamage = e.def.aura.damageMult
-        o.auraSpeed = e.def.aura.speedMult
+        if (o.def.structure) continue
+        if (o.auraFrame !== this.frame) {
+          o.auraFrame = this.frame
+          o.auraDamage = 1; o.auraSpeed = 1; o.auraHeal = 0
+        }
+        this.auraFx.damage = o.auraDamage; this.auraFx.speed = o.auraSpeed; this.auraFx.heal = o.auraHeal
+        mergeAura(this.auraFx, a, o === e)
+        o.auraDamage = this.auraFx.damage; o.auraSpeed = this.auraFx.speed; o.auraHeal = this.auraFx.heal
+        if (a.heal || !(o.auraT > 0)) o.auraTint = a.tint ?? 0xd0a8ff
         o.auraT = 0.5
       }
     }
+    this.updatePatches(dt)
 
     const combat = this.scene.combat
+    const nav = this.scene.nav
+    const hallField = nav.field('hall')
+    const claim = this.scene.regions.claimMask()
 
     for (let i = 0; i < list.length; i++) {
       const e = list[i]
@@ -163,11 +314,12 @@ export class EnemyManager {
       if (e.spawnT > 0) e.spawnT -= dt
       if (e.auraT > 0) {
         e.auraT -= dt
-        if (e.auraT <= 0) { e.auraDamage = 1; e.auraSpeed = 1 }
+        if (e.auraT <= 0) { e.auraDamage = 1; e.auraSpeed = 1; e.auraHeal = 0 }
+        else if (e.auraHeal > 0) e.hp = auraHealed(e.hp, e.maxHp, e.auraHeal, dt)
       }
 
       // damage over time
-      if (e.burnT > 0) {
+      if (e.burnT > 0 && !e.shielded) {
         e.burnT -= dt
         const tick = e.burnDps * dt
         e.hp -= tick
@@ -179,8 +331,9 @@ export class EnemyManager {
       // knockback decay
       if (e.kx !== 0 || e.ky !== 0) {
         const d = Math.min(1, dt * 7.5)
-        e.x += e.kx * dt
-        e.y += e.ky * dt
+        const p = nav.slide(e.x, e.y, e.kx * dt, e.ky * dt, walkRadius(e.radius))
+        e.x = p.x
+        e.y = p.y
         e.kx -= e.kx * d
         e.ky -= e.ky * d
         if (Math.abs(e.kx) < 4) e.kx = 0
@@ -210,69 +363,118 @@ export class EnemyManager {
         continue
       }
 
-      // staggered re-target
-      e.retargetIn -= dt
-      if (e.retargetIn <= 0 || !e.target || !e.target.alive) {
-        e.target = this.acquire(e)
-        e.retargetIn = 0.35 + (e.id % 7) * 0.05
-      }
-
-      const t = e.target
-      if (!t) { this.render(e, dt); continue }
-
-      const dx = t.x - e.x
-      const dy = t.y - e.y
-      const d = Math.hypot(dx, dy) || 1
-      const reach = e.range + t.radius + e.radius * 0.4
-
-      if (e.def.boss) {
-        this.bossUpdate(e, dt, d)
-        // A ground warning must stay under the attack that follows it.
-        if (e.telegraphT > 0) {
-          e.vx = e.vy = 0
-          e.state = 'attack'
-          this.render(e, dt)
-          continue
+      // the night's approach: legs in order until the first claimed cell,
+      // which ends the march and logs the arrival
+      if (e.route) {
+        const ci = nav.r.cell(e.x, e.y)
+        if (ci >= 0 && claim[ci]) {
+          e.route = null
+          if (e.marching) { e.marching = false; e.retargetIn = 0 }
+          if (e.fromWave) this.scene.waves.arrived(e)
+        } else {
+          this.advanceLeg(e, hallField)
         }
       }
 
-      if (d <= reach) {
-        e.state = 'attack'
-        e.attackCd -= dt
-        if (e.attackCd <= 0) {
-          e.attackCd = 1 / Math.max(0.1, e.attackRate)
-          this.strike(e, t)
-        }
-        // drift to keep a loose ring instead of stacking on one point
-        e.vx = -dx / d * 12
-        e.vy = -dy / d * 12
+      if (e.marching) {
+        this.march(e, dt)
       } else {
-        e.state = 'move'
-        const speedMul = e.auraSpeed * (e.slowT > 0 ? 0.55 : 1) * (e.chargeT > 0 ? 2.6 : 1)
-        let mx = dx / d
-        let my = dy / d
+        // staggered re-target
+        e.retargetIn -= dt
+        const home = e.home, back = !!home && this.strayed(e, home)
+        // a patrol with nothing to fight looks again on its timer, not every frame
+        if (!back && (e.retargetIn <= 0 || (e.target ? !e.target.alive : !home))) {
+          e.target = this.acquire(e)
+          e.retargetIn = 0.35 + (e.id % 7) * 0.05
+          e.los = e.target ? this.sight(e, e.target) : !!home && nav.lineClear(e.x, e.y, e.wanderX, e.wanderY)
+        }
 
-        // walls: sappers smash, the rest flow toward a gap
-        const nx = e.x + mx * e.radius * 2.2
-        const ny = e.y + my * e.radius * 2.2
-        const blocker = this.scene.buildings.blockerAt(nx, ny, e.radius)
-        if (blocker && blocker.id !== t.id) {
-          if (e.sapper || blocker.key !== 'wall') {
-            e.target = blocker
-          } else {
-            const g = this.nearestGate(e.x, e.y)
-            const gx = g.x - e.x, gy = g.y - e.y
-            const gd = Math.hypot(gx, gy) || 1
-            mx = mx * 0.25 + (gx / gd) * 0.9
-            my = my * 0.25 + (gy / gd) * 0.9
-            const ml = Math.hypot(mx, my) || 1
-            mx /= ml; my /= ml
+        const t = e.target
+        if (!t && !home) { this.render(e, dt); continue }
+        // a patrol with nothing to fight strolls about its camp, or walks back to it
+        const goal = t ?? this.wanderGoal(e, home!, dt)
+
+        const dx = goal.x - e.x
+        const dy = goal.y - e.y
+        const d = Math.hypot(dx, dy) || 1
+        const reach = t ? e.range + t.radius + e.radius * 0.4 : 24
+
+        if (e.def.boss) {
+          this.bossUpdate(e, dt, d)
+          // A ground warning must stay under the attack that follows it.
+          if (e.telegraphT > 0) {
+            e.vx = e.vy = 0
+            e.state = 'attack'
+            this.render(e, dt)
+            continue
           }
         }
 
-        const sp = e.speed * speedMul
-        e.vx += (mx * sp - e.vx) * Math.min(1, dt * 9)
-        e.vy += (my * sp - e.vy) * Math.min(1, dt * 9)
+        if (!t && d <= reach) {
+          e.state = 'move'
+          e.vx *= 0.85
+          e.vy *= 0.85
+        } else if (d <= reach && t) {
+          e.state = 'attack'
+          e.attackCd -= dt
+          if (e.attackCd <= 0) {
+            e.attackCd = 1 / Math.max(0.1, e.attackRate)
+            this.strike(e, t)
+          }
+          // drift to keep a loose ring instead of stacking on one point
+          e.vx = -dx / d * 12
+          e.vy = -dy / d * 12
+        } else {
+          e.state = 'move'
+          const speedMul = e.auraSpeed * (e.slowT > 0 ? 0.55 : 1) * (e.chargeT > 0 ? 2.6 : 1) * nav.speedAt(e.x, e.y)
+          let mx = dx / d
+          let my = dy / d
+
+          if (!e.los && home) {
+            // a patrol keeps to its camp: round the obstacle by a path, never down the hall's field
+            const w = this.patrolWay(e, goal.x, goal.y)
+            if (w) {
+              const fx = w[0] - e.x, fy = w[1] - e.y
+              const fl = Math.hypot(fx, fy) || 1
+              mx = fx / fl; my = fy / fl
+            }
+          } else if (!e.los) {
+            // no straight line: take the flow field (its approach's leg until it
+            // reaches claimed ground, then the hall's), over the crossings and
+            // through the gates. If its next cell is a wall, that wall is the way on.
+            const j = (e.route ? nav.field(e.route[e.leg]) : hallField).nextCell(nav.r.cell(e.x, e.y))
+            if (j >= 0) {
+              const [cx, cy] = nav.r.xy(j)
+              if (nav.blocked(j)) {
+                const wall = this.scene.buildings.blockerAt(cx, cy, nav.r.C / 2)
+                if (wall && wall.id !== t?.id) this.latch(e, wall)
+              }
+              if (!e.los) {
+                const fx = cx - e.x, fy = cy - e.y
+                const fl = Math.hypot(fx, fy) || 1
+                mx = fx / fl; my = fy / fl
+              }
+            }
+          }
+
+          // buildings in the way: sappers smash walls, everyone smashes the rest;
+          // a wall across a straight line sends the walker back to the field
+          const nx = e.x + mx * e.radius * 2.2
+          const ny = e.y + my * e.radius * 2.2
+          const blocker = this.scene.buildings.blockerAt(nx, ny, e.radius)
+          if (blocker && blocker.id !== e.target?.id) {
+            if (e.sapper || blocker.key !== 'wall') {
+              e.target = blocker
+              e.los = true
+            } else if (e.los) {
+              e.los = false
+            }
+          }
+
+          const sp = e.speed * speedMul
+          e.vx += (mx * sp - e.vx) * Math.min(1, dt * 9)
+          e.vy += (my * sp - e.vy) * Math.min(1, dt * 9)
+        }
       }
 
       // separation against a handful of neighbours
@@ -293,13 +495,9 @@ export class EnemyManager {
           sy += (oy / dd) * push
         }
       }
-      if (sx !== 0 || sy !== 0) {
-        e.x += sx * 62 * dt
-        e.y += sy * 62 * dt
-      }
-
-      e.x = clamp(e.x + e.vx * dt, 20, WORLD.width - 20)
-      e.y = clamp(e.y + e.vy * dt, 20, WORLD.height - 20)
+      const p = nav.slide(e.x, e.y, sx * 62 * dt + e.vx * dt, sy * 62 * dt + e.vy * dt, walkRadius(e.radius))
+      e.x = clamp(p.x, 20, WORLD.width - 20)
+      e.y = clamp(p.y, 20, WORLD.height - 20)
 
       if (Math.abs(e.vx) > 6) e.facing = e.vx > 0 ? 1 : -1
       if (e.key === 'cinderRegent' && this.frame % 10 === 0
@@ -313,6 +511,54 @@ export class EnemyManager {
     this.drawBars()
   }
 
+  /** Past its via crossing (within VIA_REACH of the midpoint, on the crossing, or nearer the hall than it): take the next leg. */
+  private advanceLeg(e: Enemy, hallField: FlowField) {
+    const route = e.route
+    if (!route) return
+    const nav = this.scene.nav
+    while (e.leg < route.length - 1) {
+      const leg = route[e.leg]
+      const [mx, my] = this.viaMid(leg)
+      const onIt = nav.field(leg).dist(e.x, e.y) <= 0
+      const near = Math.hypot(e.x - mx, e.y - my) <= VIA_REACH
+      const past = hallField.dist(e.x, e.y) < hallField.dist(mx, my)
+      if (!onIt && !near && !past) break
+      e.leg++
+    }
+  }
+
+  private viaMids = new Map<string, [number, number]>()
+  private viaMid(leg: string): [number, number] {
+    let m = this.viaMids.get(leg)
+    if (!m) { m = viaMid(leg.slice(4)); this.viaMids.set(leg, m) }
+    return m
+  }
+
+  /**
+   * The march: down the current leg's field at MARCH_SPEED, no targets, no
+   * detours. A wall across the way, or ground the field cannot reach, ends it.
+   */
+  private march(e: Enemy, dt: number) {
+    const nav = this.scene.nav
+    const route = e.route
+    e.target = null
+    e.state = 'move'
+    if (!route) { e.marching = false; return }
+    const j = nav.field(route[e.leg]).nextCell(nav.r.cell(e.x, e.y))
+    if (j < 0 || nav.blocked(j)) {
+      e.marching = false
+      e.retargetIn = 0
+      return
+    }
+    const [cx, cy] = nav.r.xy(j)
+    const fx = cx - e.x, fy = cy - e.y
+    const fl = Math.hypot(fx, fy) || 1
+    const sp = e.speed * MARCH_SPEED * e.auraSpeed * (e.slowT > 0 ? 0.55 : 1) * nav.speedAt(e.x, e.y)
+    const k = Math.min(1, dt * 9)
+    e.vx += ((fx / fl) * sp - e.vx) * k
+    e.vy += ((fy / fl) * sp - e.vy) * k
+  }
+
   private strike(e: Enemy, t: Targetable) {
     const dmg = e.damage * e.auraDamage
     const ang = Math.atan2(t.y - e.y, t.x - e.x)
@@ -320,26 +566,36 @@ export class EnemyManager {
       this.scene.projectiles.fire(
         e.x + Math.cos(ang) * 14, e.y - e.radius * 0.5 + Math.sin(ang) * 14, ang,
         {
-          tex: 'proj_enemyArrow', damage: dmg, speed: e.def.projectileSpeed ?? 380,
+          tex: e.def.projectileTex ?? 'proj_enemyArrow', tint: e.def.projectileTint,
+          damage: dmg, speed: e.def.projectileSpeed ?? 380,
           faction: 'enemy', fromPlayer: false, knockback: 20,
         },
       )
       this.scene.audio.playVaried('shoot', 0.18)
     } else {
       this.scene.combat.damageAlly(t, dmg, e.x, e.y, e.def.boss ? 220 : 40)
+      const sl = e.def.slows
+      if (sl && t.alive && (t.kind === 'player' || t.kind === 'soldier')) {
+        applySlow((t as unknown as { slow: Slow }).slow, sl.mult, sl.seconds)
+        this.scene.fx.hitSpark(t.x, t.y - t.radius, e.def.colour, 0.6)
+      }
       this.scene.fx.slash(
         e.x + Math.cos(ang) * (e.radius + 6), e.y - e.radius * 0.6 + Math.sin(ang) * 8,
         ang, e.def.boss ? 1.6 : 0.7, e.def.colour,
       )
-      if (e.def.boss) this.scene.fx.shake(0.01, 0.14)
+      if (e.def.boss) {
+        this.scene.fx.shake(0.01, 0.14)
+        this.kits.onStrike(e, t)
+      }
     }
   }
 
   // ---- boss behaviour ---------------------------------------------------
   private moveBossCharge(e: Enemy, dt: number) {
     e.chargeT = Math.max(0, e.chargeT - dt)
-    e.x = clamp(e.x + e.chargeVX * dt, 20, WORLD.width - 20)
-    e.y = clamp(e.y + e.chargeVY * dt, 20, WORLD.height - 20)
+    const p = this.scene.nav.slide(e.x, e.y, e.chargeVX * dt, e.chargeVY * dt, walkRadius(e.radius))
+    e.x = clamp(p.x, 20, WORLD.width - 20)
+    e.y = clamp(p.y, 20, WORLD.height - 20)
     const near = this.scene.allyGrid.query(e.x, e.y, e.radius + 48, [])
     for (const ally of near) {
       if (e.chargeHits.has(ally.id) || Math.hypot(ally.x - e.x, ally.y - e.y) > e.radius + ally.radius + 8) continue
@@ -369,12 +625,16 @@ export class EnemyManager {
       this.scene.fx.shake(0.018, 0.5)
     }
 
+    const kit = this.kits.handles(e)
+    if (kit) this.kits.tick(e, dt)
+
     if (e.telegraphT > 0) {
       e.telegraphT -= dt
       if (e.telegraphT <= 0) this.bossRelease(e)
       return
     }
     if (e.bossTimer > 0) return
+    if (kit) { this.kits.choose(e, distToTarget); return }
 
     e.bossTimer = e.def.key === 'cinderRegent' ? rr(3.8, 5.4)
       : e.def.key === 'warlord' ? rr(4.5, 7) : rr(5, 8)
@@ -425,24 +685,7 @@ export class EnemyManager {
     } else if (e.def.key === 'warlord') {
       const roll = Math.random()
       if (roll < 0.4 && distToTarget > 200) {
-        // telegraphed charge
-        e.bossAttack = 'charge'
-        e.telegraphT = 0.7
-        const aimX = e.target?.x ?? e.x
-        const aimY = e.target?.y ?? e.y
-        const aimD = Math.max(1, Math.hypot(aimX - e.x, aimY - e.y))
-        const travel = Math.min(aimD, e.speed * 4.2 * 1.2)
-        e.bossAimX = e.x + (aimX - e.x) / aimD * travel
-        e.bossAimY = e.y + (aimY - e.y) / aimD * travel
-        const line = this.scene.add.graphics().setDepth(e.y - 1)
-        line.lineStyle(e.radius * 2 + 24, PAL.danger, 0.14)
-        line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
-        line.lineStyle(4, PAL.danger, 0.8)
-        line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
-        this.scene.tweens.add({ targets: line, alpha: 0, duration: 700, onComplete: () => line.destroy() })
-        this.scene.fx.warningCircle(e.bossAimX, e.bossAimY, e.radius + 30, PAL.danger, e.telegraphT)
-        this.scene.fx.popup(e.x, e.y - e.radius - 40, 'CHARGE!', PAL.danger, 20)
-        this.scene.fx.ring(e.x, e.y, 120, PAL.gold, 0.7)
+        this.telegraphCharge(e)
       } else if (roll < 0.75) {
         // call reinforcements
         const n = 5 + e.bossPhase * 4
@@ -462,10 +705,32 @@ export class EnemyManager {
     }
   }
 
+  /** A telegraphed charge along a line at the target (the warlord's; the Stairwarden's, S17). */
+  telegraphCharge(e: Enemy) {
+    e.bossAttack = 'charge'
+    e.telegraphT = 0.7
+    const aimX = e.target?.x ?? e.x
+    const aimY = e.target?.y ?? e.y
+    const aimD = Math.max(1, Math.hypot(aimX - e.x, aimY - e.y))
+    const travel = Math.min(aimD, e.speed * 4.2 * 1.2)
+    e.bossAimX = e.x + (aimX - e.x) / aimD * travel
+    e.bossAimY = e.y + (aimY - e.y) / aimD * travel
+    const line = this.scene.add.graphics().setDepth(e.y - 1)
+    line.lineStyle(e.radius * 2 + 24, PAL.danger, 0.14)
+    line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
+    line.lineStyle(4, PAL.danger, 0.8)
+    line.lineBetween(e.x, e.y, e.bossAimX, e.bossAimY)
+    this.scene.tweens.add({ targets: line, alpha: 0, duration: 700, onComplete: () => line.destroy() })
+    this.scene.fx.warningCircle(e.bossAimX, e.bossAimY, e.radius + 30, PAL.danger, e.telegraphT)
+    this.scene.fx.popup(e.x, e.y - e.radius - 40, 'CHARGE!', PAL.danger, 20)
+    this.scene.fx.ring(e.x, e.y, 120, PAL.gold, 0.7)
+  }
+
   private bossRelease(e: Enemy) {
     const attack = e.bossAttack
     e.bossAttack = null
     e.attackCd = Math.max(e.attackCd, 0.8)
+    if (this.kits.release(e, attack)) return
     if (attack === 'slam') {
       this.scene.fx.explosion(e.x, e.y, 190, 0xd4a05a)
       this.scene.combat.areaDamageAllies(e.x, e.y, 190, e.damage * 1.8)
@@ -520,7 +785,7 @@ export class EnemyManager {
     } else if (e.burnT > 0) {
       s.setTint(0xff9a5a)
     } else if (e.auraT > 0) {
-      s.setTint(0xd0a8ff)
+      s.setTint(e.auraTint)
     } else if (e.telegraphT > 0) {
       s.setTint(0xffd24a)
     } else if (stunned) {
