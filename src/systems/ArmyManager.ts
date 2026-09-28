@@ -306,6 +306,14 @@ export class ArmyManager {
           const dg = Math.hypot(dx, dy) || 1
           mx = dx / dg
           my = dy / dg
+          // R5: buildings are not in the NavGrid, and posts lie across the
+          // hold: one in the way is skirted along its face, toward the goal
+          const bl = scene.buildings.blockerAt(s.x + mx * 22, s.y + my * 22, s.radius)
+          if (bl && bl.key !== 'wall' && bl.key !== 'gate') {
+            const bx = s.x - bl.x, by = s.y - (bl.y + bl.boxDy)
+            if (Math.abs(by) / bl.boxHH > Math.abs(bx) / bl.boxHW) { mx = Math.sign(g.x - bl.x) || Math.sign(bx) || 1; my = 0 }
+            else { mx = 0; my = Math.sign(g.y - bl.y - bl.boxDy) || Math.sign(by) || 1 }
+          }
           // catch-up sprint so the formation does not string out forever; a detour is always behind
           const far = s.follower.active ? Math.max(d, 240) : d
           speed = def.speed * legs * (far > 220 ? 1.7 : far > 110 ? 1.25 : 1)
