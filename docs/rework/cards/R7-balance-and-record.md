@@ -29,6 +29,11 @@ takes a non-defense structure as its target only if it is within ~60 px *and*
 the walker has made little progress along the field for ~1 s (walls and gates
 keep the latch). One harness sample to confirm the bump share drops.
 
+**C1c · Tidy the dawn.** R6's dawn card now says what the world popups at
+dawn say (`NIGHT N HELD`, `+N coins`, the swept line in `WaveManager.endNight`):
+drop the popups the card repeats (keep the sound). Remove the `fx_marker`
+texture from `art/fx.ts` if nothing uses it any more (grep first).
+
 **C2 · Tune.** Coins should not be the binding wait in acts I and II; acts may
 land up to ~20% earlier than the targets, not more; nights should still be
 lost sometimes by a probe that skips towers (don't test that; reason from the
@@ -43,9 +48,7 @@ costs. At most two re-runs. Record the final table (≤ 12 lines) in STATUS.
   countryside; the army deploys to the front posts). Match the README's voice:
   plain, specific, no marketing.
 - `docs/rework/STATUS.md`: close the rework (Next: none), prune older entries.
-- Final smoke in the browser (restore the save afterwards): a new game, pump
-  through two nights with the default orders, no console errors. One
-  screenshot at `scale: 0.5` of the hold at night.
+- The final merged smoke is the orchestrator's (R6b runs beside you); skip it.
 - Commit.
 
 ## Acceptance

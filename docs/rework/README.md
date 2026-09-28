@@ -156,7 +156,7 @@ Signatures only. A card that changes one updates this list.
 | R2 | `PickupManager.sweepField(): ResourceBag`; `WaveManager.nightLog: NightLog` (`{ wave, kills, coins, swept, sacked }`, type in `core/Events.ts`); bus `night:summary` (the log) at dawn, after `wave:cleared` |
 | R3 | `Enemy.advancing: boolean`; `RegionManager.inHold(x, y): boolean` (pure `inHold` in `Approaches.ts`); `HOLD` in balance; `FRONT_STAGGER`, `POST_BACK`, `frontStagger(plan, id)`, `frontPost(route, hold, back?)` in `Approaches.ts`; `TonightRoute.post: { x: number; y: number }`; `nearestStructure(x, y, r, preferDefense?, holdings?)` |
 | R4 | `Building.sacked`; `BuildingManager.isHolding(b)`, `sack(b)`, `restore(b, byHero?)`, `onStruck(b)`, `raided(now: ms): RaidedHolding[]` (`{ padId, x, y, key }`); `SACK` in balance; bus `holding:raided { padId, x, y, key }`, `building:sacked`, `building:restored { padId, key, x, y }`; `nightLog.sacked` counts |
-| R5 | `Company = 'infantry' \| 'archers' \| 'riders'`, `Order = 'defend' \| 'follow' \| 'hold'`; `ArmyManager.orders`, `.banner`, `setOrder(c, o)`, `cycleAll()`, `companyOf(key)`, `companyCount(c)`; `ARMY` in balance; save `army.orders`, `army.banner` |
+| R5 | `systems/companies.ts`: `Company`, `Order`, `COMPANIES`, `ORDERS`, `ORDER_CALL`, `companyOf(key)`, `nextOrder(o)`, `assignFronts(counts, fronts)`, `Anchor`; `ArmyManager.orders`, `.banner`, `setOrder(c, o)`, `cycleAll(): Order`, `orderCall(o)`, `companyCount(c)`, `follows(s)`, `answer({ padId, x, y })`, `detachments()`, read-only `holding`; `WaveManager.pendingFor(id)`; `ARMY` in balance; save `army.orders`, `army.banner` |
 | R6, R6b | UI only |
 
 ## If you are an implementing session

@@ -1,10 +1,10 @@
 # Rework status
 
-**Next: R5 · Companies and orders** and **R6 · Night awareness** in parallel, then **R6b · Orders panel**, then **R7**.
+**Next: R6b · Orders panel** and **R7 · Balance and the record** in parallel; the orchestrator does the final merged smoke.
 
 Parallel mode (human, 2026-09-28): cards may run at once in worktrees under `.claude/worktrees/rN` (branch `rework-rN`, dev server `emberhold-rN` in `.claude/launch.json`); each writes `docs/rework/handoff/RN.md` and the orchestrator merges into `rework` and writes the entry here.
 
-Branch `rework`, cut from `main` at `479df80`. After R1–R4: 176 tests green,
+Branch `rework`, cut from `main` at `479df80`. After R1–R6: 182 tests green,
 typecheck clean, world lint 0/0.
 
 ## Open decisions
@@ -31,3 +31,8 @@ Probe kill loot is by real pickups, no shortcut; the night reward was most of th
 **R4 · Sacked, not razed: done** (worktree, merged baabb13). Holdings sack at 0 hp (level kept, `alive = false`, untargetable, enemies walk through, allies collide; tinted, smoking, crew sheltered, nothing produced/paid/trained/lent). Mend in calm daylight over `SACK.repairSeconds` 25 (+engineers), or at once when the hero stands in them 1.2 s. `onStruck(b)` from `CombatSystem.damageAlly`; `holding:raided` outside the hold (every 3 s per building), `raided(now)` (scene.now ms). Side effects: auto-hire needs a *standing* warehouse; a sacked depot sends hauls to the hall; `Building.repair` no longer revives a sacked building.
 - Merge: R4's stand-ins replaced by `regions.inHold` and `waves.nightLog.sacked++`; one `sacked` field. Test stubs need `regions.inHold`.
 - Flaky: one full `npm test` run failed once in R2's worktree and once here after the R3 merge; not reproduced in 6+ reruns. Unknown test.
+
+**R5 · Companies and orders: done** (worktree, merged). Infantry / archers / riders (`companyOf` by `SOLDIERS[key].from`), default defend; anchors replanned 4×/s, `LINE_ORDER` within each anchor. Day posts on the hall → last lead post line; from the warning to dawn, `waves.tonight[i].post` split by `assignFronts` over `splitBudget` shares (raid = small front), sticky per soldier; a quiet front (6 s, none pending: `WaveManager.pendingFor(id)`) releases to the nearest live front; all quiet → home early. `holding:raided` → nearest defend company within 2600 (from its nearest free soldier) sends half (≥ 2), home after 5 s quiet. `H` cycles defend → follow → hold. Save `army.orders`/`army.banner`; old `holding` loads as defaults. Soldiers skirt buildings in their steer (`blockerAt`; buildings aren't in the NavGrid). Waystone escort takes followers only. HUD `holdBtn` lights only when all hold (R6b replaces). Multi-front split tested by the pure test only.
+
+**R6 · Night awareness: done** (worktree, merged). Edge markers moved to the UI scene: `ui/Awareness.ts` `ThreatChevrons` (pool 14, 5 Hz gather; boss, damaged hall, fronts from the warning, `horde` clusters at night with counts, `raid` with the building's icon). Minimap pings raided holdings. Dawn card on `night:summary`, 6 s, under the day block, full width below 520 px. Pure `ui/threatMath.ts`. Harness: `H.ui().chevrons.inspect()`, `H.ui().dawn`. Left for R7: dawn popups in the world repeat the card; `fx_marker` texture now unused.
+- Flaky test identified: `terrain-chunks` "a frame bakes within its budget…" is wall-clock and fails under CPU load (parallel agents). Pre-existing; passes on rerun.
