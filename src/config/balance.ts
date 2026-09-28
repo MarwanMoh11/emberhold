@@ -277,3 +277,25 @@ export const HOLD = {
   /** an advancing walker struck from within twice its sight stays provoked this long (s) */
   provokedSeconds: 2,
 }
+
+/**
+ * R4: a holding (any built structure but a defense or the hall) that falls is
+ * sacked, not razed. It keeps its level and mends itself by day; see
+ * `BuildingManager.sack` / `mendSacked`.
+ */
+export const SACK = {
+  /** seconds of calm daylight a sacked holding takes to mend from 0 hp */
+  repairSeconds: 25,
+  /** no walker this close, or the mending waits */
+  calmRadius: 500,
+  /** seconds the hero stands in a sacked holding to put it right at once */
+  restoreHold: 1.2,
+  /** a smoking holding puffs this often (s) while on screen */
+  smokeEvery: 1.5,
+  /** `holding:raided` fires at most this often per building (s) */
+  raidedEvery: 3,
+  /** a raided holding stays in `raided(now)` this long after its last hit (s) */
+  raidedShow: 6,
+  /** the danger popup and horn for a raid sound at most this often overall (s) */
+  alarmEvery: 8,
+}

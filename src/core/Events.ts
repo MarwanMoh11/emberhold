@@ -15,6 +15,11 @@ export interface GameEvents {
   'player:levelup': { level: number }
   'player:died': void
   'building:built': { key: BuildingKey; level: number }
+  /** R4: a holding fell and was sacked (keeps its level); a sacked holding was put right */
+  'building:sacked': { padId: string; key: BuildingKey; x: number; y: number }
+  'building:restored': { padId: string; key: BuildingKey; x: number; y: number }
+  /** R4: a holding outside the hold took damage (at most every `SACK.raidedEvery` s per building) */
+  'holding:raided': { padId: string; x: number; y: number; key: BuildingKey }
   'soldier:recruited': { key: string }
   'worker:hired': { key: string }
   /** `warningSeconds` before dusk (S09): tonight's approach ids and their routes from the spawn point to the hall. */

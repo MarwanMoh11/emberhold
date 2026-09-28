@@ -85,6 +85,7 @@ function validShape(v: unknown): v is SaveBlobV2 {
     && (!knownPad(b.padId) || b.level <= maxLevelForPad(b.padId))
     && (b.peakWorkers === undefined || count(b.peakWorkers, 500))
     && (b.trains === undefined || typeof b.trains === 'string')
+    && (b.sacked === undefined || typeof b.sacked === 'boolean')
     && (b.progress === undefined || record(b.progress)
       && Object.values(b.progress).every(n => finite(n) && n >= 0)))) return false
   if (!Array.isArray(v.workers) || v.workers.length > 500 || !v.workers.every(w => record(w)
