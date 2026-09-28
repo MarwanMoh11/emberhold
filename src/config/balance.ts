@@ -45,6 +45,13 @@ export const PICKUP = {
   bounceTime: 0.34,
   lifetime: 60,
   maxActive: 900,
+  /**
+   * Coins and xp fly home to a living hero from this far after their bounce
+   * (R2). Further out, or with the hero down, coins bank and xp is credited
+   * at `farXp` of its value, so the hero still wants to be in the fight.
+   */
+  homeRange: 1400,
+  farXp: 0.5,
 }
 
 export const COMBAT = {
