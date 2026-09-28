@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import type { EnemyDef, EnemyKey } from '../config/enemies'
 import type { Targetable } from '../core/types'
 import { nextId } from '../core/ids'
+import { HOLD } from '../config/balance'
 import type { FieldTarget } from '../world/NavGrid'
 import type { KitState } from '../systems/bosses'
 
@@ -82,6 +83,15 @@ export class Enemy implements Targetable {
    * Cleared by a hit or by the first claimed cell.
    */
   marching = false
+  /**
+   * R3: a front's walker on its way to the hold: it keeps to the hall's field
+   * and fights only what is in its way. Set as it leaves the march; cleared in the hold.
+   */
+  advancing = false
+  /** where the last hit came from, and how long it stays provoked by it (R3) */
+  hitX = 0; hitY = 0; hitT = 0
+  /** R7: an advancing walker's field distance at the start of its progress window, the window's age, and whether the last window stalled */
+  stallD = Infinity; stallT = 0; stalled = false
   /** the approach it came by, for the arrival log; null for camp patrols and ring spawns */
   approach: string | null = null
   /** fields to follow in order (each via crossing, then the hall) until claimed ground; null after */
@@ -152,6 +162,9 @@ export class Enemy implements Targetable {
     this.bobSeed = Math.random() * 10
     this.fromWave = false
     this.marching = false
+    this.advancing = false
+    this.hitT = 0
+    this.stallD = Infinity; this.stallT = 0; this.stalled = false
     this.approach = null
     this.route = null
     this.leg = 0
@@ -174,6 +187,7 @@ export class Enemy implements Targetable {
   applyDamage(amount: number, srcX: number, srcY: number, knockback = 0): boolean {
     if (!this.alive || this.shielded) return false
     this.marching = false
+    this.hitX = srcX; this.hitY = srcY; this.hitT = HOLD.provokedSeconds
     this.hp -= amount
     this.flashT = 0.09
     if (knockback > 0) {

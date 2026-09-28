@@ -11,6 +11,8 @@ import { ABILITY_ICON } from '../art/icons'
 import type { GameScene } from '../scenes/GameScene'
 import { fitWidth, screen, setColour, textStyle, titleCase } from './theme'
 import { medalTexture, ON_PAGE, PlateButton, sealTexture, SkinBar, SkinPanel, vignetteTexture } from './skin'
+import { OrdersPanel } from './OrdersPanel'
+import { ARMY_ICON } from './ordersMath'
 
 /**
  * The objective needs at least this much room between the vitals and the
@@ -116,6 +118,8 @@ export class HUD {
   private pauseBtn: PlateButton
   private mapBtn: PlateButton
   private holdBtn: PlateButton
+  /** R6b: the army button's drop-down, one row of order chips per company */
+  readonly orders: OrdersPanel
 
   private W = 0
   private H = 0
@@ -125,8 +129,8 @@ export class HUD {
   private padR = 16
   /** Top of the stores, under the icon buttons. */
   private resTop = 0
-  /** Bottom of the right-hand column, for news that must clear it on a narrow screen. */
-  private rightBottom = 0
+  /** Bottom of the right-hand column, for news that must clear it on a narrow screen (and R6's dawn card). */
+  rightBottom = 0
   private toastT = 0
   private toastQueue: [string, string, number][] = []
   /** S14: a lore stone's line, on a card low on the view */
@@ -141,6 +145,8 @@ export class HUD {
   private hintSig = ''
 
   showStats = false
+  /** R6: where the day/objective block sits (CSS px), so the dawn card can hang under it. */
+  readonly objRect = { x: 0, y: 0, w: 0, h: 0 }
   /** True while a modal owns the screen: every HUD tap target goes dead. */
   blocked = false
 
@@ -217,9 +223,10 @@ export class HUD {
 
     // A finger has no ESC, M or H. Without these, everything behind the pause
     // menu, the atlas and the army's standing order are unreachable on a phone.
-    this.holdBtn = this.makeIconButton('ico_follow', () => this.game.toggleHold())
+    this.holdBtn = this.makeIconButton(ARMY_ICON.defend, () => this.orders.toggle())
     this.mapBtn = this.makeIconButton('ico_map', () => this.ui.events.emit('toggleAtlas'))
     this.pauseBtn = this.makeIconButton('ico_pause', () => this.ui.events.emit('togglePause'))
+    this.orders = new OrdersPanel(ui, game)
 
     this.game.bus.on('achievement', p => this.toast(`Deed earned: ${p.title}`))
     this.game.bus.on('carry:full', () => {
@@ -449,11 +456,15 @@ export class HUD {
       this.lowHp.setAlpha((0.35 + Math.sin(g.now * speed) * 0.2) * (1 - hp / 0.3 * 0.5))
     }
 
-    // ---- icon buttons: the army's order shows as the lit button ------------------
-    const holding = g.army.holding
-    this.holdBtn.setIcon(holding ? 'ico_hold' : 'ico_follow')
-      .setTone(holding ? 'primary' : 'quiet')
+    // ---- icon buttons: the army's orders show on its button ------------------
+    // The glyph is the order the companies share (or mixed); it is lit while
+    // the banner stands, since then some of the army is pinned somewhere.
+    if (!live) this.orders.hide()
+    this.holdBtn.setIcon(ARMY_ICON[this.orders.look()])
+      .setTone(g.army.banner ? 'primary' : 'quiet')
+      .setSelected(this.orders.open)
       .setLive(live)
+    this.orders.update(this.W - padR, this.resTop)
     this.mapBtn.setLive(live)
     this.pauseBtn.setLive(live)
 
@@ -499,11 +510,15 @@ export class HUD {
       // One slot on the right: what is on your back, in gold, while you carry
       // any; otherwise the income rate, the number that makes automation feel
       // worth buying.
+      // Coins are never carried; their slot is the treasury's income (the tithe,
+      // trade and every coin banked), kept dim so it reads as a pulse, not a prize.
       const held = g.res.carried[row.type]
       const r = g.res.rate[row.type]
+      const coins = row.type === 'coins'
       row.rate.setPosition(rx + resW - 10, y + 1)
       if (held > 0) setColour(row.rate.setText(`+${short(held)}`), PAL.gold)
-      else setColour(row.rate.setText(r >= 0.05 ? `+${r >= 10 ? Math.round(r) : r.toFixed(1)}/s` : ''), PAL.good)
+      else setColour(row.rate.setText(r >= (coins ? 0.1 : 0.05) ? `+${r >= 10 ? Math.round(r) : r.toFixed(1)}/s` : ''),
+        coins ? PAL.uiDim : PAL.good)
       i++
     }
     this.outputText.setVisible(bonus)
@@ -527,6 +542,8 @@ export class HUD {
     const objH = q ? 64 : 26
     const cx = objX + objW / 2
     this.objPanel.place(objX, objY, objW, objH)
+    const or = this.objRect
+    or.x = objX; or.y = objY; or.w = objW; or.h = objH
     if (q) {
       this.objTitle.setText(q.title).setPosition(cx, objY + 31)
       this.fit(this.objTitle, 15, objW - 24)

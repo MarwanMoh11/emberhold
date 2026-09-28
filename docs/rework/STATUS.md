@@ -1,0 +1,45 @@
+# Rework status
+
+**Next: none. The rework is closed** (2026-09-28) and merged to `main`.
+
+Parallel mode (human, 2026-09-28): cards may run at once in worktrees under `.claude/worktrees/rN` (branch `rework-rN`, dev server `emberhold-rN` in `.claude/launch.json`); each writes `docs/rework/handoff/RN.md` and the orchestrator merges into `rework` and writes the entry here.
+
+Branch `rework`, cut from `main` at `479df80`. After R1–R7: 184 tests green,
+typecheck clean, world lint 0/0.
+
+## Open decisions
+
+- None yet.
+
+## Entries
+
+<!-- newest last; ≤ 12 lines each; prune entries three or more cards old to one line -->
+
+**R1 · The treasury: done.** `TITHE` kept at the card's start values (hall 0.4…2.6, perWorker 0.12, perHome 0.05, popup 10 s); `village.titheOf(buildings)` is the pure count, `BuildingManager.titheRate()` wraps it, recounted 1/s. `Building.sacked` exists (false) and already zeroes a building's tithe: R4 only sets it. Away-pay includes the tithe; market floor 150; HUD coin rate dim from 0.1/s.
+Probe to wave 8, coins earned per day+night and in store, baseline → after:
+| wave | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| earned | 158→245 | 64→154 | 56→205 | 145→310 | **177→355** | 203→435 | 199→559 | 118→946 |
+| store | 206→293 | 300→410 | 272→333 | 474→362 | 413→779 | 419→1075 | 406→553 | 460→2086 |
+Before: hall Lv1 all 8 waves, waiting on a10 (burn the Diggers) from w4, one claim. After: hall Lv2 at w7, whisperwood claimed w7, on a14 (act I's last quest) at w8. Wave 8 at 14.6 → 14.9 min (claims lengthen days); act I not over at w8 in either run, so no early landing.
+Probe kill loot is by real pickups, no shortcut; the night reward was most of the baseline's coins.
+
+**R2 · Loot is never lost: done** (worktree, merged 5dab500). Coins/xp fly home within `PICKUP.homeRange` 1400 after the bounce; beyond it or with the hero down, coins bank and xp is owed at `farXp` 0.5 (paid when the hero stands). Dawn sweep banks cargo on claimed ground (`sweepField`); routed walkers bank their loot; cargo on claimed ground doesn't rot from the warning to dawn. `nightLog` (in `core/Events.ts` as `NightLog`) opens at dusk; `night:summary` after `wave:cleared`. `nightLog.coins` = gathered-coin growth since dusk + the reward (tithe included). `collectAllInRadius` removed.
+
+**R3 · The march holds its course: done** (worktree, merged 167211a). Front walkers on claimed ground advance (`acquireAdvance`: hero/ally within 220 or 440 just after a close hit, a structure within 110, else the hall); assault as before once `inHold`. Raids weight holdings 0.5. `FRONT_STAGGER` 10 s lives in `Approaches.ts` (with `frontStagger`, `frontPost`, `POST_BACK` 160). Posts sit ~1200–1300 px from the hall on the south and west roads (the hold region reaches past 900). Smoke: 0 far-structure targets in 2108 samples; advancing walkers still hit roadside holdings within 110 px (R7 may shrink `advanceBump`).
+
+**R4 · Sacked, not razed: done** (worktree, merged baabb13). Holdings sack at 0 hp (level kept, `alive = false`, untargetable, enemies walk through, allies collide; tinted, smoking, crew sheltered, nothing produced/paid/trained/lent). Mend in calm daylight over `SACK.repairSeconds` 25 (+engineers), or at once when the hero stands in them 1.2 s. `onStruck(b)` from `CombatSystem.damageAlly`; `holding:raided` outside the hold (every 3 s per building), `raided(now)` (scene.now ms). Side effects: auto-hire needs a *standing* warehouse; a sacked depot sends hauls to the hall; `Building.repair` no longer revives a sacked building.
+- Merge: R4's stand-ins replaced by `regions.inHold` and `waves.nightLog.sacked++`; one `sacked` field. Test stubs need `regions.inHold`.
+- Flaky: one full `npm test` run failed once in R2's worktree and once here after the R3 merge; not reproduced in 6+ reruns. Unknown test.
+
+**R5 · Companies and orders: done** (worktree, merged). Infantry / archers / riders (`companyOf` by `SOLDIERS[key].from`), default defend; anchors replanned 4×/s, `LINE_ORDER` within each anchor. Day posts on the hall → last lead post line; from the warning to dawn, `waves.tonight[i].post` split by `assignFronts` over `splitBudget` shares (raid = small front), sticky per soldier; a quiet front (6 s, none pending: `WaveManager.pendingFor(id)`) releases to the nearest live front; all quiet → home early. `holding:raided` → nearest defend company within 2600 (from its nearest free soldier) sends half (≥ 2), home after 5 s quiet. `H` cycles defend → follow → hold. Save `army.orders`/`army.banner`; old `holding` loads as defaults. Soldiers skirt buildings in their steer (`blockerAt`; buildings aren't in the NavGrid). Waystone escort takes followers only. HUD `holdBtn` lights only when all hold (R6b replaces). Multi-front split tested by the pure test only.
+
+**R6 · Night awareness: done** (worktree, merged). Edge markers moved to the UI scene: `ui/Awareness.ts` `ThreatChevrons` (pool 14, 5 Hz gather; boss, damaged hall, fronts from the warning, `horde` clusters at night with counts, `raid` with the building's icon). Minimap pings raided holdings. Dawn card on `night:summary`, 6 s, under the day block, full width below 520 px. Pure `ui/threatMath.ts`. Harness: `H.ui().chevrons.inspect()`, `H.ui().dawn`. Left for R7: dawn popups in the world repeat the card; `fx_marker` texture now unused.
+- Flaky test identified: `terrain-chunks` "a frame bakes within its budget…" is wall-clock and fails under CPU load (parallel agents). Pre-existing; passes on rerun.
+
+**R6b · Orders panel: done** (worktree, merged). The army button opens `ui/OrdersPanel.ts` (`hud.orders`): one row per company with soldiers or a standing muster building, Defend / Follow / Hold chips; Hold re-plants the standard at the hero; doesn't pause; a tap outside closes it without moving the hero. Button glyph from `ordersMath.armyLook` (shield, file, banner, mixed `ico_orders`). World standard `army_standard` (`ArmyManager.plantStandard()`). Harness: `H.game.scene.getScene('UI').hud.orders.inspect()` / `.press(c, o)`.
+
+**R7 · Balance and the record: done** (worktree, merged). Probe fixes first (`questStep` waits out the waystone channel; the probe recruits what a yard can pay for). Advancing walkers take a holding only within `HOLD.advanceBlock` 60 while `Enemy.stalled` (1 of 4876 samples, was ~40%). Dawn popups dropped (the card says it). `TITHE.perWorker` 0.1, `perHome` 0.04. README current.
+Probe, R1 baseline → R7 (coins earned per day+night): w1 158→298 · w5 177→359 · w8 118→775; w8 at 14.6 → 13.3 min. Act II from w10/17.3 min, act III from w15/30.9. Coins short only at w3 (12 s) and while saving for tier-3 claims; wood paces acts I–II.
+- Watch: large run-to-run variance; in the final run tier-3 claims came w15–17 and act IV began at w17 (target w34). S22's pre-rework probe had tier-3 claims w14–20, so the late acts were already early; the lever is tier-3 claim costs or the late tithe.
+- Final merged smoke (orchestrator, :5180): a new game with 4 swordsmen and 2 archers on default orders; at the first night all six stood within ~200 px of the south post; nights 1 and 2 held (summaries `{kills 8, +113 coins, swept 25 wood}`, `{kills 12, +151}`), the dawn card showed, no console errors. Night screenshot skipped: the hidden pane auto-paused the game.

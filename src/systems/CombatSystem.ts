@@ -92,6 +92,8 @@ export class CombatSystem {
   damageAlly(t: Targetable, amount: number, srcX: number, srcY: number, knockback = 0) {
     if (!t.alive || (this.god && t.kind === 'player')) return
     const killed = t.applyDamage(amount, srcX, srcY, knockback)
+    // a holding outside the hold calls for help (R4)
+    if (t.kind === 'building') this.scene.buildings.onStruck(t as never)
     if (t.kind !== 'player') {
       this.scene.fx.damage(t.x, t.y - t.radius - 14, Math.round(amount), false, '#ff9a8a')
     }

@@ -5,9 +5,12 @@ import { DAYNIGHT, VILLAGE, dayLength, nightReward } from '../config/balance'
 import { PAL } from '../config/palette'
 import { rr, ri, shuffled, clamp } from '../core/math'
 import { ENEMIES, type EnemyKey } from '../config/enemies'
+import { RESOURCE_ORDER, type ResourceBag } from '../core/types'
+import type { NightLog } from '../core/Events'
+import { rollLoot } from './PickupManager'
 import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
-import { CAMP_MIX, SPAWN_SCATTER, splitBudget, type ApproachId, type NightPlan } from './Approaches'
+import { CAMP_MIX, SPAWN_SCATTER, frontPost, frontStagger, inHold, splitBudget, type ApproachId, type NightPlan } from './Approaches'
 import { mixHand } from './walkers'
 
 /** Walkers whose deck card opens into a pack (S16: thornlings come five at a time). */
@@ -39,6 +42,8 @@ export interface TonightRoute {
   y: number
   /** from the spawn point to the hall, one point per 32 px cell */
   route: Pt[]
+  /** R3: where the army meets it: the route just outside the hold (`frontPost`); the spawn point if the route is empty */
+  post: { x: number; y: number }
 }
 
 /** "the south road", "the south road and the west ford", "a, b and c". */
@@ -67,6 +72,8 @@ export class WaveManager {
   private queueHead = 0
   private remaining = 0
   private current: WaveDef | null = null
+  /** R3: tonight's last front spawns this long after the first (`FRONT_STAGGER` apart); the fight window stretches by it */
+  private stagger = 0
   /**
    * How far toward night the light has gone: 0 is full day, 1 is the dark.
    * Eased rather than stepped, and dusk starts before the warning so the
@@ -76,6 +83,10 @@ export class WaveManager {
   private bossName: string | null = null
 
   wavesCleared = 0
+  /** tonight's tally from dusk to dawn, emitted as `night:summary` (R2); R4 counts `sacked` */
+  nightLog: NightLog = { wave: 0, kills: 0, coins: 0, swept: {}, sacked: 0 }
+  /** coins gathered in all, at dusk: the night's coins are the difference at dawn */
+  private duskCoins = 0
   /** set while the player is being told a wave is coming */
   bannerText = ''
 
@@ -125,7 +136,7 @@ export class WaveManager {
         const spawnedAll = this.queueHead >= this.queue.length
         // the fight window, stretched by the spawn's spread; stragglers flee at dawn (S20)
         const timedOut = this.fighting
-          && this.fightElapsed > Math.max(DAYNIGHT.nightSeconds, (this.current?.spread ?? 8) + DAYNIGHT.fightGrace)
+          && this.fightElapsed > Math.max(DAYNIGHT.nightSeconds, (this.current?.spread ?? 8) + DAYNIGHT.fightGrace) + this.stagger
         if (spawnedAll && (this.remaining <= 0 || timedOut)) {
           if (this.remaining > 0) this.rout()
           this.endNight()
@@ -169,7 +180,9 @@ export class WaveManager {
     for (const id of [...plan.fronts, ...(plan.raid ? [plan.raid] : [])]) {
       if (!ap.muster(id)) continue
       const [x, y] = ap.spawnPoint(id)
-      out.push({ id, name: ap.name(id), raid: ap.isRaid(id), x, y, route: ap.marchRoute(id) })
+      const route = ap.marchRoute(id)
+      const post = frontPost(route, inHold) ?? { x, y }
+      out.push({ id, name: ap.name(id), raid: ap.isRaid(id), x, y, route, post })
     }
     return out
   }
@@ -199,6 +212,13 @@ export class WaveManager {
     if (!this.fighting) this.beginFight()
   }
 
+  /** R5: spawns still to come tonight by an approach (the army keeps its post till they are out). */
+  pendingFor(id: ApproachId): number {
+    let n = 0
+    for (let i = this.queueHead; i < this.queue.length; i++) if (this.queue[i].approach === id) n++
+    return n
+  }
+
   private peekNext(): WaveDef {
     const base = waveDef(this.wave + 1)
     return directorAdjust(base, {
@@ -211,6 +231,7 @@ export class WaveManager {
 
   private beginNight() {
     this.wave++
+    this.openLog()
     this.phase = 'night'
     this.phaseT = DAYNIGHT.nightSeconds
     this.nightElapsed = 0
@@ -255,6 +276,7 @@ export class WaveManager {
     // three fronts or more: a share of the deck (S22, `FRONTS`)
     const deck = shuffled(units).slice(0, Math.round(units.length * frontShare(plan.fronts.length)))
     const split = splitBudget(plan, deck.length)
+    this.stagger = 0
     const mult = (t: TonightRoute) => {
       const tier = ap.tier(t.id)
       return { hp: hpMult * (1 + FRONTS.hp * tier), dmg: dmgMult * (1 + FRONTS.dmg * tier) }
@@ -269,9 +291,12 @@ export class WaveManager {
         tier: ap.tier(t.id),
       }, CAMP_MIX, PACKS)
       const m = mult(t)
+      // fronts arrive one after another (R3): front i holds back i × FRONT_STAGGER
+      const late = frontStagger(plan, t.id)
+      this.stagger = Math.max(this.stagger, late)
       hand.forEach((key, i) => this.queue.push({
         key, approach: t.id, x: t.x, y: t.y,
-        at: (i / Math.max(1, hand.length)) * spread + rr(0, 0.5),
+        at: late + (i / Math.max(1, hand.length)) * spread + rr(0, 0.5),
         hpMult: m.hp, dmgMult: m.dmg,
       }))
     }
@@ -321,21 +346,38 @@ export class WaveManager {
 
   /** Called by the scene when any wave enemy dies. */
   notifyKilled(fromWave: boolean) {
-    if (fromWave) this.remaining = Math.max(0, this.remaining - 1)
+    if (!fromWave) return
+    this.remaining = Math.max(0, this.remaining - 1)
+    this.nightLog.kills++
+  }
+
+  /** A fresh night log at dusk (R2). */
+  private openLog() {
+    this.nightLog = { wave: this.wave, kills: 0, coins: 0, swept: {}, sacked: 0 }
+    this.duskCoins = this.scene.res.totalGathered.coins
   }
 
   /**
    * Dawn breaks the horde (S20): night walkers still out when the fight
-   * window closes flee in smoke and drop what they carried (their loot, no
-   * kill or xp). Bosses stand their ground and carry into the day.
+   * window closes flee in smoke and leave what they carried (their loot, no
+   * kill or xp) to the dawn sweep, banked rather than dropped on the grass
+   * (R2). Bosses stand their ground and carry into the day.
    */
   private rout() {
     const fled: Enemy[] = []
     this.scene.enemies.forEachAlive(e => { if (e.fromWave && !e.def.boss) fled.push(e) })
+    const loot: ResourceBag = {}
     for (const e of fled) {
-      this.scene.pickups.dropLoot(e.def, e.x, e.y, this.scene.player.stats.greed)
+      rollLoot(e.def, this.scene.player.stats.greed, loot)
       this.scene.fx.smoke(e.x, e.y, 3)
       this.scene.enemies.despawn(e)
+    }
+    const swept = this.nightLog.swept
+    for (const k of RESOURCE_ORDER) {
+      const n = loot[k] ?? 0
+      if (n <= 0) continue
+      this.scene.res.addStored(k, n)
+      if (k !== 'coins') swept[k] = (swept[k] ?? 0) + n
     }
     this.remaining = 0
   }
@@ -351,11 +393,20 @@ export class WaveManager {
     // each standing chapel blesses the reward, +50% at most in all (S13b)
     const reward = Math.round(nightReward(this.wave) * this.scene.buildings.nightBlessing())
     this.scene.res.addStored('coins', reward, false)
-    this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 120, `NIGHT ${this.wave} HELD`, PAL.good, 30)
-    this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 84, `+${reward} coins`, PAL.coins, 18)
+    // the dawn card (R6) says what the night held, earned and swept; the world only sounds it (R7)
     this.scene.audio.play('quest', 0.9)
-    this.scene.pickups.collectAllInRadius(this.scene.player.x, this.scene.player.y, 900)
+
+    // the dawn sweep (R2): the night's cargo on claimed ground goes into stores
+    const log = this.nightLog
+    const swept = this.scene.pickups.sweepField()
+    for (const k of RESOURCE_ORDER) {
+      const n = swept[k] ?? 0
+      if (n > 0) log.swept[k] = (log.swept[k] ?? 0) + n
+    }
+    log.coins = Math.max(0, this.scene.res.totalGathered.coins - this.duskCoins) + reward
+
     this.scene.bus.emit('wave:cleared', { wave: this.wave })
+    this.scene.bus.emit('night:summary', log)
   }
 
   /** Debug / quest helper. */

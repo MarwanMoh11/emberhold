@@ -230,6 +230,13 @@ const GLYPHS: Record<string, Glyph> = {
     fill(x, P.rect(C - 2.5, C - 14, 5, 27), BONE)
     fill(x, P.rect(C - 13, C - 5, 26, 5), BONE)
   },
+  // R6b: the companies under different orders, three pennants at three heights
+  orders: x => {
+    for (const [ox, top, c] of [[-12, -17, PAL.lapis], [0, -11, BONE], [12, -5, PAL.lapis]] as const) {
+      form(x, P.round(C + ox - 1.5, C + top, 3, 36 - (top + 17), 1.2), 0x8a5a32, { rim: 0.4, core: 0.8 })
+      form(x, P.poly([[C + ox + 1.5, C + top + 1], [C + ox + 11, C + top + 4.5], [C + ox + 1.5, C + top + 9]]), c, { rim: 0.6, core: 1.2 })
+    }
+  },
   pop: x => {
     form(x, P.circle(C, C - 9, 7), BONE, INKED)
     form(x, xx => { xx.moveTo(C - 13, C + 16); xx.quadraticCurveTo(C - 13, C, C, C); xx.quadraticCurveTo(C + 13, C, C + 13, C + 16); xx.closePath() }, BONE, INKED)

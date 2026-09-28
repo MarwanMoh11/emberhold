@@ -3,7 +3,7 @@
  * types). BuildingManager feeds it standing buildings; tests feed it numbers.
  * Nothing here touches Phaser or the scene.
  */
-import { VILLAGE } from '../config/balance'
+import { VILLAGE, titheRate } from '../config/balance'
 
 /** A building that lends a bonus to what stands within `reach` of it. */
 export interface BonusSource { x: number; y: number; bonus: number; reach: number }
@@ -57,4 +57,25 @@ export function routeNear(route: readonly (readonly [number, number])[], x: numb
     if ((ax + dx * t - x) ** 2 + (ay + dy * t - y) ** 2 <= r2) return true
   }
   return false
+}
+
+/** What the tithe (R1) counts of one building. */
+export interface TitheSource { key: string; level: number; sacked?: boolean; workers: { length: number }; stats: { pop?: number } }
+
+/**
+ * Coins a second the hall's tithe pays for these buildings (R1): the hall's
+ * level, every crew hired into a building, and the population cottages
+ * (capped by VILLAGE.cottagePopMax) and longhouses house. A sacked building
+ * (R4) counts for nothing, and a sacked or fallen hall levies nothing.
+ */
+export function titheOf(buildings: Iterable<TitheSource>): number {
+  let hallLevel = 0, workers = 0, cottagePop = 0, housePop = 0
+  for (const b of buildings) {
+    if (b.level <= 0 || b.sacked) continue
+    workers += b.workers.length
+    if (b.key === 'townHall') hallLevel = b.level
+    else if (b.key === 'cottage') cottagePop += b.stats.pop ?? 0
+    else if (b.key === 'house') housePop += b.stats.pop ?? 0
+  }
+  return titheRate({ hallLevel, workers, homePop: Math.min(cottagePop, VILLAGE.cottagePopMax) + housePop })
 }

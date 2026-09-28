@@ -177,7 +177,8 @@ export class Waystones {
     const ax = to.x, ay = to.y + 40
     s.fx.ring(fromX, fromY - 20, 120, PAL.heroTrim, 0.5)
 
-    const escort = s.army.soldiers.filter(u => u.alive
+    // only the companies following the hero go (R5); defenders keep their posts
+    const escort = s.army.soldiers.filter(u => u.alive && s.army.follows(u)
       && Math.hypot(u.x - fromX, u.y - fromY) <= WAYSTONE.escort)
     p.x = ax; p.y = ay
     p.vx = 0; p.vy = 0

@@ -46,6 +46,14 @@ export class Building implements Targetable {
   maxHp = 0
   alive = false
   state: BuildState = 'empty'
+  /**
+   * R4: a holding knocked out at 0 hp. It keeps its level but is not `alive`
+   * (untargetable, produces and lends nothing) until it mends or the hero
+   * puts it right.
+   */
+  sacked = false
+  /** seconds to the next puff of smoke while sacked */
+  sackFxT = 0
 
   /** resources banked toward the next level */
   progress: ResourceBag = {}
@@ -241,11 +249,14 @@ export class Building implements Targetable {
     if (this.level === 0) return
     this.hp = Math.min(this.maxHp, this.hp + amount)
     if (this.hp >= this.maxHp) this.damageT = 0
-    if (!this.alive && this.hp > 0) this.alive = true
+    // a sacked holding stays down until BuildingManager restores it at full hp
+    if (!this.alive && this.hp > 0 && !this.sacked) this.alive = true
   }
 
-  toJSON() {
+  toJSON(): { padId: string; level: number; hp: number; progress: ResourceBag; peakWorkers: number; sacked?: boolean } {
     return { padId: this.padId, level: this.level, hp: this.hp,
-      progress: this.progress, peakWorkers: this.peakWorkers }
+      progress: this.progress, peakWorkers: this.peakWorkers,
+      // left out unless true, so a save only grows by its sacked buildings
+      sacked: this.sacked || undefined }
   }
 }

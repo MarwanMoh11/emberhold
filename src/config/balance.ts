@@ -45,6 +45,13 @@ export const PICKUP = {
   bounceTime: 0.34,
   lifetime: 60,
   maxActive: 900,
+  /**
+   * Coins and xp fly home to a living hero from this far after their bounce
+   * (R2). Further out, or with the hero down, coins bank and xp is credited
+   * at `farXp` of its value, so the hero still wants to be in the fight.
+   */
+  homeRange: 1400,
+  farXp: 0.5,
 }
 
 export const COMBAT = {
@@ -182,8 +189,8 @@ export const VILLAGE = {
      * claims paced by their costs, not by the markets.
      */
     sells: true,
-    /** food and wood are sold only above this much of each in store */
-    floor: 300,
+    /** food and wood are sold only above this much of each in store (R1: 300 → 150, so the surplus turns over) */
+    floor: 150,
     /** goods sold for each coin earned */
     goodsPerCoin: 4,
     /** +this per cottage or longhouse within `homeRadius`, at most `homeMax` */
@@ -206,6 +213,31 @@ export const POP = {
 }
 
 /**
+ * The hall's tithe (R1, rework README §A): coins that come from time. Everyone
+ * who works or lives in the settlement pays a little, banked every second:
+ * `hall[level − 1] + perWorker × crew + perHome × home population`, where home
+ * population is what cottages (capped by VILLAGE.cottagePopMax) and longhouses
+ * house. A sacked building (R4) pays nothing: its crew and its homes drop out.
+ */
+export const TITHE = {
+  /** coins a second from the hall itself, by level (index 0 = Lv.1) */
+  hall: [0.4, 0.8, 1.3, 1.9, 2.6],
+  /** per hired worker (sheltering counts; dismissed does not); R7: 0.12 → 0.1, act II banked 7–9k it had no use for */
+  perWorker: 0.1,
+  /** per point of cottage and longhouse population; R7: 0.05 → 0.04 */
+  perHome: 0.04,
+  /** seconds between the hall's quiet `+N coins` */
+  popupEvery: 10,
+}
+
+/** Coins a second the tithe pays for a hall level, a working crew and a housed population. */
+export function titheRate(t: { hallLevel: number; workers: number; homePop: number }): number {
+  if (t.hallLevel <= 0) return 0
+  const hall = TITHE.hall[Math.min(TITHE.hall.length, t.hallLevel) - 1]
+  return hall + TITHE.perWorker * Math.max(0, t.workers) + TITHE.perHome * Math.max(0, t.homePop)
+}
+
+/**
  * Stores are uncapped on purpose. A shared cap meant a flood of food could
  * freeze the wood counter while lumberjacks kept chopping, which reads as
  * "my workers do nothing". Numbers must always climb; the Warehouse sells
@@ -225,4 +257,83 @@ export const PERF = {
   separationNeighbours: 6,
   retargetFrames: 14,
   gridCell: 72,
+}
+
+/**
+ * The hold under assault (R3). A front walker on claimed ground *advances*: it
+ * keeps to the hall's flow field and fights only what is in its way, until it
+ * is in the hold (the `hold` region, or within `assaultRadius` of the hall),
+ * where it assaults as before. Raids keep detouring, and prefer holdings.
+ */
+export const HOLD = {
+  /** px from the hall that counts as the hold, whatever the regions say */
+  assaultRadius: 900,
+  /** an advancing walker fights the hero, a soldier or a worker this near (twice it, just after a close hit) */
+  advanceSight: 220,
+  /** an advancing walker fights a tower, wall or gate this near: it is in the way */
+  advanceBump: 110,
+  /**
+   * R7: a holding only when the walker is up against it (this near) and stuck: it got less than
+   * `stallPx` further down the hall's field in the last `stallWindow` s. Roadside farms are passed by.
+   */
+  advanceBlock: 60,
+  stallWindow: 1,
+  stallPx: 24,
+  /** a raid walker's score for a holding (not a wall, gate, tower or the hall): lower is likelier */
+  raidHoldings: 0.5,
+  /** an advancing walker struck from within twice its sight stays provoked this long (s) */
+  provokedSeconds: 2,
+}
+
+/**
+ * R4: a holding (any built structure but a defense or the hall) that falls is
+ * sacked, not razed. It keeps its level and mends itself by day; see
+ * `BuildingManager.sack` / `mendSacked`.
+ */
+export const SACK = {
+  /** seconds of calm daylight a sacked holding takes to mend from 0 hp */
+  repairSeconds: 25,
+  /** no walker this close, or the mending waits */
+  calmRadius: 500,
+  /** seconds the hero stands in a sacked holding to put it right at once */
+  restoreHold: 1.2,
+  /** a smoking holding puffs this often (s) while on screen */
+  smokeEvery: 1.5,
+  /** `holding:raided` fires at most this often per building (s) */
+  raidedEvery: 3,
+  /** a raided holding stays in `raided(now)` this long after its last hit (s) */
+  raidedShow: 6,
+  /** the danger popup and horn for a raid sound at most this often overall (s) */
+  alarmEvery: 8,
+}
+
+/**
+ * R5: the army in companies, each under an order (`systems/companies.ts`).
+ * Engage is how far a soldier looks for a fight from where it stands; leash is
+ * how far from its anchor it will chase one.
+ */
+export const ARMY = {
+  /** follow: the formation on the hero */
+  engage: 300,
+  leash: 420,
+  /** hold: the banner */
+  holdEngage: 360,
+  holdLeash: 480,
+  /** defend: a day post, a front post, or a raided holding */
+  postEngage: 480,
+  postLeash: 720,
+  /** a detachment answers a raided holding at most this far by path (px) */
+  respondRange: 2600,
+  /** a detachment is half its company, at least this many */
+  respondMin: 2,
+  /** a detachment walks back once its holding has been quiet this long (s) */
+  respondQuiet: 5,
+  /** a front with no spawns left and no walker near its post this long (s) sends its soldiers on */
+  frontQuiet: 6,
+  /** px from the hall of each company's day post, toward the last night's main front */
+  dayPost: { infantry: 320, archers: 210, riders: 260 },
+  /** the riders' day post stands this far to the side of that line (px) */
+  riderFlank: 280,
+  /** anchors are worked out this often (s), not per soldier per frame */
+  replan: 0.25,
 }

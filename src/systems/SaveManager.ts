@@ -85,6 +85,7 @@ function validShape(v: unknown): v is SaveBlobV2 {
     && (!knownPad(b.padId) || b.level <= maxLevelForPad(b.padId))
     && (b.peakWorkers === undefined || count(b.peakWorkers, 500))
     && (b.trains === undefined || typeof b.trains === 'string')
+    && (b.sacked === undefined || typeof b.sacked === 'boolean')
     && (b.progress === undefined || record(b.progress)
       && Object.values(b.progress).every(n => finite(n) && n >= 0)))) return false
   if (!Array.isArray(v.workers) || v.workers.length > 500 || !v.workers.every(w => record(w)
@@ -99,6 +100,11 @@ function validShape(v: unknown): v is SaveBlobV2 {
   if (v.army.totalRecruited !== undefined && (!finite(v.army.totalRecruited)
     || v.army.totalRecruited < 0 || v.army.totalRecruited > 1000000)) return false
   if (v.army.holding !== undefined && typeof v.army.holding !== 'boolean') return false
+  // R5: orders by company (unknown ones load as defend) and the hold banner
+  if (v.army.orders !== undefined && (!record(v.army.orders)
+    || !Object.values(v.army.orders).every(o => typeof o === 'string'))) return false
+  if (v.army.banner !== undefined && v.army.banner !== null
+    && (!record(v.army.banner) || !inWorld(v.army.banner.x, v.army.banner.y))) return false
   if (v.army.units !== undefined && (!Array.isArray(v.army.units) || v.army.units.length > 500
     || !v.army.units.every(u => record(u) && typeof u.key === 'string' && inWorld(u.x, u.y)
       && finite(u.hp) && u.hp > 0 && u.hp <= 100000))) return false

@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { Enemy, type CampHome } from '../entities/Enemy'
 import { ENEMIES, type EnemyDef, type EnemyKey } from '../config/enemies'
-import { PERF } from '../config/balance'
+import { HOLD, PERF } from '../config/balance'
 import { MAX_ENEMIES } from '../core/device'
 import { PAL } from '../config/palette'
 import { WORLD } from '../config/world'
@@ -145,7 +145,14 @@ export class EnemyManager {
   private acquire(e: Enemy): Targetable | null {
     if (e.home) return this.acquirePatrol(e, e.home)
     const s = this.scene
+    // a raid's walker burns the countryside: it prefers holdings to walls and towers (R3)
+    const raid = e.fromWave && e.approach !== null && s.approaches.isRaid(e.approach)
+    // a front's walker knocked off its march before claimed ground advances too
+    if (e.fromWave && e.route && !raid) e.advancing = true
+    if (e.advancing && s.regions.inHold(e.x, e.y)) e.advancing = false
+    if (e.advancing) return this.acquireAdvance(e)
     const prefs = e.def.prefers
+    const holdings = raid ? HOLD.raidHoldings : 1
     let t: Targetable | null = null
 
     if (prefs === 'player') {
@@ -153,16 +160,53 @@ export class EnemyManager {
     } else if (prefs === 'workers') {
       t = s.allyGrid.nearest(e.x, e.y, 620, a => a.alive && a.kind === 'worker')
     } else if (prefs === 'structures') {
-      t = s.buildings.nearestStructure(e.x, e.y, 560, true)
+      t = s.buildings.nearestStructure(e.x, e.y, 560, true, holdings)
     }
 
     if (!t) t = s.allyGrid.nearest(e.x, e.y, 440, a => a.alive && a.kind !== 'building')
-    if (!t) t = s.buildings.nearestStructure(e.x, e.y, 700, prefs === 'structures')
-    if (!t) {
-      const hall = s.buildings.townHall
-      t = hall && hall.level > 0 && hall.alive ? hall : (s.player.alive ? s.player : null)
-    }
-    return t
+    if (!t) t = s.buildings.nearestStructure(e.x, e.y, 700, prefs === 'structures', holdings)
+    return t ?? this.hallOrHero()
+  }
+
+  private hallOrHero(): Targetable | null {
+    const s = this.scene
+    const hall = s.buildings.townHall
+    return hall && hall.level > 0 && hall.alive ? hall : (s.player.alive ? s.player : null)
+  }
+
+  /**
+   * An advancing front walker (R3) fights only what is in its way: the hero,
+   * a soldier or a worker within `advanceSight` (twice that just after a hit
+   * from close by, so whoever struck it is answered, never a far tower), a
+   * structure within `advanceBump`. Otherwise the hall, down its flow field,
+   * where the wall latch still breaks the wall the field routes it through.
+   * Bosses and hero-hunters keep hunting the hero.
+   */
+  private acquireAdvance(e: Enemy): Targetable | null {
+    const s = this.scene
+    const p = s.player
+    if ((e.def.boss || e.def.prefers === 'player') && p.alive) return p
+    const sight = HOLD.advanceSight
+    const provoked = e.hitT > 0 && (e.hitX - e.x) ** 2 + (e.hitY - e.y) ** 2 < 4 * sight * sight
+    const r = provoked ? sight * 2 : sight
+    if (p.alive && (p.x - e.x) ** 2 + (p.y - e.y) ** 2 < r * r) return p
+    const b = s.buildings, walls = e.def.prefers === 'structures'
+    return s.allyGrid.nearest(e.x, e.y, r, a => a.alive && a.kind !== 'building')
+      // a tower, wall or gate in reach is in the way (holdings weighed out of this pick)
+      ?? b.nearestStructure(e.x, e.y, HOLD.advanceBump, walls, Infinity)
+      // a holding only when it is what the walker is stuck against (R7): roadside farms are passed by
+      ?? (e.stalled ? b.nearestStructure(e.x, e.y, HOLD.advanceBlock, walls) : null)
+      ?? this.hallOrHero()
+  }
+
+  /** R7: every `HOLD.stallWindow` s, whether an advancing walker got less than `stallPx` further down the hall's field. */
+  private trackProgress(e: Enemy, field: FlowField, dt: number) {
+    e.stallT += dt
+    if (e.stallT < HOLD.stallWindow) return
+    const d = field.dist(e.x, e.y)
+    e.stalled = Number.isFinite(d) && Number.isFinite(e.stallD) && e.stallD - d < HOLD.stallPx
+    e.stallD = d
+    e.stallT = 0
   }
 
   /**
@@ -312,6 +356,8 @@ export class EnemyManager {
       if (!e.alive) { this.despawn(e); continue }
 
       if (e.spawnT > 0) e.spawnT -= dt
+      if (e.hitT > 0) e.hitT -= dt
+      if (e.advancing) this.trackProgress(e, hallField, dt)
       if (e.auraT > 0) {
         e.auraT -= dt
         if (e.auraT <= 0) { e.auraDamage = 1; e.auraSpeed = 1; e.auraHeal = 0 }
@@ -370,7 +416,11 @@ export class EnemyManager {
         if (ci >= 0 && claim[ci]) {
           e.route = null
           if (e.marching) { e.marching = false; e.retargetIn = 0 }
-          if (e.fromWave) this.scene.waves.arrived(e)
+          if (e.fromWave) {
+            // a front's walker advances on the hold; a raid's detours to what it can burn (R3)
+            e.advancing = !(e.approach !== null && this.scene.approaches.isRaid(e.approach))
+            this.scene.waves.arrived(e)
+          }
         } else {
           this.advanceLeg(e, hallField)
         }

@@ -135,7 +135,6 @@ export class GameScene extends Phaser.Scene {
   questRoute: Pt[] | null = null
   private questTicket: PathTicket | null = null
   private questAsk = { x: NaN, y: NaN, tx: NaN, ty: NaN, t: 0 }
-  private edgeMarkers: Phaser.GameObjects.Image[] = []
   private zoomTarget = CAMERA.baseZoom
   private harvestCd = 0
   private levelUpQueued = 0
@@ -158,7 +157,6 @@ export class GameScene extends Phaser.Scene {
     this.regentRisen = false
     this.finaleT = 0
     this.levelUpQueued = 0
-    this.edgeMarkers.length = 0
     this.moveInput = { x: 0, y: 0 }
     this.perfCursor = this.perfCount = this.perfRefresh = 0
     this.simP95 = this.frameP95 = 0
@@ -234,11 +232,6 @@ export class GameScene extends Phaser.Scene {
     this.abilities = new AbilitySystem(this)
 
     this.objectiveArrow = this.add.image(0, 0, 'fx_objective').setDepth(DEPTH.bars + 1).setVisible(false)
-    for (let i = 0; i < 10; i++) {
-      this.edgeMarkers.push(
-        this.add.image(0, 0, 'fx_marker').setScrollFactor(0).setDepth(DEPTH.night + 1).setVisible(false),
-      )
-    }
 
     this.setupInput()
 
@@ -381,10 +374,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   toggleHold() {
-    this.army.holding = !this.army.holding
-    this.fx.popup(this.player.x, this.player.y - 70,
-      this.army.holding ? 'ARMY HOLDS THE HOLD' : 'ARMY FOLLOWS YOU',
-      this.army.holding ? PAL.heroTrim : PAL.gold, 18)
+    // R5: every company to the next order (defend, follow, hold here)
+    const o = this.army.cycleAll()
+    this.fx.popup(this.player.x, this.player.y - 70, this.army.orderCall(o), o === 'follow' ? PAL.gold : PAL.heroTrim, 18)
     this.audio.play('ui')
   }
 
@@ -470,6 +462,8 @@ export class GameScene extends Phaser.Scene {
     const IDLE_RATE = 0.4      // ...and pays at 40% of what a watched crew does
     const effective = SOFT_CAP * (1 - Math.exp(-seconds / SOFT_CAP))
     const income = this.workers.incomePerSecond()
+    // the hall's tithe (R1) is paid while you are away too, on the same terms
+    income.coins = (income.coins ?? 0) + this.buildings.titheRate()
     const parts: string[] = []
     let any = false
     for (const k of RESOURCE_ORDER) {
@@ -634,7 +628,7 @@ export class GameScene extends Phaser.Scene {
     this.objectiveArrow
       .setVisible(true)
       .setPosition(p.x + Math.cos(ang) * r, p.y - 16 + Math.sin(ang) * r)
-      // fx_objective is baked tip-DOWN (unlike fx_marker, which is tip-up), so
+      // fx_objective is baked tip-DOWN, so
       // it already points at +90°. Adding another 90° sent it the opposite way.
       .setRotation(ang - Math.PI / 2)
       .setAlpha(0.9)
@@ -676,50 +670,6 @@ export class GameScene extends Phaser.Scene {
       if (dist(p.x, p.y, r[i][0], r[i][1]) >= 260) return r[i]
     }
     return [tx, ty]
-  }
-
-  /** Edge markers for threats you cannot see. */
-  private updateEdgeMarkers() {
-    const cam = this.cameras.main
-    const view = cam.worldView
-    let i = 0
-    const consider: { x: number; y: number; tint: number; scale: number }[] = []
-
-    const boss = this.enemies.bossRef
-    if (boss?.alive && !Phaser.Geom.Rectangle.Contains(view, boss.x, boss.y)) {
-      consider.push({ x: boss.x, y: boss.y, tint: PAL.danger, scale: 1.5 })
-    }
-    const hall = this.buildings.townHall
-    if (hall.damageT > 0 && !Phaser.Geom.Rectangle.Contains(view, hall.x, hall.y)) {
-      consider.push({ x: hall.x, y: hall.y, tint: PAL.gold, scale: 1.3 })
-    }
-    if (this.waves.isNight) {
-      for (const g of this.waves.nextApproaches()) {
-        if (!Phaser.Geom.Rectangle.Contains(view, g.x, g.y)) {
-          consider.push({ x: g.x, y: g.y, tint: PAL.danger, scale: 1 })
-        }
-      }
-    }
-
-    // A scroll-factor-0 image still scales about the camera centre by its zoom,
-    // so the offset from the centre is divided back out: the marker lands
-    // `pad` CSS pixels in from the edge whatever the zoom or DPR.
-    const cx = cam.width / 2, cy = cam.height / 2
-    const pad = 38 * DPR
-    const z = cam.zoom
-    for (const c of consider) {
-      if (i >= this.edgeMarkers.length) break
-      const m = this.edgeMarkers[i++]
-      const ang = Math.atan2(c.y - (view.y + view.height / 2), c.x - (view.x + view.width / 2))
-      const rx = cx - pad, ry = cy - pad
-      const t = Math.min(Math.abs(rx / Math.cos(ang)), Math.abs(ry / Math.sin(ang)))
-      m.setVisible(true)
-        .setPosition(cx + (Math.cos(ang) * t) / z, cy + (Math.sin(ang) * t) / z)
-        .setRotation(ang + Math.PI / 2)
-        .setTint(c.tint).setScale(c.scale)
-        .setAlpha(0.6 + Math.sin(this.now * 0.008) * 0.3)
-    }
-    for (; i < this.edgeMarkers.length; i++) this.edgeMarkers[i].setVisible(false)
   }
 
   /**
@@ -813,7 +763,6 @@ export class GameScene extends Phaser.Scene {
 
     this.updateCamera(dt)
     this.updateObjectiveArrow()
-    this.updateEdgeMarkers()
 
     if (this.levelUpQueued > 0 && !this.paused) {
       this.levelUpQueued--

@@ -1,8 +1,11 @@
 import Phaser from 'phaser'
-import type { ResourceType } from './types'
+import type { ResourceBag, ResourceType } from './types'
 import type { BuildingKey } from '../config/buildings'
 import type { RegionId } from '../config/world'
 import type { PoiKind, Pt } from '../config/world/blueprint'
+
+/** A night from dusk to dawn (R2): wave walkers slain, coins earned (the reward included), the dawn sweep's cargo, holdings sacked (R4). */
+export interface NightLog { wave: number; kills: number; coins: number; swept: ResourceBag; sacked: number }
 
 export interface GameEvents {
   'res:gained': { type: ResourceType; amount: number }
@@ -12,12 +15,19 @@ export interface GameEvents {
   'player:levelup': { level: number }
   'player:died': void
   'building:built': { key: BuildingKey; level: number }
+  /** R4: a holding fell and was sacked (keeps its level); a sacked holding was put right */
+  'building:sacked': { padId: string; key: BuildingKey; x: number; y: number }
+  'building:restored': { padId: string; key: BuildingKey; x: number; y: number }
+  /** R4: a holding outside the hold took damage (at most every `SACK.raidedEvery` s per building) */
+  'holding:raided': { padId: string; x: number; y: number; key: BuildingKey }
   'soldier:recruited': { key: string }
   'worker:hired': { key: string }
   /** `warningSeconds` before dusk (S09): tonight's approach ids and their routes from the spawn point to the hall. */
   'night:warning': { approaches: string[]; routes: Pt[][] }
   'wave:start': { wave: number }
   'wave:cleared': { wave: number }
+  /** R2: at dawn, after `wave:cleared`, the night's log for the dawn card */
+  'night:summary': NightLog
   /** A camp burned (S10: with its tier, and a stronghold's boss key for S15's relic drop). */
   'camp:burned': { id: string; tier?: 'warcamp' | 'stronghold' | 'fortress'; boss?: string }
   /** A sealed crossing opened (S10: the Regent's Causeway, when Ashgate burns). */
