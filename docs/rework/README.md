@@ -152,7 +152,7 @@ Signatures only. A card that changes one updates this list.
 
 | Card | Contract |
 |---|---|
-| R1 | `TITHE` in `config/balance.ts`; `BuildingManager.titheRate(): number` (coins/s now) |
+| R1 | `TITHE`, `titheRate({ hallLevel, workers, homePop })` in `config/balance.ts`; `village.titheOf(buildings)`; `BuildingManager.titheRate(): number` (coins/s now); `Building.sacked` (false; gates the tithe) |
 | R2 | `PickupManager.sweepField(): ResourceBag` (claimed ground, cargo only); `WaveManager.nightLog: { wave, kills, coins, swept: ResourceBag, sacked: number }`; bus `night:summary` (the log) at dawn |
 | R3 | `Enemy.advancing: boolean`; `RegionManager.inHold(x, y): boolean`; `HOLD.assaultRadius`, `FRONT_STAGGER`; `TonightRoute.post: { x: number; y: number }` |
 | R4 | `Building.sacked: boolean`; `BuildingManager.isHolding(b)`; `SACK` in balance; bus `holding:raided { padId, x, y, key }`, `building:sacked`, `building:restored`; `BuildingManager.raided(now): { padId, x, y, key }[]` (raided in the last few seconds); `nightLog.sacked` counts |
@@ -193,9 +193,14 @@ code ≤ 50k, doing ≤ 70k, verifying ≤ 10k, reserve ~15k.
 - **The browser.** Dev server: `preview_start` with name `emberhold` (port 5180).
   Drive `window.H` through `javascript_tool` and return small JSON. **Back up
   the real save first** and restore it from the title screen when done:
-  `for (const k of ['emberhold.save.v1','emberhold.backup.v1','emberhold.settings.v1']) sessionStorage.setItem('bk:'+k, localStorage.getItem(k) ?? '')`.
+  `for (const k of ['emberhold.save.v2','emberhold.save.backup.v2','emberhold.settings.v1']) sessionStorage.setItem('bk:'+k, localStorage.getItem(k) ?? '')`
+  (restore: set each non-empty backup back, remove the key where it was empty).
   `H.pump(s)` steps the loop off a fake clock; HMR reloads the page on edits
   (re-run `H.start()`); the pane is often hidden, so take screenshots twice.
+  A hidden pane has a 0×0 container and the game never boots: `resize_window`
+  to 1280×800 first. The game can auto-pause while hidden between calls
+  (`H.probe.run` returns `paused: 'Game'`); a pumped run past that point stalls,
+  so do a probe run in as few calls as you can (`run(8)` fits in one, ~20 s).
 - **Stop rule.** If you think more than ~70% of your context is used, or your
   conversation was compacted, stop at the next checkpoint: green, commit,
   write a *partial* STATUS entry (`R3 partial: done through C2`), and end.
