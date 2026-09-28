@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { HUD } from '../ui/HUD'
 import { Minimap } from '../ui/Minimap'
+import { DawnCard, ThreatChevrons } from '../ui/Awareness'
 import { Joystick } from '../ui/Joystick'
 import { LevelUpOverlay } from '../ui/LevelUpOverlay'
 import { PauseMenu, type ScreenName } from '../ui/PauseMenu'
@@ -54,6 +55,9 @@ export class UIScene extends Phaser.Scene {
   private gs!: GameScene
   private hud!: HUD
   private minimap!: Minimap
+  /** R6: chevrons on the screen edge for what is off screen, and the dawn card */
+  private chevrons!: ThreatChevrons
+  private dawn!: DawnCard
   private joystick!: Joystick
   private levelUp!: LevelUpOverlay
   private pause!: PauseMenu
@@ -88,6 +92,8 @@ export class UIScene extends Phaser.Scene {
     this.hud = new HUD(this, this.gs)
     // After the HUD: the minimap lays itself out from the bands the HUD writes.
     this.minimap = new Minimap(this, this.gs, () => this.toggleAtlas())
+    this.chevrons = new ThreatChevrons(this, this.gs)
+    this.dawn = new DawnCard(this, this.gs, this.hud)
     this.joystick = new Joystick(this)
     this.levelUp = new LevelUpOverlay(this, this.gs)
     this.pause = new PauseMenu(this, this.gs)
@@ -356,6 +362,8 @@ export class UIScene extends Phaser.Scene {
 
     this.hud.update(dt)
     this.minimap.update(dt)
+    this.chevrons.update(dt)
+    this.dawn.update(dt)
     this.atlas.update(dt)
     this.travel.update(modal)
     this.debug.update()

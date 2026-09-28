@@ -125,8 +125,8 @@ export class HUD {
   private padR = 16
   /** Top of the stores, under the icon buttons. */
   private resTop = 0
-  /** Bottom of the right-hand column, for news that must clear it on a narrow screen. */
-  private rightBottom = 0
+  /** Bottom of the right-hand column, for news that must clear it on a narrow screen (and R6's dawn card). */
+  rightBottom = 0
   private toastT = 0
   private toastQueue: [string, string, number][] = []
   /** S14: a lore stone's line, on a card low on the view */
@@ -141,6 +141,8 @@ export class HUD {
   private hintSig = ''
 
   showStats = false
+  /** R6: where the day/objective block sits (CSS px), so the dawn card can hang under it. */
+  readonly objRect = { x: 0, y: 0, w: 0, h: 0 }
   /** True while a modal owns the screen: every HUD tap target goes dead. */
   blocked = false
 
@@ -531,6 +533,8 @@ export class HUD {
     const objH = q ? 64 : 26
     const cx = objX + objW / 2
     this.objPanel.place(objX, objY, objW, objH)
+    const or = this.objRect
+    or.x = objX; or.y = objY; or.w = objW; or.h = objH
     if (q) {
       this.objTitle.setText(q.title).setPosition(cx, objY + 31)
       this.fit(this.objTitle, 15, objW - 24)

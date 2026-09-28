@@ -135,7 +135,6 @@ export class GameScene extends Phaser.Scene {
   questRoute: Pt[] | null = null
   private questTicket: PathTicket | null = null
   private questAsk = { x: NaN, y: NaN, tx: NaN, ty: NaN, t: 0 }
-  private edgeMarkers: Phaser.GameObjects.Image[] = []
   private zoomTarget = CAMERA.baseZoom
   private harvestCd = 0
   private levelUpQueued = 0
@@ -158,7 +157,6 @@ export class GameScene extends Phaser.Scene {
     this.regentRisen = false
     this.finaleT = 0
     this.levelUpQueued = 0
-    this.edgeMarkers.length = 0
     this.moveInput = { x: 0, y: 0 }
     this.perfCursor = this.perfCount = this.perfRefresh = 0
     this.simP95 = this.frameP95 = 0
@@ -234,11 +232,6 @@ export class GameScene extends Phaser.Scene {
     this.abilities = new AbilitySystem(this)
 
     this.objectiveArrow = this.add.image(0, 0, 'fx_objective').setDepth(DEPTH.bars + 1).setVisible(false)
-    for (let i = 0; i < 10; i++) {
-      this.edgeMarkers.push(
-        this.add.image(0, 0, 'fx_marker').setScrollFactor(0).setDepth(DEPTH.night + 1).setVisible(false),
-      )
-    }
 
     this.setupInput()
 
@@ -679,50 +672,6 @@ export class GameScene extends Phaser.Scene {
     return [tx, ty]
   }
 
-  /** Edge markers for threats you cannot see. */
-  private updateEdgeMarkers() {
-    const cam = this.cameras.main
-    const view = cam.worldView
-    let i = 0
-    const consider: { x: number; y: number; tint: number; scale: number }[] = []
-
-    const boss = this.enemies.bossRef
-    if (boss?.alive && !Phaser.Geom.Rectangle.Contains(view, boss.x, boss.y)) {
-      consider.push({ x: boss.x, y: boss.y, tint: PAL.danger, scale: 1.5 })
-    }
-    const hall = this.buildings.townHall
-    if (hall.damageT > 0 && !Phaser.Geom.Rectangle.Contains(view, hall.x, hall.y)) {
-      consider.push({ x: hall.x, y: hall.y, tint: PAL.gold, scale: 1.3 })
-    }
-    if (this.waves.isNight) {
-      for (const g of this.waves.nextApproaches()) {
-        if (!Phaser.Geom.Rectangle.Contains(view, g.x, g.y)) {
-          consider.push({ x: g.x, y: g.y, tint: PAL.danger, scale: 1 })
-        }
-      }
-    }
-
-    // A scroll-factor-0 image still scales about the camera centre by its zoom,
-    // so the offset from the centre is divided back out: the marker lands
-    // `pad` CSS pixels in from the edge whatever the zoom or DPR.
-    const cx = cam.width / 2, cy = cam.height / 2
-    const pad = 38 * DPR
-    const z = cam.zoom
-    for (const c of consider) {
-      if (i >= this.edgeMarkers.length) break
-      const m = this.edgeMarkers[i++]
-      const ang = Math.atan2(c.y - (view.y + view.height / 2), c.x - (view.x + view.width / 2))
-      const rx = cx - pad, ry = cy - pad
-      const t = Math.min(Math.abs(rx / Math.cos(ang)), Math.abs(ry / Math.sin(ang)))
-      m.setVisible(true)
-        .setPosition(cx + (Math.cos(ang) * t) / z, cy + (Math.sin(ang) * t) / z)
-        .setRotation(ang + Math.PI / 2)
-        .setTint(c.tint).setScale(c.scale)
-        .setAlpha(0.6 + Math.sin(this.now * 0.008) * 0.3)
-    }
-    for (; i < this.edgeMarkers.length; i++) this.edgeMarkers[i].setVisible(false)
-  }
-
   /**
    * Where the hero wakes after a fall (S11): the standing outpost nearest to
    * where they fell, if no enemy is within OUTPOST.safeRadius of it and it is
@@ -814,7 +763,6 @@ export class GameScene extends Phaser.Scene {
 
     this.updateCamera(dt)
     this.updateObjectiveArrow()
-    this.updateEdgeMarkers()
 
     if (this.levelUpQueued > 0 && !this.paused) {
       this.levelUpQueued--
