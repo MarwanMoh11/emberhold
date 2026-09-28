@@ -182,8 +182,8 @@ export const VILLAGE = {
      * claims paced by their costs, not by the markets.
      */
     sells: true,
-    /** food and wood are sold only above this much of each in store */
-    floor: 300,
+    /** food and wood are sold only above this much of each in store (R1: 300 → 150, so the surplus turns over) */
+    floor: 150,
     /** goods sold for each coin earned */
     goodsPerCoin: 4,
     /** +this per cottage or longhouse within `homeRadius`, at most `homeMax` */
@@ -203,6 +203,31 @@ export const POP = {
   base: 8,
   perHouse: 6,
   perTownHallLevel: 4,
+}
+
+/**
+ * The hall's tithe (R1, rework README §A): coins that come from time. Everyone
+ * who works or lives in the settlement pays a little, banked every second:
+ * `hall[level − 1] + perWorker × crew + perHome × home population`, where home
+ * population is what cottages (capped by VILLAGE.cottagePopMax) and longhouses
+ * house. A sacked building (R4) pays nothing: its crew and its homes drop out.
+ */
+export const TITHE = {
+  /** coins a second from the hall itself, by level (index 0 = Lv.1) */
+  hall: [0.4, 0.8, 1.3, 1.9, 2.6],
+  /** per hired worker (sheltering counts; dismissed does not) */
+  perWorker: 0.12,
+  /** per point of cottage and longhouse population */
+  perHome: 0.05,
+  /** seconds between the hall's quiet `+N coins` */
+  popupEvery: 10,
+}
+
+/** Coins a second the tithe pays for a hall level, a working crew and a housed population. */
+export function titheRate(t: { hallLevel: number; workers: number; homePop: number }): number {
+  if (t.hallLevel <= 0) return 0
+  const hall = TITHE.hall[Math.min(TITHE.hall.length, t.hallLevel) - 1]
+  return hall + TITHE.perWorker * Math.max(0, t.workers) + TITHE.perHome * Math.max(0, t.homePop)
 }
 
 /**

@@ -470,6 +470,8 @@ export class GameScene extends Phaser.Scene {
     const IDLE_RATE = 0.4      // ...and pays at 40% of what a watched crew does
     const effective = SOFT_CAP * (1 - Math.exp(-seconds / SOFT_CAP))
     const income = this.workers.incomePerSecond()
+    // the hall's tithe (R1) is paid while you are away too, on the same terms
+    income.coins = (income.coins ?? 0) + this.buildings.titheRate()
     const parts: string[] = []
     let any = false
     for (const k of RESOURCE_ORDER) {

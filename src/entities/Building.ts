@@ -45,6 +45,8 @@ export class Building implements Targetable {
   hp = 0
   maxHp = 0
   alive = false
+  /** Sacked (R4): standing but idle; pays no tithe, produces and recruits nothing. R1 reads it; R4 sets it. */
+  sacked = false
   state: BuildState = 'empty'
 
   /** resources banked toward the next level */

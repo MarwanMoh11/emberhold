@@ -14,8 +14,8 @@ import { capDiscs, layWallLine, legacyRingPads, WALL_CAP_R } from '../world/wall
 const LEGACY_WALL_REACH = 72
 const LEGACY_GATE_REACH = 128
 import { PAL } from '../config/palette'
-import { POP, PERF, OUTPOST, VILLAGE } from '../config/balance'
-import { bestBonus, blessingMultiplier, marketGood, marketRate, routeNear, type BonusSource } from './village'
+import { POP, PERF, OUTPOST, VILLAGE, TITHE } from '../config/balance'
+import { bestBonus, blessingMultiplier, marketGood, marketRate, routeNear, titheOf, type BonusSource } from './village'
 import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type ResourceBag, type ResourceType } from '../core/types'
 import { clamp, dist, rr, short } from '../core/math'
@@ -90,6 +90,8 @@ export class BuildingManager {
   private granaries: Building[] = []
   /** per market (S13b): coins owed but not yet whole, banked since the last popup, and its timer */
   private markets = new Map<string, { acc: number; shown: number; t: number }>()
+  /** the hall's tithe (R1): coins owed, coins banked since the last popup, time since it, the rate as last counted */
+  private tithe = { acc: 0, shown: 0, t: 0, rate: 0, recount: 0 }
   private chapelT = 1
 
   /** aggregated settlement bonuses, recomputed whenever something is built */
@@ -852,6 +854,7 @@ export class BuildingManager {
     this.tickAutoHire(dt)
     this.tickTrade(dt)
     this.tickMarkets(dt)
+    this.tickTithe(dt)
 
     this.tickRaze(nearest, dt)
     this.updatePanel(nearest)
@@ -1226,7 +1229,7 @@ export class BuildingManager {
     return r
   }
 
-  /** The only coins that come from time: bank whole coins as they accrue, and show them every few seconds. */
+  /** Trading posts: bank whole coins as they accrue, and show them every few seconds. */
   private tickTrade(dt: number) {
     for (const b of this.buildings) {
       const rate = this.tradeRateOf(b)
@@ -1249,11 +1252,47 @@ export class BuildingManager {
     }
   }
 
+  /**
+   * The hall's tithe (R1) in coins a second now: the hall's own levy, plus a
+   * share from every hired worker and every housed head. A sacked building
+   * (R4 sets `sacked`) drops out: its crew and its homes pay nothing.
+   */
+  titheRate(): number {
+    return titheOf(this.buildings)
+  }
+
+  /**
+   * Bank the tithe: the rate is recounted once a second (allocation-free), coins
+   * accrue every tick and land in stores whole, and the hall floats a quiet
+   * `+N coins` every `TITHE.popupEvery` s while it is on screen.
+   */
+  private tickTithe(dt: number) {
+    const t = this.tithe
+    t.recount -= dt
+    if (t.recount <= 0) { t.rate = this.titheRate(); t.recount = 1 }
+    t.acc += t.rate * dt
+    const n = Math.floor(t.acc)
+    if (n > 0) {
+      t.acc -= n
+      t.shown += n
+      this.scene.res.addStored('coins', n)
+    }
+    t.t += dt
+    if (t.t < TITHE.popupEvery) return
+    const hall = this.townHall
+    if (t.shown > 0 && hall && hall.level > 0
+      && Phaser.Geom.Rectangle.Contains(this.scene.cameras.main.worldView, hall.x, hall.y)) {
+      this.scene.fx.popup(hall.x, hall.y - hall.def.h - 20, `+${t.shown} coins`, PAL.coins, 13)
+    }
+    t.t = 0
+    t.shown = 0
+  }
+
   // ---- village buildings (S13b) -------------------------------------------
   /**
    * Markets sell surplus food and wood (above VILLAGE.market.floor) for coins
    * at their rate, a coin's worth of goods at a time. Not coins from nothing:
-   * that stays the trading post's alone. Owed coins wait at most one while
+   * that is the tithe's and the trading post's. Owed coins wait at most one while
    * there is nothing to sell, so a refill never pays out a burst.
    */
   private tickMarkets(dt: number) {
