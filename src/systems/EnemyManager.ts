@@ -190,9 +190,23 @@ export class EnemyManager {
     const provoked = e.hitT > 0 && (e.hitX - e.x) ** 2 + (e.hitY - e.y) ** 2 < 4 * sight * sight
     const r = provoked ? sight * 2 : sight
     if (p.alive && (p.x - e.x) ** 2 + (p.y - e.y) ** 2 < r * r) return p
+    const b = s.buildings, walls = e.def.prefers === 'structures'
     return s.allyGrid.nearest(e.x, e.y, r, a => a.alive && a.kind !== 'building')
-      ?? s.buildings.nearestStructure(e.x, e.y, HOLD.advanceBump, e.def.prefers === 'structures')
+      // a tower, wall or gate in reach is in the way (holdings weighed out of this pick)
+      ?? b.nearestStructure(e.x, e.y, HOLD.advanceBump, walls, Infinity)
+      // a holding only when it is what the walker is stuck against (R7): roadside farms are passed by
+      ?? (e.stalled ? b.nearestStructure(e.x, e.y, HOLD.advanceBlock, walls) : null)
       ?? this.hallOrHero()
+  }
+
+  /** R7: every `HOLD.stallWindow` s, whether an advancing walker got less than `stallPx` further down the hall's field. */
+  private trackProgress(e: Enemy, field: FlowField, dt: number) {
+    e.stallT += dt
+    if (e.stallT < HOLD.stallWindow) return
+    const d = field.dist(e.x, e.y)
+    e.stalled = Number.isFinite(d) && Number.isFinite(e.stallD) && e.stallD - d < HOLD.stallPx
+    e.stallD = d
+    e.stallT = 0
   }
 
   /**
@@ -343,6 +357,7 @@ export class EnemyManager {
 
       if (e.spawnT > 0) e.spawnT -= dt
       if (e.hitT > 0) e.hitT -= dt
+      if (e.advancing) this.trackProgress(e, hallField, dt)
       if (e.auraT > 0) {
         e.auraT -= dt
         if (e.auraT <= 0) { e.auraDamage = 1; e.auraSpeed = 1; e.auraHeal = 0 }

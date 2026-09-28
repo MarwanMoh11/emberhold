@@ -7,7 +7,7 @@ import { rr, ri, shuffled, clamp } from '../core/math'
 import { ENEMIES, type EnemyKey } from '../config/enemies'
 import { RESOURCE_ORDER, type ResourceBag } from '../core/types'
 import type { NightLog } from '../core/Events'
-import { rollLoot, sweptLine } from './PickupManager'
+import { rollLoot } from './PickupManager'
 import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
 import { CAMP_MIX, SPAWN_SCATTER, frontPost, frontStagger, inHold, splitBudget, type ApproachId, type NightPlan } from './Approaches'
@@ -393,8 +393,7 @@ export class WaveManager {
     // each standing chapel blesses the reward, +50% at most in all (S13b)
     const reward = Math.round(nightReward(this.wave) * this.scene.buildings.nightBlessing())
     this.scene.res.addStored('coins', reward, false)
-    this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 120, `NIGHT ${this.wave} HELD`, PAL.good, 30)
-    this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 84, `+${reward} coins`, PAL.coins, 18)
+    // the dawn card (R6) says what the night held, earned and swept; the world only sounds it (R7)
     this.scene.audio.play('quest', 0.9)
 
     // the dawn sweep (R2): the night's cargo on claimed ground goes into stores
@@ -404,8 +403,6 @@ export class WaveManager {
       const n = swept[k] ?? 0
       if (n > 0) log.swept[k] = (log.swept[k] ?? 0) + n
     }
-    const line = sweptLine(log.swept)
-    if (line) this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 58, line, PAL.parchment, 14)
     log.coins = Math.max(0, this.scene.res.totalGathered.coins - this.duskCoins) + reward
 
     this.scene.bus.emit('wave:cleared', { wave: this.wave })

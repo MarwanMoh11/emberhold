@@ -61,6 +61,7 @@ export function makeProbe(h: ProbeApi) {
       events: [] as [number, string][], rows: [] as any[], claims: {} as Record<string, [number, number]>,
       acts: [] as [string, number, number][], burns: {} as Record<string, [number, number]>,
       night: null as any, lastRow: { t: 0, got: { ...g.res.totalGathered } }, nightOk: 0, nightShort: [] as number[],
+      short: {} as Record<string, number>,
     }
     for (const e of [...REWARDS, 'relic:granted']) g.bus.on(e, () => s.events.push([s.clock, e]))
     g.bus.on('region:claimed', (p: any) => { s.claims[p.id] = [g.waves.wave, Math.round(s.clock)] })
@@ -97,8 +98,11 @@ export function makeProbe(h: ProbeApi) {
       inc('coins'), inc('wood'), inc('food'), inc('stone'), inc('metal'),
       Math.max(0, n.w - g.workers.count), Math.max(0, n.s - g.army.count), Math.max(0, n.lv - levels(g)),
       Math.round(n.hall * 100), g.buildings.townHallLevel, g.workers.count, g.army.count, g.quests.current?.id ?? '-',
-      Math.round(s.clock - n.t), g.waves.enemiesRemaining, g.enemies.walkerCount])
+      Math.round(s.clock - n.t), g.waves.enemiesRemaining, g.enemies.walkerCount,
+      Math.round((got.coins ?? 0) - (s.lastRow.got.coins ?? 0)),
+      Object.entries(s.short as Record<string, number>).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(' ') || '-'])
     s.lastRow = { t: s.clock, got: { ...got } }
+    s.short = {}
     s.night = null
   }
 
@@ -266,11 +270,13 @@ export function makeProbe(h: ProbeApi) {
 
   const decideRecruit = (g: G) => {
     const target = Math.floor(g.popCap * opts.armyShare)
+    // the best soldier each yard trains that stores can pay for: short of metal, a player drills spearmen and archers
+    const pick = (x: any): string | undefined => [...g.buildings.unlockedFor(x)].reverse()
+      .find((k: string) => g.res.canAfford(SOLDIERS[k as keyof typeof SOLDIERS].cost))
     for (let i = 0; i < 3 && g.army.count < target; i++) {
-      const b = g.buildings.buildings.find((x: any) => x.level > 0 && (x.key === 'barracks' || x.key === 'archeryRange')
-        && g.buildings.trainsAt(x) && g.res.canAfford(SOLDIERS[g.buildings.trainsAt(x) as keyof typeof SOLDIERS].cost))
+      const b = g.buildings.buildings.find((x: any) => x.level > 0 && !x.sacked && (x.key === 'barracks' || x.key === 'archeryRange') && pick(x))
       if (!b) return
-      const key = g.buildings.trainsAt(b)
+      const key = pick(b)!
       if (g.popUsed + SOLDIERS[key as keyof typeof SOLDIERS].pop > g.popCap) return
       g.res.spend(SOLDIERS[key as keyof typeof SOLDIERS].cost)
       g.army.recruit(key, b.x, b.y + 14)
@@ -323,6 +329,21 @@ export function makeProbe(h: ProbeApi) {
     }
   }
 
+  /**
+   * What the run is waiting on this tick (R7): the resources short of the quest's build, the hall a claim needs,
+   * or the claim the quest asks for; `army` when a claim waits on soldiers. Summed per wave in seconds.
+   */
+  const noteShort = (g: G) => {
+    const want = wanted(g)
+    const next = want ?? nextClaim(g)
+    const needHall = next && g.buildings.townHallLevel < next.hall
+    const cands = candidates(g)
+    const saveFor = cands.find(c => questTarget(g, c.b)) ?? (needHall ? cands.find(c => c.b.key === 'townHall') : undefined)
+    const cost: Record<string, number> | null = saveFor?.cost ?? (want && !needHall ? want.cost as any : null)
+    if (cost) for (const k of RES) if ((g.res.stored[k] ?? 0) < (cost[k] ?? 0)) s.short[k] = (s.short[k] ?? 0) + opts.tick
+    if (want && !needHall && g.army.count < opts.claimArmy * want.tier) s.short.army = (s.short.army ?? 0) + opts.tick
+  }
+
   /** One tick: pump `opts.tick` s, then every decision. `busy` (the playthrough's assaults) keeps the hero's own. */
   const step = (g: G, busy = false) => {
     h.pump(opts.tick, opts.stepMs, true)
@@ -338,6 +359,7 @@ export function makeProbe(h: ProbeApi) {
     decideRecruit(g)
     decideBuild(g)
     decideLine(g)
+    if (g.waves.phase === 'day') noteShort(g)
   }
 
   const run = (untilWave = 12, wallMs = 50_000) => {
@@ -365,7 +387,7 @@ export function makeProbe(h: ProbeApi) {
     const bounds = [0, ...s.acts.slice(1).map((x: any) => x[2]), s.clock]
     const acts = s.acts.map((x: any, i: number) => ({ act: x[0], fromWave: x[1], fromMin: +(x[2] / 60).toFixed(1), ...gaps(bounds[i], bounds[i + 1]) }))
     return {
-      cols: 'wave,clockS,claimed,coins,wood,food,stone,metal,crystal,inc/min c,w,f,s,m,lostW,lostS,lostLv,hall%,hallLv,workers,army,quest,nightS,left,out',
+      cols: 'wave,clockS,claimed,coins,wood,food,stone,metal,crystal,inc/min c,w,f,s,m,lostW,lostS,lostLv,hall%,hallLv,workers,army,quest,nightS,left,out,earnedC,shortS',
       rows: s.rows, claims: s.claims, burns: s.burns, acts, nightOk: s.nightOk, nightShort: s.nightShort,
     }
   }

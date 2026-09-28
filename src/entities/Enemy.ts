@@ -90,6 +90,8 @@ export class Enemy implements Targetable {
   advancing = false
   /** where the last hit came from, and how long it stays provoked by it (R3) */
   hitX = 0; hitY = 0; hitT = 0
+  /** R7: an advancing walker's field distance at the start of its progress window, the window's age, and whether the last window stalled */
+  stallD = Infinity; stallT = 0; stalled = false
   /** the approach it came by, for the arrival log; null for camp patrols and ring spawns */
   approach: string | null = null
   /** fields to follow in order (each via crossing, then the hall) until claimed ground; null after */
@@ -162,6 +164,7 @@ export class Enemy implements Targetable {
     this.marching = false
     this.advancing = false
     this.hitT = 0
+    this.stallD = Infinity; this.stallT = 0; this.stalled = false
     this.approach = null
     this.route = null
     this.leg = 0

@@ -860,6 +860,8 @@ export function installHarness(game: Phaser.Game) {
           w.activate(to.id, true)
           const r: any = travel(WAYSTONE.hallStone, to.id, 2)
           if (!r.ok) return { out, stuck: q.id, why: r.why }
+          // the channel can outlast the pump (a frame's dt is capped): wait it out
+          for (let i = 0; i < 24 && w.channel; i++) pump(0.25)
           break
         }
         case 'restore': {

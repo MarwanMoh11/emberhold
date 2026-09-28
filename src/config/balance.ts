@@ -222,10 +222,10 @@ export const POP = {
 export const TITHE = {
   /** coins a second from the hall itself, by level (index 0 = Lv.1) */
   hall: [0.4, 0.8, 1.3, 1.9, 2.6],
-  /** per hired worker (sheltering counts; dismissed does not) */
-  perWorker: 0.12,
-  /** per point of cottage and longhouse population */
-  perHome: 0.05,
+  /** per hired worker (sheltering counts; dismissed does not); R7: 0.12 → 0.1, act II banked 7–9k it had no use for */
+  perWorker: 0.1,
+  /** per point of cottage and longhouse population; R7: 0.05 → 0.04 */
+  perHome: 0.04,
   /** seconds between the hall's quiet `+N coins` */
   popupEvery: 10,
 }
@@ -270,8 +270,15 @@ export const HOLD = {
   assaultRadius: 900,
   /** an advancing walker fights the hero, a soldier or a worker this near (twice it, just after a close hit) */
   advanceSight: 220,
-  /** an advancing walker fights a structure this near: it is in the way */
+  /** an advancing walker fights a tower, wall or gate this near: it is in the way */
   advanceBump: 110,
+  /**
+   * R7: a holding only when the walker is up against it (this near) and stuck: it got less than
+   * `stallPx` further down the hall's field in the last `stallWindow` s. Roadside farms are passed by.
+   */
+  advanceBlock: 60,
+  stallWindow: 1,
+  stallPx: 24,
   /** a raid walker's score for a holding (not a wall, gate, tower or the hall): lower is likelier */
   raidHoldings: 0.5,
   /** an advancing walker struck from within twice its sight stays provoked this long (s) */

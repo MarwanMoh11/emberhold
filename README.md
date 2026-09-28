@@ -3,7 +3,7 @@
 **▶ Play: <https://marwanmoh11.github.io/emberhold/>** — desktop or phone, no install.
 
 A browser game about rebuilding a burned frontier outpost: kill things, carry the
-loot home on your back, raise camps, hire a crew, recruit an army, and hold the
+goods home on your back, raise camps, hire a crew, recruit an army, and hold the
 settlement through the night.
 
 Horde survival on top of a tycoon loop. Everything — art, sound, terrain — is
@@ -26,7 +26,7 @@ Then open <http://localhost:5180>.
 | Build / upgrade | walk into a build site; hold `SHIFT` to fund an upgrade |
 | Hire, recruit | stand on the camp or barracks |
 | Abilities | `SPACE`, `Q`, `E`, `F`, `G`, ultimate on `R` |
-| Army follow / hold | `H`, or the army button top right |
+| Army orders | the army button (top right) opens an orders panel: one row per company (infantry, archers, riders) with Defend, Follow and Hold. Hold plants a banner where the hero stands. `H` cycles every company's order |
 | Atlas | `M`, the map button top right, or a tap on the minimap: the whole frontier as you have explored it |
 | Travel | walk onto a lit waystone (every outpost has one), or pick a lit stone in the atlas |
 | Pause | `ESC` or `P`, or the pause button top right |
@@ -34,12 +34,12 @@ Then open <http://localhost:5180>.
 
 A standard controller also works: left stick or D-pad moves, A/B/X/Y/LB use
 the five abilities, RB dodges, RT fires the ultimate, Start pauses, Back toggles
-the map, and left stick click changes the army order. Use the D-pad and A to
+the map, and left stick click cycles every company's order, as `H` does. Use the D-pad and A to
 navigate the pause menu; A/B/X choose level-up cards.
 
 On a phone it plays in either orientation: drag the left half of the screen to
 move, tap the buttons bottom-right for abilities and dodge, use the three icon
-buttons top right for the army's standing order, the atlas and pause, and
+buttons top right for the army's orders, the atlas and pause, and
 everything else happens by walking into it. A phone held upright has no corner
 to spare for the minimap, so it stays away there; the map button opens the atlas.
 
@@ -49,9 +49,12 @@ the abilities under the right thumb, all on the same dark smoked glass with no
 ornament, so the world stays the brightest thing on screen. Add it to your home screen and it opens without
 browser chrome. The horde is capped lower on a phone so the frame rate holds.
 
-The loop: sweep up coins and wood by hand → walk the load to the depot or a
-build site → raise a camp → the crew there works on its own → spend the income
-on soldiers, towers and walls → survive the night → claim the next territory.
+The loop: by day you grow a country that pays you. Kill things and carry the
+wood and stone they drop to the depot or a build site, raise camps whose crews
+work on their own, and the hall banks a tithe from everyone who works or lives
+in the settlement. Spend it on crews, soldiers, towers and walls. By night the
+horde comes for the hold, and the hold (its towers and walls, the army at its
+posts, and you) is where the fight is. Survive it, then claim the next territory.
 
 The campaign runs five acts and 53 quests across the frontier. Burning Ashgate
 Fortress puts out the fire on the Regent's Causeway; cross it to the island and
@@ -75,10 +78,24 @@ shrines, barrows with relics, survivors. The map above is drawn from
 
 Two rules do most of the work:
 
-- **Resources are physical.** Kills drop loot, loot is carried on your back up
-  to your pack limit, and it only counts once you physically deliver it.
+- **Goods are physical.** Kills drop loot. Wood, food, stone, metal and crystal
+  are carried on your back up to your pack limit and only count once you
+  deliver them. Coins and xp are the exception: they fly to you from anywhere
+  on screen, and a kill further off banks its coins and half its xp.
 - **Standing somewhere is the interaction.** There is no build menu. Stand in a
   site and it draws what it needs out of your pack; stand in a camp and it hires.
+
+At night the fronts named at dusk converge on the hold and arrive one after
+another, about ten seconds apart, so you can meet one and then the next. A
+front's walkers keep to the road in and fight only what is in their way; once
+they reach the hold they assault it. Raids are different: they go for the
+countryside and its farms, and burning a raid's camp is how you stop them. On
+Defend, the army's order by default, each company stands at a post in the hold
+by day and sends a detachment to a raided holding; from the warning to dawn it
+deploys to tonight's front posts, where each road enters the hold. Chevrons on
+the screen edge point at walkers you cannot see and at raided holdings, and at
+dawn a small card sums the night up: kills, coins, what was swept, what was
+sacked.
 
 Progress saves to `localStorage` every 10 seconds, when you pause, and when the
 page is hidden. The previous valid save is kept as a fallback. Use **EXPORT FILE**
@@ -103,16 +120,28 @@ The returning hero has a brief shield to escape enemies gathered at the spawn.
 The settlement is meant to keep earning while you are busy elsewhere, so the
 resource counters never stall:
 
+- **The hall levies a tithe.** Every second it banks coins from everyone who
+  works or lives in the settlement: a levy for the hall's level, plus a little
+  per crew member and per head of cottage and longhouse population. The coin
+  count in the HUD shows the rate. Markets sell food and wood above 150 in store.
 - **Stores are uncapped.** A shared cap meant a flood of food could freeze the
   wood counter while lumberjacks kept chopping.
 - **Crews shelter instead of stopping.** When the horde is on a camp the workers
   duck inside — untargetable, and still producing at 45%.
 - **Lost crew is replaced automatically.** A Warehouse additionally automates
   hiring into brand-new slots.
-- **A razed site leaves rubble.** Rebuilding costs 40% of the original, and the
-  crew comes back with it.
-- **Time away pays.** Offline income tapers toward a one-hour ceiling, so a week
-  away and a night away are worth about the same.
+- **Holdings are sacked, not razed.** A farm, cottage or any other building
+  that is not a wall, gate, tower or the hall keeps its level when it falls.
+  It smokes, its crew shelters, and it produces, pays and trains nothing until
+  it mends, which it does by itself after 25 seconds of daylight with no walker
+  near; stand in it and it is whole at once, and builders speed it. No bill.
+- **Defences still fall.** A wall, gate or tower at 0 hp loses a level, and at
+  level 0 it leaves rubble. Rebuilding costs 40% of the original.
+- **The dawn sweep.** When the night ends, every piece of cargo lying on claimed
+  ground goes into stores, and walkers that flee at dawn leave their loot to it.
+  Cargo on claimed ground does not rot during the night.
+- **Time away pays.** Offline income, the tithe included, tapers toward a
+  one-hour ceiling, so a week away and a night away are worth about the same.
 
 One deliberate exception: **upgrading an existing building never spends on its
 own.** Walk into an empty site and it builds itself out of your stores, but
