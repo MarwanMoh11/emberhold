@@ -222,10 +222,10 @@ export const POP = {
 export const TITHE = {
   /** coins a second from the hall itself, by level (index 0 = Lv.1) */
   hall: [0.4, 0.8, 1.3, 1.9, 2.6],
-  /** per hired worker (sheltering counts; dismissed does not) */
-  perWorker: 0.12,
-  /** per point of cottage and longhouse population */
-  perHome: 0.05,
+  /** per hired worker (sheltering counts; dismissed does not); R7: 0.12 → 0.1, act II banked 7–9k it had no use for */
+  perWorker: 0.1,
+  /** per point of cottage and longhouse population; R7: 0.05 → 0.04 */
+  perHome: 0.04,
   /** seconds between the hall's quiet `+N coins` */
   popupEvery: 10,
 }
