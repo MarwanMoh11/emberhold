@@ -39,6 +39,17 @@ interface Front {
   released: boolean
 }
 
+/** R5: soldiers sent to a raided holding; they go back once it has been quiet `respondQuiet` s. */
+interface Detachment {
+  padId: string
+  x: number
+  y: number
+  company: Company
+  /** from where they set out toward the holding */
+  heading: number
+  quietT: number
+}
+
 export class ArmyManager {
   soldiers: Soldier[] = []
   private free: Soldier[] = []
@@ -57,6 +68,8 @@ export class ArmyManager {
   private frontsKey = ''
   /** the last night's lead post: the day posts face it */
   private facing: { x: number; y: number } | null = null
+  /** detachments out, by the raided holding's pad */
+  private details = new Map<string, Detachment>()
 
   /** Old call sites: true when every company holds. */
   get holding() { return COMPANIES.every(c => this.orders[c] === 'hold') }
@@ -66,7 +79,9 @@ export class ArmyManager {
   totalRecruited = 0
 
 
-  constructor(private scene: GameScene) {}
+  constructor(private scene: GameScene) {
+    scene.bus.on('holding:raided', r => { this.answer(r) })
+  }
 
   get count() { return this.soldiers.length }
   get popUsed() {
@@ -106,6 +121,48 @@ export class ArmyManager {
 
   /** Whether a soldier goes with the hero (a waystone escort takes only these). */
   follows(s: Soldier): boolean { return this.orders[s.company] === 'follow' }
+
+  /**
+   * A raided holding (`holding:raided`): by day, or at night when no front
+   * covers it, the nearest defending company within `respondRange` of path
+   * sends half its soldiers, at least `respondMin`, not already detached.
+   * One detachment per holding. True if one set out.
+   */
+  answer(r: { padId: string; x: number; y: number }): boolean {
+    if (this.details.has(r.padId)) return false
+    if (this.fronts.some(f => !f.released && Math.hypot(f.post.x - r.x, f.post.y - r.y) <= ARMY.postLeash)) return false
+    const far = (s: Soldier) => Math.hypot(s.x - r.x, s.y - r.y)
+    let best: { c: Company; free: Soldier[]; len: number } | null = null
+    for (const c of COMPANIES) {
+      if (this.orders[c] !== 'defend') continue
+      const free = this.soldiers.filter(s => s.alive && s.company === c && !s.detail).sort((a, b) => far(a) - far(b))
+      if (!free.length || far(free[0]) > ARMY.respondRange) continue
+      // by path from where the company stands (its nearest soldier), bounded
+      const path = this.scene.nav.findPath(free[0].x, free[0].y, r.x, r.y, ARMY.respondRange)
+      if (!path) continue
+      let len = 0
+      for (let i = 1; i < path.length; i++) len += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1])
+      if (len <= ARMY.respondRange && (!best || len < best.len)) best = { c, free, len }
+    }
+    if (!best) return false
+    const n = Math.min(best.free.length, Math.max(ARMY.respondMin, Math.ceil(this.companyCount(best.c) / 2)))
+    const lead = best.free[0]
+    for (const s of best.free.slice(0, n)) { s.detail = r.padId; s.target = null }
+    this.details.set(r.padId, {
+      padId: r.padId, x: r.x, y: r.y, company: best.c, quietT: 0,
+      heading: Math.atan2(r.y - lead.y, r.x - lead.x),
+    })
+    this.dirty = true
+    return true
+  }
+
+  /** How many soldiers are out answering raids, by holding pad. */
+  detachments(): { padId: string; company: Company; count: number }[] {
+    return [...this.details.values()].map(d => ({
+      padId: d.padId, company: d.company,
+      count: this.soldiers.filter(s => s.alive && s.detail === d.padId).length,
+    }))
+  }
 
   countOf(key: SoldierKey) {
     let c = 0
@@ -157,6 +214,7 @@ export class ArmyManager {
 
   disbandAll() {
     for (const s of this.soldiers.slice()) this.remove(s)
+    this.details.clear()
   }
 
   /** Formation anchor: behind the hero relative to where they are heading. */
@@ -311,6 +369,7 @@ export class ArmyManager {
    */
   private replan(step: number) {
     this.syncFronts(step)
+    this.syncDetachments(step)
     this.assignDefenders()
     const frontById = new Map(this.fronts.map(f => [f.id, f]))
     const groups = new Map<string, { a: Anchor; list: Soldier[] }>()
@@ -321,6 +380,12 @@ export class ArmyManager {
     }
     for (const s of this.soldiers) {
       if (!s.alive) continue
+      const d = s.detail ? this.details.get(s.detail) : undefined
+      if (d) {
+        put(`respond:${d.padId}`, s, () => ({ kind: 'respond', x: d.x, y: d.y, heading: d.heading, engage: ARMY.postEngage, leash: ARMY.postEngage }))
+        continue
+      }
+      s.detail = null
       const o = this.orders[s.company]
       if (o === 'follow') put('follow', s, () => this.followAnchor)
       else if (o === 'hold') put('hold', s, () => this.holdAnchor())
@@ -333,6 +398,19 @@ export class ArmyManager {
     for (const { a, list } of groups.values()) {
       list.sort(byLine)
       list.forEach((s, i) => { s.anchor = a; s.slot = i })
+    }
+  }
+
+  /** Detachments walk back once their holding has been quiet a while, their company is ordered elsewhere, or they are all down. */
+  private syncDetachments(step: number) {
+    for (const [id, d] of this.details) {
+      let members = 0
+      for (const s of this.soldiers) if (s.alive && s.detail === id) members++
+      const busy = !!this.scene.enemies.grid.nearest(d.x, d.y, ARMY.postEngage, e => e.alive)
+      d.quietT = busy ? 0 : d.quietT + step
+      if (members && d.quietT < ARMY.respondQuiet && this.orders[d.company] === 'defend') continue
+      for (const s of this.soldiers) if (s.detail === id) s.detail = null
+      this.details.delete(id)
     }
   }
 
