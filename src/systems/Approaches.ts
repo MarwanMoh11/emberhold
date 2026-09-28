@@ -7,7 +7,8 @@
  * (muster resolution along chains, the 2400 px clamp, which approaches are
  * live, fronts per night) are tested on the real raster.
  */
-import { APPROACHES, CAMPS, CROSSINGS, MAWS, REGION_BY_ID, type RegionId } from '../config/world'
+import { APPROACHES, CAMPS, CROSSINGS, HALL, MAWS, REGION_BY_ID, raster, type RegionId } from '../config/world'
+import { HOLD } from '../config/balance'
 import type { Pt } from '../config/world/blueprint'
 import type { FieldTarget, NavGrid } from '../world/NavGrid'
 
@@ -26,6 +27,10 @@ export const VIA_REACH = 96
 export const RAID_SHARE = 0.3
 /** Share of an approach's units that are its muster camp's own walker. */
 export const CAMP_MIX = 0.3
+/** R3: front i (in `plan.fronts` order) spawns this many seconds after front 0; the raid goes with front 0. */
+export const FRONT_STAGGER = 10
+/** R3: a front's post stands this far of route back from where the route enters the hold. */
+export const POST_BACK = 160
 
 /** When a main approach first comes: from a wave, or as soon as any listed region is claimed. */
 export const OPENS: Record<ApproachId, { wave: number; claimed?: RegionId[] }> = {
@@ -271,4 +276,38 @@ export function splitBudget(plan: Pick<NightPlan, 'fronts' | 'raid'>, total: num
     out.set(rem[k][0], (out.get(rem[k][0]) ?? 0) + 1)
   }
   return out
+}
+
+/** R3: seconds by which an approach's spawns are held back tonight: `i × FRONT_STAGGER` for front i, 0 for the raid. */
+export function frontStagger(plan: Pick<NightPlan, 'fronts'>, id: ApproachId): number {
+  return Math.max(0, plan.fronts.indexOf(id)) * FRONT_STAGGER
+}
+
+/**
+ * R3: in the hold, where a front's walkers stop advancing and assault: the
+ * `hold` region (from the 32 px region raster), or within `HOLD.assaultRadius`
+ * of the hall. O(1).
+ */
+export function inHold(x: number, y: number): boolean {
+  const dx = x - HALL.x, dy = y - HALL.y
+  if (dx * dx + dy * dy <= HOLD.assaultRadius * HOLD.assaultRadius) return true
+  const r = raster()
+  const i = r.cell(x, y)
+  return i >= 0 && r.region[i] === REGION_BY_ID.get('hold')!.index
+}
+
+/**
+ * R3: a front's post, where the army stands to meet it. `route` runs from the
+ * spawn to the hall; the post is where it first enters the hold, stepped back
+ * `back` px of route so it stands just outside. A route that never enters the
+ * hold posts at its last point before the hall; an empty one has no post.
+ */
+export function frontPost(route: Pt[], hold: (x: number, y: number) => boolean, back = POST_BACK): { x: number; y: number } | null {
+  if (!route.length) return null
+  let i = route.findIndex(p => hold(p[0], p[1]))
+  if (i < 0) { const p = route[Math.max(0, route.length - 2)]; return { x: p[0], y: p[1] } }
+  for (let left = back; i > 0 && left > 0; i--) {
+    left -= Math.hypot(route[i][0] - route[i - 1][0], route[i][1] - route[i - 1][1])
+  }
+  return { x: route[i][0], y: route[i][1] }
 }

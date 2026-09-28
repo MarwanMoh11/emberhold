@@ -1391,15 +1391,22 @@ export class BuildingManager {
   }
 
   // ---- enemy interaction ----------------------------------------------
-  nearestStructure(x: number, y: number, radius: number, preferDefense = false): Building | null {
+  /**
+   * The structure an enemy goes for: nearest by a score, walls and gates
+   * weighted by `preferDefense`, the hall at 0.8, and holdings (anything not a
+   * defense or the hall) by `holdings` (R3: a raid's walker scores them lower).
+   * Sacked buildings (R4) cannot be targeted.
+   */
+  nearestStructure(x: number, y: number, radius: number, preferDefense = false, holdings = 1): Building | null {
     let best: Building | null = null
     let bestScore = Infinity
     const list = this.grid.query(x, y, radius, [])
     for (const b of list) {
-      if (b.level === 0 || !b.alive) continue
+      if (b.level === 0 || !b.alive || (b as { sacked?: boolean }).sacked) continue
       let score = dist(x, y, b.x, b.y)
       if (preferDefense && (b.key === 'wall' || b.key === 'gate')) score *= 0.55
       if (b.key === 'townHall') score *= 0.8
+      else if (holdings !== 1 && b.def.category !== 'defense') score *= holdings
       if (score < bestScore) { bestScore = score; best = b }
     }
     return best
