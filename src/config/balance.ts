@@ -226,3 +226,22 @@ export const PERF = {
   retargetFrames: 14,
   gridCell: 72,
 }
+
+/**
+ * The hold under assault (R3). A front walker on claimed ground *advances*: it
+ * keeps to the hall's flow field and fights only what is in its way, until it
+ * is in the hold (the `hold` region, or within `assaultRadius` of the hall),
+ * where it assaults as before. Raids keep detouring, and prefer holdings.
+ */
+export const HOLD = {
+  /** px from the hall that counts as the hold, whatever the regions say */
+  assaultRadius: 900,
+  /** an advancing walker fights the hero, a soldier or a worker this near (twice it, just after a close hit) */
+  advanceSight: 220,
+  /** an advancing walker fights a structure this near: it is in the way */
+  advanceBump: 110,
+  /** a raid walker's score for a holding (not a wall, gate, tower or the hall): lower is likelier */
+  raidHoldings: 0.5,
+  /** an advancing walker struck from within twice its sight stays provoked this long (s) */
+  provokedSeconds: 2,
+}

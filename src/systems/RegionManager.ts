@@ -15,6 +15,7 @@ import { setColour, textStyle } from '../ui/theme'
 import { SkinPanel } from '../ui/skin'
 import { CostChips, DockSheet, StatLine, type DockRow } from '../ui/dock'
 import { DPR } from '../core/device'
+import { inHold } from './Approaches'
 
 /** World px per fog texel: the fog RenderTexture is the world at 1/8. */
 export const FOG_SCALE = 8
@@ -373,6 +374,11 @@ export class RegionManager {
     const i = r.cell(x, y)
     const k = i < 0 ? -1 : r.region[i]
     return k < 0 ? null : REGIONS[k]
+  }
+
+  /** In the hold (R3): the `hold` region, or within `HOLD.assaultRadius` of the hall. O(1); fronts assault from here. */
+  inHold(x: number, y: number): boolean {
+    return inHold(x, y)
   }
 
   /** The unclaimed region a point sits in, if any. Used to redirect guidance. */
