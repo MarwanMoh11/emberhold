@@ -34,6 +34,8 @@ const MIN_H = 56
 const MIN_SCREEN_W = 520
 /** Margin between the map and the glass around it. */
 const INSET = 4
+/** R6: at most this many raided holdings ping at once */
+const PINGS = 4
 
 /**
  * The corner map (S12): a local window of MINI_RADIUS round the hero, north up.
@@ -59,6 +61,10 @@ export class Minimap {
   private fog: Phaser.GameObjects.Image
   private marks: Phaser.GameObjects.Graphics
   private hit: Phaser.GameObjects.Zone
+  /** R6: a raided holding pings on the map; pooled flat squares, moved each frame */
+  private pings: Phaser.GameObjects.Image[] = []
+  /** the raided holdings (x, y pairs) as of the last marks rebuild */
+  private raidPts: number[] = []
 
   private roomy = true
   private heartbeat = 0
@@ -76,6 +82,7 @@ export class Minimap {
   private lastLeft = -1
   private lastBottom = -1
 
+  private pingAt: [number, number] = [0, 0]
   /** True while a modal owns the screen: the map stops answering taps, like the HUD. */
   blocked = false
   /** Harness: ms the last marks rebuild took, and the worst so far. */
@@ -91,6 +98,9 @@ export class Minimap {
     this.marks = ui.add.graphics().setScrollFactor(0).setDepth(1_000_008)
     this.hit = ui.add.zone(0, 0, 10, 10).setOrigin(0, 0).setScrollFactor(0).setDepth(1_000_008)
     this.hit.setInteractive()
+    for (let i = 0; i < PINGS * 2; i++) {
+      this.pings.push(ui.add.image(0, 0, 'px').setScrollFactor(0).setDepth(1_000_009).setTint(PAL.ember).setVisible(false))
+    }
     this.hit.on('pointerdown', () => { if (!this.blocked) this.openAtlas() })
 
     // The world restores its explored fog before the UI launches: rebuild the
@@ -262,6 +272,12 @@ export class Minimap {
       g.fillStyle(CHART.ink, 1).fillRect(hx - 2.8, hy - 2.8, 5.6, 5.6)
       g.fillStyle(PAL.lapis, 1).fillRect(hx - 2, hy - 2, 4, 4)
     }
+    // raided holdings (R6): their pings are placed every frame in update()
+    this.raidPts.length = 0
+    for (const r of gs.buildings.raided(gs.now)) {
+      if (this.raidPts.length >= PINGS * 2) break
+      this.raidPts.push(r.x, r.y)
+    }
     this.drawMs = performance.now() - t0
     this.worstDrawMs = Math.max(this.worstDrawMs, this.drawMs)
   }
@@ -282,7 +298,10 @@ export class Minimap {
     if (hero.alive) this.memory.reveal(hero.x, hero.y)
     this.heartbeat -= dt
     if (this.heartbeat <= 0) { this.heartbeat = HEARTBEAT; this.sweepClaims() }
-    if (!this.roomy) return
+    if (!this.roomy) {
+      for (const im of this.pings) if (im.visible) im.setVisible(false)
+      return
+    }
 
     // round the hero; while he is down, round what the camera shows
     const cam = this.game.cameras.main.worldView
@@ -297,6 +316,28 @@ export class Minimap {
     }
     const k = this.side / SPAN
     this.marks.setPosition(this.mapX + (this.drawnX - cx) * k, this.mapY + (this.drawnY - cy) * k)
+    this.placePings(cx, cy)
+  }
+
+  /**
+   * A raided holding pings: a steady ember dot and a square that swells and
+   * fades about it once a second. Two flat images each, no circle paths.
+   */
+  private placePings(cx: number, cy: number) {
+    const p: [number, number] = this.pingAt
+    const phase = (this.game.now % 1000) / 1000
+    for (let i = 0; i < PINGS; i++) {
+      const dot = this.pings[i * 2], wave = this.pings[i * 2 + 1]
+      const on = i * 2 < this.raidPts.length && this.roomy
+        && this.toPanel(this.raidPts[i * 2], this.raidPts[i * 2 + 1], cx, cy, p)
+      dot.setVisible(on)
+      wave.setVisible(on)
+      if (!on) continue
+      const x = this.mapX + p[0], y = this.mapY + p[1]
+      dot.setPosition(x, y).setDisplaySize(4, 4)
+      const s = 4 + phase * 10
+      wave.setPosition(x, y).setDisplaySize(s, s).setAlpha(0.7 * (1 - phase))
+    }
   }
 
   /** Harness: the panel's rect in CSS px and what the window centres on. */
@@ -315,5 +356,6 @@ export class Minimap {
     this.fog.destroy()
     this.marks.destroy()
     this.hit.destroy()
+    for (const im of this.pings) im.destroy()
   }
 }

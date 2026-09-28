@@ -141,6 +141,8 @@ export class HUD {
   private hintSig = ''
 
   showStats = false
+  /** R6: where the day/objective block sits (CSS px), so the dawn card can hang under it. */
+  readonly objRect = { x: 0, y: 0, w: 0, h: 0 }
   /** True while a modal owns the screen: every HUD tap target goes dead. */
   blocked = false
 
@@ -531,6 +533,8 @@ export class HUD {
     const objH = q ? 64 : 26
     const cx = objX + objW / 2
     this.objPanel.place(objX, objY, objW, objH)
+    const or = this.objRect
+    or.x = objX; or.y = objY; or.w = objW; or.h = objH
     if (q) {
       this.objTitle.setText(q.title).setPosition(cx, objY + 31)
       this.fit(this.objTitle, 15, objW - 24)
