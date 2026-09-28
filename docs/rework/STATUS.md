@@ -1,10 +1,10 @@
 # Rework status
 
-**Next: R6b · Orders panel** and **R7 · Balance and the record** in parallel; the orchestrator does the final merged smoke.
+**Next: none. The rework is closed** (2026-09-28) and merged to `main`.
 
 Parallel mode (human, 2026-09-28): cards may run at once in worktrees under `.claude/worktrees/rN` (branch `rework-rN`, dev server `emberhold-rN` in `.claude/launch.json`); each writes `docs/rework/handoff/RN.md` and the orchestrator merges into `rework` and writes the entry here.
 
-Branch `rework`, cut from `main` at `479df80`. After R1–R6: 182 tests green,
+Branch `rework`, cut from `main` at `479df80`. After R1–R7: 184 tests green,
 typecheck clean, world lint 0/0.
 
 ## Open decisions
@@ -36,3 +36,10 @@ Probe kill loot is by real pickups, no shortcut; the night reward was most of th
 
 **R6 · Night awareness: done** (worktree, merged). Edge markers moved to the UI scene: `ui/Awareness.ts` `ThreatChevrons` (pool 14, 5 Hz gather; boss, damaged hall, fronts from the warning, `horde` clusters at night with counts, `raid` with the building's icon). Minimap pings raided holdings. Dawn card on `night:summary`, 6 s, under the day block, full width below 520 px. Pure `ui/threatMath.ts`. Harness: `H.ui().chevrons.inspect()`, `H.ui().dawn`. Left for R7: dawn popups in the world repeat the card; `fx_marker` texture now unused.
 - Flaky test identified: `terrain-chunks` "a frame bakes within its budget…" is wall-clock and fails under CPU load (parallel agents). Pre-existing; passes on rerun.
+
+**R6b · Orders panel: done** (worktree, merged). The army button opens `ui/OrdersPanel.ts` (`hud.orders`): one row per company with soldiers or a standing muster building, Defend / Follow / Hold chips; Hold re-plants the standard at the hero; doesn't pause; a tap outside closes it without moving the hero. Button glyph from `ordersMath.armyLook` (shield, file, banner, mixed `ico_orders`). World standard `army_standard` (`ArmyManager.plantStandard()`). Harness: `H.game.scene.getScene('UI').hud.orders.inspect()` / `.press(c, o)`.
+
+**R7 · Balance and the record: done** (worktree, merged). Probe fixes first (`questStep` waits out the waystone channel; the probe recruits what a yard can pay for). Advancing walkers take a holding only within `HOLD.advanceBlock` 60 while `Enemy.stalled` (1 of 4876 samples, was ~40%). Dawn popups dropped (the card says it). `TITHE.perWorker` 0.1, `perHome` 0.04. README current.
+Probe, R1 baseline → R7 (coins earned per day+night): w1 158→298 · w5 177→359 · w8 118→775; w8 at 14.6 → 13.3 min. Act II from w10/17.3 min, act III from w15/30.9. Coins short only at w3 (12 s) and while saving for tier-3 claims; wood paces acts I–II.
+- Watch: large run-to-run variance; in the final run tier-3 claims came w15–17 and act IV began at w17 (target w34). S22's pre-rework probe had tier-3 claims w14–20, so the late acts were already early; the lever is tier-3 claim costs or the late tithe.
+- Final merged smoke (orchestrator, :5180): a new game with 4 swordsmen and 2 archers on default orders; at the first night all six stood within ~200 px of the south post; nights 1 and 2 held (summaries `{kills 8, +113 coins, swept 25 wood}`, `{kills 12, +151}`), the dawn card showed, no console errors. Night screenshot skipped: the hidden pane auto-paused the game.
