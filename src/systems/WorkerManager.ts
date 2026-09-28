@@ -148,7 +148,9 @@ export class WorkerManager {
   private tickShelter(w: Worker, dt: number, home: Building | undefined, dropX: number, dropY: number): boolean {
     const scene = this.scene
     const homeUp = !!home && home.level > 0
-    const besieged = homeUp && !!scene.enemies.grid.nearest(home!.x, home!.y, SHELTER_CLEAR_RADIUS, e => e.alive)
+    // a sacked camp keeps its crew indoors until it is restored (R4), and they make nothing
+    const sacked = homeUp && home!.sacked
+    const besieged = homeUp && (sacked || !!scene.enemies.grid.nearest(home!.x, home!.y, SHELTER_CLEAR_RADIUS, e => e.alive))
     if (!homeUp || !besieged) {
       w.sheltered = false
       w.state = 'seek'
@@ -160,7 +162,7 @@ export class WorkerManager {
       return false
     }
     // Builders have nothing to stockpile; they just wait it out.
-    if (w.def.yield > 0) {
+    if (w.def.yield > 0 && !sacked) {
       const rate = (home!.stats.rate ?? 1) * (1 + scene.buildings.bonus.prod) * SHELTER_RATE
       w.gatherT += dt
       if (w.gatherT >= w.def.gatherTime / (rate * this.gatherMod())) {
@@ -194,6 +196,8 @@ export class WorkerManager {
       const campY = homeUp ? home!.y + 26 : fallbackY
 
       if (w.sheltered && this.tickShelter(w, dt, home, campX, campY)) continue
+      // their camp was sacked (R4): kept, not dismissed, and indoors until it is put right
+      if (homeUp && home!.sacked) { this.enterShelter(w, campX, campY); continue }
 
       scene.allyGrid.insert(w)
 

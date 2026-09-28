@@ -14,7 +14,7 @@ import { capDiscs, layWallLine, legacyRingPads, WALL_CAP_R } from '../world/wall
 const LEGACY_WALL_REACH = 72
 const LEGACY_GATE_REACH = 128
 import { PAL } from '../config/palette'
-import { POP, PERF, OUTPOST, VILLAGE } from '../config/balance'
+import { POP, PERF, OUTPOST, VILLAGE, SACK } from '../config/balance'
 import { bestBonus, blessingMultiplier, marketGood, marketRate, routeNear, type BonusSource } from './village'
 import { Grid } from '../core/Grid'
 import { RESOURCE_ORDER, type ResourceBag, type ResourceType } from '../core/types'
@@ -71,6 +71,9 @@ const DEMOLISH_REFUND = 0.5
  * press that letting go at any point throws away.
  */
 const DEMOLISH_HOLD = 1.6
+
+/** A sacked holding's darkened look (R4). */
+const SACKED_TINT = 0x6a5e54
 
 export class BuildingManager {
   buildings: Building[] = []
@@ -242,7 +245,7 @@ export class BuildingManager {
     }
     if (pick) return { x: pick.x, y: pick.y + 14 }
     const d = this.depot
-    if (d && d.level > 0) return { x: d.x, y: d.y + 14 }
+    if (d && d.level > 0 && d.alive) return { x: d.x, y: d.y + 14 }
     const h = this.townHall
     return { x: h.x, y: h.y + 30 }
   }
@@ -446,7 +449,8 @@ export class BuildingManager {
     bo.heal = 0; bo.healRadius = 0
     let cottagePop = 0
     for (const b of this.buildings) {
-      if (b.level === 0) continue
+      // a sacked holding lends nothing until it is restored (R4)
+      if (b.level === 0 || b.sacked) continue
       const s = b.stats
       if (b.key === 'cottage') cottagePop += s.pop ?? 0
       else bo.pop += s.pop ?? 0
@@ -677,6 +681,8 @@ export class BuildingManager {
   }
 
   onBuildingDestroyed(b: Building) {
+    // R4: a holding is knocked out for the night, not unbuilt
+    if (this.isHolding(b)) { this.sack(b); return }
     this.scene.fx.explosion(b.x, b.y - 10, 90, 0x8a6a45)
     this.scene.fx.smoke(b.x, b.y - 20, 10)
     this.scene.audio.play('boom', 0.8)
@@ -715,6 +721,84 @@ export class BuildingManager {
     if (b.key === 'townHall' && b.level === 0) this.scene.onCoreLost()
     this.syncNav(b)
     this.recomputeBonuses()
+  }
+
+  // ---- sacked, not razed (R4) ------------------------------------------
+  /**
+   * A holding is every built structure but a defense (walls, gates, towers,
+   * watch posts) and the hall. Defenses are what you spend to hold the line,
+   * so they still lose levels; a holding is only ever knocked out.
+   */
+  isHolding(b: Building): boolean {
+    return b.level > 0 && b.key !== 'townHall' && b.def.category !== 'defense'
+  }
+
+  /**
+   * Knock a holding out at 0 hp: it keeps its level and crew (who shelter),
+   * nothing can target it, and it produces, pays, trades, trains and lends
+   * nothing until it mends. An undefended farm three regions out used to be
+   * simply lost; now it is a bad night, not a bill.
+   */
+  sack(b: Building) {
+    b.sacked = true
+    b.hp = 0
+    b.alive = false
+    b.committed = false
+    b.sackFxT = 0
+    this.scene.fx.smoke(b.x, b.y - 20, 10)
+    this.scene.audio.play('boom', 1.2, 0.5)
+    this.scene.fx.popup(b.x, b.y - 40, `${b.def.short} SACKED`, PAL.danger, 18)
+    b.sprite.setTint(SACKED_TINT)
+    const log = (this.scene.waves as unknown as { nightLog?: { sacked: number } }).nightLog
+    if (log) log.sacked++
+    this.scene.bus.emit('building:sacked', { padId: b.padId, key: b.key, x: b.x, y: b.y })
+    this.recomputeBonuses()
+  }
+
+  /** Put a sacked holding right: whole, working, lending its bonus again. */
+  restore(b: Building, byHero = false) {
+    if (!b.sacked) return
+    b.sacked = false
+    b.hp = b.maxHp
+    b.alive = true
+    b.damageT = 0
+    b.sprite.clearTint()
+    if (byHero) {
+      this.scene.fx.dust(b.x, b.y, 10)
+      this.scene.audio.play('build', 1.1, 0.6)
+      this.scene.fx.popup(b.x, b.y - 40, `${b.def.short} RESTORED`, PAL.good, 16)
+    } else {
+      this.scene.fx.popup(b.x, b.y - 30, 'restored', PAL.uiDim, 12)
+    }
+    this.scene.bus.emit('building:restored', { padId: b.padId, key: b.key, x: b.x, y: b.y })
+    this.recomputeBonuses()
+  }
+
+  /**
+   * Mend a sacked holding by `dt` seconds: `maxHp / SACK.repairSeconds` a
+   * second while `calm` (daylight, no walker within `SACK.calmRadius`), plus
+   * the engineers' repair bonus. Builders' repairs land on top. Restored at
+   * full hp.
+   */
+  mendSacked(b: Building, dt: number, calm: boolean) {
+    if (!b.sacked) return
+    if (calm) b.hp = Math.min(b.maxHp, b.hp + (b.maxHp / SACK.repairSeconds + this.bonus.repair * 4) * dt)
+    if (b.hp >= b.maxHp) this.restore(b)
+  }
+
+  private tickSacked(b: Building, dt: number) {
+    // the hit flash clears the tint; hold the darkened look under anything that does
+    if (b.flashT <= 0) b.sprite.setTint(SACKED_TINT)
+    b.sackFxT -= dt
+    if (b.sackFxT <= 0) {
+      b.sackFxT = SACK.smokeEvery
+      if (b.visible && this.scene.cameras.main.worldView.contains(b.x, b.y)) {
+        this.scene.fx.smoke(b.x + rr(-14, 14), b.y - b.def.h * 0.55, 3)
+      }
+    }
+    const calm = !this.scene.waves.isNight
+      && !this.scene.enemies.grid.nearest(b.x, b.y, SACK.calmRadius, e => e.alive)
+    this.mendSacked(b, dt, calm)
   }
 
   /**
@@ -792,7 +876,8 @@ export class BuildingManager {
 
       if (b.level > 0) {
         this.grid.insert(b)
-        this.scene.allyGrid.insert(b)
+        // a sacked holding is no one's target (R4); the building grid keeps it solid for allies
+        if (!b.sacked) this.scene.allyGrid.insert(b)
       }
 
       if (b.state === 'raising') {
@@ -810,12 +895,13 @@ export class BuildingManager {
         if (b.flashT <= 0) b.sprite.clearTint()
       }
       if (b.damageT > 0) b.damageT -= dt
+      if (b.sacked) this.tickSacked(b, dt)
 
       if (b.level > 0) {
         // a Lv.2 watch post shoots like a Lv.1 watchtower (S13b)
         if (b.def.tower || (b.key === 'watchPost' && (b.stats.dmg ?? 0) > 0)) this.tickTower(b, dt)
         // slow self-repair between waves once engineers are around
-        if (this.bonus.repair > 0 && !this.scene.waves.isNight && b.hp < b.maxHp) {
+        if (this.bonus.repair > 0 && !this.scene.waves.isNight && b.hp < b.maxHp && !b.sacked) {
           b.repair(this.bonus.repair * 4 * dt)
         }
       }
@@ -825,7 +911,11 @@ export class BuildingManager {
       const inPad = player.alive && d < Math.max(b.halfW, b.halfH) + 38
       if (inPad && d < nearestD) { nearestD = d; nearest = b }
 
-      if (inPad && usable) {
+      if (inPad && usable && b.sacked) {
+        // standing in a sacked holding a moment puts it right at once (R4)
+        b.dwellT += dt
+        if (b.dwellT >= DWELL + SACK.restoreHold) this.restore(b, true)
+      } else if (inPad && usable) {
         b.dwellT += dt
         // holding shift is the desktop shortcut for "pour it in"
         if (this.shiftKey?.isDown && b.level > 0 && !b.isMax) b.committed = true
@@ -870,7 +960,7 @@ export class BuildingManager {
       this.healTick -= dt
       if (this.healTick <= 0) {
         this.healTick = 1
-        const tent = this.buildings.find(x => x.key === 'healingTent' && x.level > 0)
+        const tent = this.buildings.find(x => x.key === 'healingTent' && x.level > 0 && x.alive)
         if (tent) {
           const heal = this.scene.mods?.value('infirmary.heal', this.bonus.heal) ?? this.bonus.heal
           this.scene.combat.healAllies(tent.x, tent.y, this.bonus.healRadius, heal)
@@ -910,7 +1000,7 @@ export class BuildingManager {
    * Before it, they only replace crew they have lost. This is the moment the
    * settlement stops needing you for chores and starts running itself.
    */
-  get autoHireUnlocked() { return this.countBuilt('warehouse') > 0 }
+  get autoHireUnlocked() { return this.standing('warehouse').length > 0 }
 
   private tickAutoHire(dt: number) {
     this.autoHireTick -= dt
@@ -919,7 +1009,8 @@ export class BuildingManager {
     const grow = this.autoHireUnlocked
 
     for (const b of this.buildings) {
-      if (b.level === 0) continue
+      // a sacked holding's crew is sheltering, not lost: nothing to backfill (R4)
+      if (b.level === 0 || b.sacked) continue
       const wkey = WORKER_FOR[b.key]
       if (!wkey) continue
       const slots = this.slotsOf(b)
@@ -1046,6 +1137,7 @@ export class BuildingManager {
     // Unlike a razing, this was on purpose — the crew is not coming back on
     // its own the moment the pad is rebuilt.
     b.peakWorkers = 0
+    b.sacked = false
     b.level = 0
     b.hp = 0
     b.maxHp = 0
@@ -1190,9 +1282,17 @@ export class BuildingManager {
       hint = this.villageHint(b) ?? hint
     }
 
+    if (b.sacked) {
+      // no upgrades, hires or musters while it smokes (R4)
+      hint = b.dwellT > DWELL ? 'restoring…'
+        : this.scene.waves.isNight ? 'sacked · mends at dawn, or stand here to restore'
+          : 'sacked · mending, or stand here to restore'
+      chips = undefined
+    }
+
     this.panel.show(b, {
-      title, sub, rows, hint, chips,
-      upgrade: b.level > 0 && !b.isMax
+      title, sub, rows, hint, chips, hintBad: b.sacked,
+      upgrade: b.level > 0 && !b.isMax && !b.sacked
         ? { committed: b.committed, affordable: res.canAfford(b.remaining()) }
         : undefined,
       demolish: this.canDemolish(b)
@@ -1357,7 +1457,7 @@ export class BuildingManager {
     let bestScore = Infinity
     const list = this.grid.query(x, y, radius, [])
     for (const b of list) {
-      if (b.level === 0 || !b.alive) continue
+      if (b.level === 0 || !b.alive || b.sacked) continue
       let score = dist(x, y, b.x, b.y)
       if (preferDefense && (b.key === 'wall' || b.key === 'gate')) score *= 0.55
       if (b.key === 'townHall') score *= 0.8
@@ -1371,6 +1471,8 @@ export class BuildingManager {
     let bestD = radius
     for (const b of this.buildings) {
       if (b.level === 0 || b.hp >= b.maxHp) continue
+      // builders help mend a sacked holding, but only by day, like the rest of its mending (R4)
+      if (b.sacked && this.scene.waves.isNight) continue
       const d = dist(x, y, b.x, b.y)
       if (d < bestD) { bestD = d; best = b }
     }
@@ -1397,6 +1499,7 @@ export class BuildingManager {
         b.maxHp = 0
         b.hp = 0
         b.alive = false
+        b.sacked = false
         b.state = 'empty'
         b.applyTexture()
       } else {
@@ -1405,10 +1508,13 @@ export class BuildingManager {
           b.maxHp = Building.hpMod(b.key, b.def.levels[d.level - 1].hp)
         }
         while (b.level < d.level) b.completeLevel()
-        b.hp = Math.max(1, Math.min(b.maxHp, d.hp))
-        b.alive = true
         b.state = 'done'
         b.applyTexture()
+        // a sacked holding loads sacked, with its hp (R4)
+        b.sacked = d.sacked === true && this.isHolding(b)
+        b.hp = Math.max(b.sacked ? 0 : 1, Math.min(b.maxHp, d.hp))
+        b.alive = !b.sacked
+        if (b.sacked) b.sprite.setTint(SACKED_TINT)
       }
       b.progress = d.progress ?? {}
       b.peakWorkers = Math.max(0, d.peakWorkers ?? 0)
