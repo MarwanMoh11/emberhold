@@ -435,8 +435,8 @@ export function installHarness(game: Phaser.Game) {
   /**
    * Pump `seconds` while watching the allies (S06): drop-offs made, frames a
    * worker or soldier stood on impassable ground, frames a worker was on a
-   * crossing, and the longest a soldier more than 160 px from the hero (or
-   * the hall when holding) went moving under 10 px per half second.
+   * crossing, and the longest a soldier more than 160 px from its anchor
+   * (R5: the hero, the banner, a post or a front) went moving under 10 px per half second.
    */
   const watch = (seconds: number, stepMs = 33) => {
     const g = gs(); const n = g.nav; const r = n.r
@@ -451,15 +451,15 @@ export function installHarness(game: Phaser.Game) {
         if (!n.passableAt(w.x, w.y)) badWorker++
         if (r.crossing[r.cell(w.x, w.y)] >= 0) workerOnCrossing++
       }
-      const ax = g.army.holding ? g.buildings.townHall.x : g.player.x
-      const ay = g.army.holding ? g.buildings.townHall.y + 60 : g.player.y
       const sample = k % Math.max(1, Math.round(500 / stepMs)) === 0
       for (const s of g.army.soldiers) {
         if (!s.alive) continue
         if (!n.passableAt(s.x, s.y)) badSoldier++
         if (!sample) continue
         const l = last.get(s.id) ?? { x: s.x, y: s.y, t: 0 }
-        const far = Math.hypot(ax - s.x, ay - s.y) > 160
+        // R5: each soldier's own anchor (the hero, the banner, a post or a front)
+        const a = s.anchor ?? g.player
+        const far = Math.hypot(a.x - s.x, a.y - s.y) > 160
         l.t = far && Math.hypot(s.x - l.x, s.y - l.y) < 10 ? l.t + 0.5 : 0
         l.x = s.x; l.y = s.y
         last.set(s.id, l)

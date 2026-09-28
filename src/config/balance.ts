@@ -299,3 +299,34 @@ export const SACK = {
   /** the danger popup and horn for a raid sound at most this often overall (s) */
   alarmEvery: 8,
 }
+
+/**
+ * R5: the army in companies, each under an order (`systems/companies.ts`).
+ * Engage is how far a soldier looks for a fight from where it stands; leash is
+ * how far from its anchor it will chase one.
+ */
+export const ARMY = {
+  /** follow: the formation on the hero */
+  engage: 300,
+  leash: 420,
+  /** hold: the banner */
+  holdEngage: 360,
+  holdLeash: 480,
+  /** defend: a day post, a front post, or a raided holding */
+  postEngage: 480,
+  postLeash: 720,
+  /** a detachment answers a raided holding at most this far by path (px) */
+  respondRange: 2600,
+  /** a detachment is half its company, at least this many */
+  respondMin: 2,
+  /** a detachment walks back once its holding has been quiet this long (s) */
+  respondQuiet: 5,
+  /** a front with no spawns left and no walker near its post this long (s) sends its soldiers on */
+  frontQuiet: 6,
+  /** px from the hall of each company's day post, toward the last night's main front */
+  dayPost: { infantry: 320, archers: 210, riders: 260 },
+  /** the riders' day post stands this far to the side of that line (px) */
+  riderFlank: 280,
+  /** anchors are worked out this often (s), not per soldier per frame */
+  replan: 0.25,
+}

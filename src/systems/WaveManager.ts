@@ -212,6 +212,13 @@ export class WaveManager {
     if (!this.fighting) this.beginFight()
   }
 
+  /** R5: spawns still to come tonight by an approach (the army keeps its post till they are out). */
+  pendingFor(id: ApproachId): number {
+    let n = 0
+    for (let i = this.queueHead; i < this.queue.length; i++) if (this.queue[i].approach === id) n++
+    return n
+  }
+
   private peekNext(): WaveDef {
     const base = waveDef(this.wave + 1)
     return directorAdjust(base, {
