@@ -63,7 +63,8 @@ export class OrdersPanel {
     })
     this.catcher.setVisible(false).disableInteractive()
 
-    this.glass = new SkinPanel(ui, 'hud', { alpha: 0.72 }).setScrollFactor(0).setDepth(DEPTH + 1).setVisible(false)
+    // darker than the HUD's own glass: on a phone it lies over the objective
+    this.glass = new SkinPanel(ui, 'hud', { alpha: 0.9 }).setScrollFactor(0).setDepth(DEPTH + 1).setVisible(false)
     this.head = text(11, PAL.uiDim, '800', 0, 'caps').setText('Orders')
     this.keyHint = text(10, PAL.uiDim, '500', 1).setText('H  ·  cycle all')
     this.empty = text(12, PAL.uiDim, 'italic 500').setText('No soldiers yet  ·  build a barracks')
