@@ -9,8 +9,10 @@ import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
 import { slowMult, tickSlow } from './walkers'
 import { ARMY } from '../config/balance'
+import { splitBudget } from './Approaches'
+import type { Pt } from '../world/PathFind'
 import {
-  COMPANIES, ORDERS, ORDER_CALL, companyOf, nextOrder,
+  COMPANIES, ORDERS, ORDER_CALL, assignFronts, companyOf, nextOrder, noCompanies,
   type Anchor, type Company, type Order,
 } from './companies'
 
@@ -22,6 +24,20 @@ const LINE_ORDER: Record<SoldierKey, number> = {
 }
 
 const byLine = (a: Soldier, b: Soldier) => LINE_ORDER[a.key] - LINE_ORDER[b.key] || a.id - b.id
+
+/** R5: one of tonight's fronts as the army sees it, from the warning to dawn. */
+interface Front {
+  id: string
+  post: { x: number; y: number }
+  /** facing up its road, toward the spawn */
+  heading: number
+  /** its part of the night (`splitBudget`); the raid is a small front */
+  share: number
+  /** seconds with no spawns left for it, none of its walkers out on the road and none near its post */
+  quietT: number
+  /** gone quiet: its soldiers go to the nearest front still fighting */
+  released: boolean
+}
 
 export class ArmyManager {
   soldiers: Soldier[] = []
@@ -36,6 +52,11 @@ export class ArmyManager {
   private readonly followAnchor: Anchor = { kind: 'follow', x: 0, y: 0, heading: 0, engage: ARMY.engage, leash: ARMY.leash }
   private replanT = 0
   private sinceReplan = 0
+  /** tonight's fronts, from the warning to dawn; empty by day */
+  private fronts: Front[] = []
+  private frontsKey = ''
+  /** the last night's lead post: the day posts face it */
+  private facing: { x: number; y: number } | null = null
 
   /** Old call sites: true when every company holds. */
   get holding() { return COMPANIES.every(c => this.orders[c] === 'hold') }
@@ -288,7 +309,10 @@ export class ArmyManager {
    * R5: every soldier's anchor from its company's order, a few times a second.
    * Each anchor's soldiers form up in line order (melee in front of shooters).
    */
-  private replan(_step: number) {
+  private replan(step: number) {
+    this.syncFronts(step)
+    this.assignDefenders()
+    const frontById = new Map(this.fronts.map(f => [f.id, f]))
     const groups = new Map<string, { a: Anchor; list: Soldier[] }>()
     const put = (key: string, s: Soldier, make: () => Anchor) => {
       let g = groups.get(key)
@@ -300,7 +324,11 @@ export class ArmyManager {
       const o = this.orders[s.company]
       if (o === 'follow') put('follow', s, () => this.followAnchor)
       else if (o === 'hold') put('hold', s, () => this.holdAnchor())
-      else put(`post:${s.company}`, s, () => this.dayPost(s.company))
+      else {
+        const f = s.front ? frontById.get(s.front) : undefined
+        if (f) put(`front:${f.id}`, s, () => ({ kind: 'front', x: f.post.x, y: f.post.y, heading: f.heading, engage: ARMY.postEngage, leash: ARMY.postLeash }))
+        else put(`post:${s.company}`, s, () => this.dayPost(s.company))
+      }
     }
     for (const { a, list } of groups.values()) {
       list.sort(byLine)
@@ -315,10 +343,125 @@ export class ArmyManager {
     return { kind: 'hold', x: b.x, y: b.y, heading: this.outward(b.x, b.y), engage: ARMY.holdEngage, leash: ARMY.holdLeash }
   }
 
-  /** A company's post in the hold by day. */
-  private dayPost(_c: Company): Anchor {
+  /**
+   * A company's post in the hold by day, on the line from the hall to the
+   * last night's lead post: infantry out front, archers behind them, riders
+   * on the flank.
+   */
+  private dayPost(c: Company): Anchor {
     const hall = this.scene.buildings.townHall
-    return { kind: 'post', x: hall.x, y: hall.y + 60, heading: Math.PI / 2, engage: ARMY.postEngage, leash: ARMY.postLeash }
+    const h = this.facing ? this.outward(this.facing.x, this.facing.y) : Math.PI / 2
+    const dx = Math.cos(h), dy = Math.sin(h)
+    const r = ARMY.dayPost[c], side = c === 'riders' ? ARMY.riderFlank : 0
+    let x = hall.x + dx * r - dy * side, y = hall.y + dy * r + dx * side
+    const nav = this.scene.nav
+    if (!nav.passableAt(x, y)) {
+      const i = nav.nearestPassable(x, y)
+      if (i >= 0) [x, y] = nav.r.xy(i)
+    }
+    return { kind: 'post', x, y, heading: h, engage: ARMY.postEngage, leash: ARMY.postLeash }
+  }
+
+  /**
+   * Tonight's fronts from the warning to dawn (`waves.tonight`, each with its
+   * post and share), and at night which have gone quiet: no spawns left for
+   * it, none of its walkers out on the road, and none within `postLeash` of
+   * its post for `frontQuiet` s.
+   */
+  private syncFronts(step: number) {
+    const scene = this.scene
+    const waves = scene.waves
+    if (waves.phase === 'day' || !waves.tonight.length) {
+      this.fronts = []
+      this.frontsKey = ''
+      return
+    }
+    const key = `${waves.wave}:${waves.tonight.map(t => t.id).join(',')}`
+    if (key !== this.frontsKey) {
+      this.frontsKey = key
+      const split = splitBudget({
+        fronts: waves.tonight.filter(t => !t.raid).map(t => t.id),
+        raid: waves.tonight.find(t => t.raid)?.id ?? null,
+      }, 1000)
+      const old = new Map(this.fronts.map(f => [f.id, f]))
+      this.fronts = waves.tonight.map(t => ({
+        id: t.id, post: t.post, heading: this.frontHeading(t.route, t.post),
+        share: (split.get(t.id) ?? 0) / 1000,
+        quietT: old.get(t.id)?.quietT ?? 0, released: old.get(t.id)?.released ?? false,
+      }))
+      this.facing = waves.tonight[0].post
+    }
+    if (waves.phase !== 'night') return
+    // roads with walkers still out on them; one past the post is the hold's fight
+    const out = new Set<string>()
+    scene.enemies.forEachAlive(e => {
+      if (e.fromWave && e.approach && !scene.regions.inHold(e.x, e.y)) out.add(e.approach)
+    })
+    for (const f of this.fronts) {
+      if (f.released) continue
+      const busy = out.has(f.id) || waves.pendingFor(f.id) > 0
+        || !!scene.enemies.grid.nearest(f.post.x, f.post.y, ARMY.postLeash, e => e.alive)
+      f.quietT = busy ? 0 : f.quietT + step
+      if (f.quietT >= ARMY.frontQuiet) f.released = true
+    }
+  }
+
+  /** A post faces up its road: toward the route a few cells back from it (toward the spawn). */
+  private frontHeading(route: readonly Pt[], post: { x: number; y: number }): number {
+    let k = -1, best = Infinity
+    for (let i = 0; i < route.length; i++) {
+      const d = Math.hypot(route[i][0] - post.x, route[i][1] - post.y)
+      if (d < best) { best = d; k = i }
+    }
+    if (k > 0) {
+      const [x, y] = route[Math.max(0, k - 4)]
+      return Math.atan2(y - post.y, x - post.x)
+    }
+    return this.outward(post.x, post.y)
+  }
+
+  /**
+   * Each defending soldier to one of tonight's fronts, by `assignFronts`. A
+   * soldier keeps its front while it stands; newcomers (and those back from a
+   * detachment) fill the fronts furthest below their share. A quiet front's
+   * soldiers go to the nearest front still fighting; with none left, home.
+   */
+  private assignDefenders() {
+    const defenders: Soldier[] = []
+    for (const s of this.soldiers) {
+      if (!s.alive) continue
+      if (!this.fronts.length) s.front = null
+      else if (this.orders[s.company] === 'defend' && !s.detail) defenders.push(s)
+    }
+    if (!defenders.length) return
+    const live = this.fronts.filter(f => !f.released)
+    if (!live.length) { for (const s of defenders) s.front = null; return }
+    const byId = new Map(this.fronts.map(f => [f.id, f]))
+    const counts = noCompanies()
+    for (const s of defenders) counts[s.company]++
+    const want = assignFronts(counts, live)
+    const have: Record<string, Record<Company, number>> = {}
+    for (const f of live) have[f.id] = noCompanies()
+    const loose: Soldier[] = []
+    for (const s of defenders) {
+      let f = s.front ? byId.get(s.front) : undefined
+      if (f?.released) {
+        const from = f.post
+        f = live.reduce((a, b) => Math.hypot(b.post.x - from.x, b.post.y - from.y) < Math.hypot(a.post.x - from.x, a.post.y - from.y) ? b : a)
+      }
+      if (!f) { loose.push(s); continue }
+      s.front = f.id
+      have[f.id][s.company]++
+    }
+    for (const s of loose) {
+      let best = live[0], gap = -Infinity
+      for (const f of live) {
+        const g = want[f.id][s.company] - have[f.id][s.company]
+        if (g > gap) { best = f; gap = g }
+      }
+      s.front = best.id
+      have[best.id][s.company]++
+    }
   }
 
   /** The bearing from the hall to a point; south when it is the hall. */
