@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { loadTs } from './load-ts.mjs'
 
-const { Clusterer, dawnLines, edgePoint } = await loadTs('src/ui/threatMath.ts')
+const { Clusterer, dawnParts, edgePoint, packParts } = await loadTs('src/ui/threatMath.ts')
 
 test('the horde clusters into the fullest few cells, neighbours merged', () => {
   const c = new Clusterer(600, 2)
@@ -29,10 +29,12 @@ test('a chevron stands where its bearing leaves the frame', () => {
   assert.ok(Math.abs(out.x - 400) < 1e-6 && Math.abs(out.y - 100) < 1e-6, 'up stops under the top band')
 })
 
-test('the dawn card leaves out what did not happen', () => {
-  assert.deepEqual(
-    dawnLines({ wave: 7, kills: 84, coins: 412, swept: { stone: 120, wood: 40, coins: 9 }, sacked: 2 }),
-    ['Night 7 held  ·  84 slain  ·  +412 coins', 'swept 120 stone, 40 wood  ·  2 sacked, mending'],
-  )
-  assert.deepEqual(dawnLines({ wave: 1, kills: 0, coins: 0, swept: {}, sacked: 0 }), ['Night 1 held', ''])
+test('the dawn card leaves out what did not happen, and wraps between parts', () => {
+  const [head, tail] = dawnParts({ wave: 7, kills: 84, coins: 412, swept: { stone: 120, wood: 40, coins: 9 }, sacked: 2 })
+  assert.deepEqual(head, ['Night 7 held', '84 slain', '+412 coins'])
+  assert.deepEqual(tail, ['swept 120 stone, 40 wood', '2 sacked, mending'])
+  assert.deepEqual(dawnParts({ wave: 1, kills: 0, coins: 0, swept: {}, sacked: 0 }), [['Night 1 held'], []])
+  const len = s => s.length
+  assert.deepEqual(packParts(head, len, 99), ['Night 7 held · 84 slain · +412 coins'])
+  assert.deepEqual(packParts(head, len, 26), ['Night 7 held · 84 slain', '+412 coins'])
 })

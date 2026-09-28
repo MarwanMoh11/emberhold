@@ -1,5 +1,6 @@
 import type { NightLog } from '../core/Events'
 import { RESOURCE_ORDER } from '../core/types'
+import { short } from '../core/math'
 
 /**
  * The pure half of the night awareness (R6): where the horde is bunched,
@@ -97,22 +98,42 @@ export function edgePoint(
   return out
 }
 
+/** Between the parts of a dawn card line. */
+export const SEP = ' · '
+
 /**
- * The dawn card's two lines (`night:summary`): the night's tally, then what
- * the sweep brought in and what is mending. Empty parts are left out, so a
- * quiet night is one short line.
+ * The dawn card's words (`night:summary`), as two groups of parts: the
+ * night's tally, then what the sweep brought in and what is mending. Empty
+ * parts are left out, so a quiet night is one short line. The card packs
+ * each group into as many lines as its width needs (`packParts`).
  */
-export function dawnLines(log: NightLog): [string, string] {
+export function dawnParts(log: NightLog): [string[], string[]] {
   const head = [`Night ${log.wave} held`]
-  if (log.kills > 0) head.push(`${log.kills} slain`)
-  if (log.coins > 0) head.push(`+${Math.round(log.coins)} coins`)
+  if (log.kills > 0) head.push(`${short(log.kills)} slain`)
+  if (log.coins > 0) head.push(`+${short(Math.round(log.coins))} coins`)
   const tail: string[] = []
   const goods = RESOURCE_ORDER
     .filter(k => k !== 'coins' && Math.round(log.swept[k] ?? 0) > 0)
     .sort((a, b) => (log.swept[b] ?? 0) - (log.swept[a] ?? 0))
     .slice(0, 3)
-    .map(k => `${Math.round(log.swept[k] ?? 0)} ${k}`)
+    .map(k => `${short(Math.round(log.swept[k] ?? 0))} ${k}`)
   if (goods.length) tail.push(`swept ${goods.join(', ')}`)
   if (log.sacked > 0) tail.push(`${log.sacked} sacked, mending`)
-  return [head.join('  ·  '), tail.join('  ·  ')]
+  return [head, tail]
+}
+
+/**
+ * Parts joined by SEP into lines no wider than `maxW` (by `measure`), greedily,
+ * breaking only between parts. A part wider than `maxW` gets a line to itself.
+ */
+export function packParts(parts: string[], measure: (s: string) => number, maxW: number): string[] {
+  const out: string[] = []
+  let cur = ''
+  for (const p of parts) {
+    const cand = cur ? cur + SEP + p : p
+    if (!cur || measure(cand) <= maxW) cur = cand
+    else { out.push(cur); cur = p }
+  }
+  if (cur) out.push(cur)
+  return out
 }

@@ -8,8 +8,8 @@ import type { GameScene } from '../scenes/GameScene'
 import type { Enemy } from '../entities/Enemy'
 import type { HUD } from './HUD'
 import { SkinPanel } from './skin'
-import { fitWidth, screen, textStyle } from './theme'
-import { Clusterer, dawnLines, edgePoint } from './threatMath'
+import { screen, textStyle } from './theme'
+import { Clusterer, dawnParts, edgePoint, packParts } from './threatMath'
 
 /**
  * Night awareness (R6): what is happening where you are not looking.
@@ -36,6 +36,14 @@ const DEPTH = 999_000
 const CHEVRON = 'ui_chevron'
 /** baked at twice its size, shown at half, so it is crisp on a dense screen */
 const U = 2
+/**
+ * A target this close outside the view still shows (a roof, a walker's
+ * shoulder), so it gets no chevron: world px.
+ */
+const SEEN_MARGIN = 64
+
+const seen = (v: Phaser.Geom.Rectangle, x: number, y: number) =>
+  x > v.x - SEEN_MARGIN && x < v.right + SEEN_MARGIN && y > v.y - SEEN_MARGIN && y < v.bottom + SEEN_MARGIN
 
 type Kind = 'boss' | 'hall' | 'front' | 'horde' | 'raid'
 
@@ -83,7 +91,7 @@ export class ThreatChevrons {
     this.gather = e => {
       if (e.def.structure || e.home) return
       const v = this.game.cameras.main.worldView
-      if (v.contains(e.x, e.y) || !this.game.regions.claimedAt(e.x, e.y)) return
+      if (seen(v, e.x, e.y) || !this.game.regions.claimedAt(e.x, e.y)) return
       this.hordes.add(e.x, e.y)
     }
   }
@@ -142,7 +150,7 @@ export class ThreatChevrons {
     let i = 0
     for (let k = 0; k < this.count; k++) {
       const t = this.targets[k]
-      if (view.contains(t.x, t.y)) continue
+      if (seen(view, t.x, t.y)) continue
       const m = this.marks[i++]
       const ang = Math.atan2(t.y - vcy, t.x - vcx)
       const p = edgePoint(cx, cy, ang, left, top, right, bottom, this.pt)
@@ -182,7 +190,7 @@ export class ThreatChevrons {
     const view = this.game.cameras.main.worldView
     for (let k = 0, i = 0; k < this.count; k++) {
       const t = this.targets[k]
-      if (view.contains(t.x, t.y)) continue
+      if (seen(view, t.x, t.y)) continue
       const m = this.marks[i++]
       if (!m) break
       out.push({ kind: t.kind, n: t.n, x: Math.round(m.arrow.x), y: Math.round(m.arrow.y), icon: t.icon })
@@ -195,6 +203,8 @@ export class ThreatChevrons {
 const DAWN_SHOW = 6
 const FADE_IN = 0.4
 const FADE_OUT = 0.9
+/** Below this width (CSS px) the minimap hides, and the card may span the screen. */
+const NARROW = 520
 
 /**
  * The dawn card (R6): a small glass card under the day/objective block for a
@@ -205,26 +215,38 @@ export class DawnCard {
   private head: Phaser.GameObjects.Text
   private tail: Phaser.GameObjects.Text
   private t = 0
-  /** Harness: the lines last shown. */
-  lines: [string, string] = ['', '']
+  private parts: [string[], string[]] = [[], []]
+  /** the width the lines were last packed for: repacked only when it changes */
+  private packedW = 0
+  /** Harness: the lines last shown, as packed. */
+  lines: string[] = []
 
   constructor(private ui: Phaser.Scene, private game: GameScene, private hud: HUD) {
     this.panel = new SkinPanel(ui, 'hud', { alpha: 0.5 }).setScrollFactor(0).setDepth(1_000_000).setVisible(false)
-    this.head = ui.add.text(0, 0, '', textStyle({ size: 13, weight: '800', colour: PAL.bone }))
-      .setOrigin(0.5).setScrollFactor(0).setDepth(1_000_005).setVisible(false)
-    this.tail = ui.add.text(0, 0, '', textStyle({ size: 11, weight: '600', colour: PAL.uiDim }))
-      .setOrigin(0.5).setScrollFactor(0).setDepth(1_000_005).setVisible(false)
+    this.head = ui.add.text(0, 0, '', textStyle({ size: 13, weight: '800', colour: PAL.bone, align: 'center' }))
+      .setOrigin(0.5, 0).setScrollFactor(0).setDepth(1_000_005).setVisible(false).setLineSpacing(2)
+    this.tail = ui.add.text(0, 0, '', textStyle({ size: 11, weight: '600', colour: PAL.uiDim, align: 'center' }))
+      .setOrigin(0.5, 0).setScrollFactor(0).setDepth(1_000_005).setVisible(false).setLineSpacing(2)
     game.bus.on('night:summary', log => this.show(log))
   }
 
   show(log: NightLog) {
-    this.lines = dawnLines(log)
-    this.head.setText(this.lines[0])
-    this.tail.setText(this.lines[1])
+    this.parts = dawnParts(log)
+    this.packedW = 0
     this.t = DAWN_SHOW
   }
 
   get showing() { return this.t > 0 }
+
+  /** Each group on as few lines as fit, broken only between its parts. */
+  private pack(maxW: number) {
+    const fit = (t: Phaser.GameObjects.Text, parts: string[]) => {
+      const out = packParts(parts, s => t.setText(s).width, maxW)
+      t.setText(out.join('\n'))
+      return out
+    }
+    this.lines = [...fit(this.head, this.parts[0]), ...fit(this.tail, this.parts[1])]
+  }
 
   update(dt: number) {
     if (this.t <= 0) return
@@ -241,18 +263,26 @@ export class DawnCard {
     const rise = (1 - Math.min(1, age / FADE_IN)) * 6
     const o = this.hud.objRect
     const { w: W } = screen(this.ui)
-    const w = Math.max(160, Math.min(o.w || 320, W - 24))
-    const x = Math.max(12, Math.min(W - 12 - w, o.x + o.w / 2 - w / 2))
-    const two = !!this.lines[1]
-    const h = two ? 44 : 28
-    // under the day block and the boss bar, whichever is lower
-    const y = Math.max(o.y + o.h + 6, this.game.uiBands.top - 2) - rise
+    let w: number, x: number, y: number
+    if (W < NARROW && o.x + o.w / 2 < W / 2 - 1) {
+      // a phone held upright: the day block is tucked under the vitals and
+      // there is no minimap, so the card spans the screen below both columns
+      w = Math.min(420, W - 24)
+      x = (W - w) / 2
+      y = Math.max(o.y + o.h, this.hud.rightBottom, this.game.uiBands.top - 8) + 6
+    } else {
+      // as wide as the day block, under it (and under the boss bar, if up)
+      w = Math.max(160, Math.min(o.w || 320, W - 24))
+      x = Math.max(12, Math.min(W - 12 - w, o.x + o.w / 2 - w / 2))
+      y = Math.max(o.y + o.h + 6, this.game.uiBands.top - 2)
+    }
+    y -= rise
+    if (w !== this.packedW) { this.packedW = w; this.pack(w - 20) }
+    const two = this.parts[1].length > 0
+    const h = 8 + this.head.height + (two ? 2 + this.tail.height : 0) + 8
     this.panel.setVisible(true).setAlpha(a).place(x, y, w, h)
-    fitWidth(this.head, 13, w - 20)
-    this.head.setVisible(true).setAlpha(a).setPosition(x + w / 2, y + 14)
-    if (two) {
-      fitWidth(this.tail, 11, w - 20)
-      this.tail.setVisible(true).setAlpha(a).setPosition(x + w / 2, y + 31)
-    } else this.tail.setVisible(false)
+    this.head.setVisible(true).setAlpha(a).setPosition(x + w / 2, y + 8)
+    if (two) this.tail.setVisible(true).setAlpha(a).setPosition(x + w / 2, y + 10 + this.head.height)
+    else this.tail.setVisible(false)
   }
 }

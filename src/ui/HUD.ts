@@ -125,8 +125,8 @@ export class HUD {
   private padR = 16
   /** Top of the stores, under the icon buttons. */
   private resTop = 0
-  /** Bottom of the right-hand column, for news that must clear it on a narrow screen. */
-  private rightBottom = 0
+  /** Bottom of the right-hand column, for news that must clear it on a narrow screen (and R6's dawn card). */
+  rightBottom = 0
   private toastT = 0
   private toastQueue: [string, string, number][] = []
   /** S14: a lore stone's line, on a card low on the view */
