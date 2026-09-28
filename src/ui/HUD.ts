@@ -499,11 +499,15 @@ export class HUD {
       // One slot on the right: what is on your back, in gold, while you carry
       // any; otherwise the income rate, the number that makes automation feel
       // worth buying.
+      // Coins are never carried; their slot is the treasury's income (the tithe,
+      // trade and every coin banked), kept dim so it reads as a pulse, not a prize.
       const held = g.res.carried[row.type]
       const r = g.res.rate[row.type]
+      const coins = row.type === 'coins'
       row.rate.setPosition(rx + resW - 10, y + 1)
       if (held > 0) setColour(row.rate.setText(`+${short(held)}`), PAL.gold)
-      else setColour(row.rate.setText(r >= 0.05 ? `+${r >= 10 ? Math.round(r) : r.toFixed(1)}/s` : ''), PAL.good)
+      else setColour(row.rate.setText(r >= (coins ? 0.1 : 0.05) ? `+${r >= 10 ? Math.round(r) : r.toFixed(1)}/s` : ''),
+        coins ? PAL.uiDim : PAL.good)
       i++
     }
     this.outputText.setVisible(bonus)
