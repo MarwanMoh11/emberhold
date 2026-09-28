@@ -7,7 +7,7 @@ import { rr, ri, shuffled, clamp } from '../core/math'
 import { ENEMIES, type EnemyKey } from '../config/enemies'
 import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
-import { CAMP_MIX, SPAWN_SCATTER, splitBudget, type ApproachId, type NightPlan } from './Approaches'
+import { CAMP_MIX, SPAWN_SCATTER, frontPost, frontStagger, inHold, splitBudget, type ApproachId, type NightPlan } from './Approaches'
 import { mixHand } from './walkers'
 
 /** Walkers whose deck card opens into a pack (S16: thornlings come five at a time). */
@@ -39,6 +39,8 @@ export interface TonightRoute {
   y: number
   /** from the spawn point to the hall, one point per 32 px cell */
   route: Pt[]
+  /** R3: where the army meets it: the route just outside the hold (`frontPost`); the spawn point if the route is empty */
+  post: { x: number; y: number }
 }
 
 /** "the south road", "the south road and the west ford", "a, b and c". */
@@ -67,6 +69,8 @@ export class WaveManager {
   private queueHead = 0
   private remaining = 0
   private current: WaveDef | null = null
+  /** R3: tonight's last front spawns this long after the first (`FRONT_STAGGER` apart); the fight window stretches by it */
+  private stagger = 0
   /**
    * How far toward night the light has gone: 0 is full day, 1 is the dark.
    * Eased rather than stepped, and dusk starts before the warning so the
@@ -125,7 +129,7 @@ export class WaveManager {
         const spawnedAll = this.queueHead >= this.queue.length
         // the fight window, stretched by the spawn's spread; stragglers flee at dawn (S20)
         const timedOut = this.fighting
-          && this.fightElapsed > Math.max(DAYNIGHT.nightSeconds, (this.current?.spread ?? 8) + DAYNIGHT.fightGrace)
+          && this.fightElapsed > Math.max(DAYNIGHT.nightSeconds, (this.current?.spread ?? 8) + DAYNIGHT.fightGrace) + this.stagger
         if (spawnedAll && (this.remaining <= 0 || timedOut)) {
           if (this.remaining > 0) this.rout()
           this.endNight()
@@ -169,7 +173,9 @@ export class WaveManager {
     for (const id of [...plan.fronts, ...(plan.raid ? [plan.raid] : [])]) {
       if (!ap.muster(id)) continue
       const [x, y] = ap.spawnPoint(id)
-      out.push({ id, name: ap.name(id), raid: ap.isRaid(id), x, y, route: ap.marchRoute(id) })
+      const route = ap.marchRoute(id)
+      const post = frontPost(route, inHold) ?? { x, y }
+      out.push({ id, name: ap.name(id), raid: ap.isRaid(id), x, y, route, post })
     }
     return out
   }
@@ -255,6 +261,7 @@ export class WaveManager {
     // three fronts or more: a share of the deck (S22, `FRONTS`)
     const deck = shuffled(units).slice(0, Math.round(units.length * frontShare(plan.fronts.length)))
     const split = splitBudget(plan, deck.length)
+    this.stagger = 0
     const mult = (t: TonightRoute) => {
       const tier = ap.tier(t.id)
       return { hp: hpMult * (1 + FRONTS.hp * tier), dmg: dmgMult * (1 + FRONTS.dmg * tier) }
@@ -269,9 +276,12 @@ export class WaveManager {
         tier: ap.tier(t.id),
       }, CAMP_MIX, PACKS)
       const m = mult(t)
+      // fronts arrive one after another (R3): front i holds back i × FRONT_STAGGER
+      const late = frontStagger(plan, t.id)
+      this.stagger = Math.max(this.stagger, late)
       hand.forEach((key, i) => this.queue.push({
         key, approach: t.id, x: t.x, y: t.y,
-        at: (i / Math.max(1, hand.length)) * spread + rr(0, 0.5),
+        at: late + (i / Math.max(1, hand.length)) * spread + rr(0, 0.5),
         hpMult: m.hp, dmgMult: m.dmg,
       }))
     }
