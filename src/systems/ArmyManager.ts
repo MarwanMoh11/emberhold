@@ -369,6 +369,32 @@ export class ArmyManager {
     }
 
     this.drawBars()
+    this.plantStandard()
+  }
+
+  /** R6b: the standard at the banner, a prop in the world while any company holds. */
+  private standard: Phaser.GameObjects.Image | null = null
+  private standardAt = ''
+
+  private plantStandard() {
+    const b = this.banner
+    const img = this.standard
+    if (!b) {
+      if (img?.visible) { img.setVisible(false); this.standardAt = '' }
+      return
+    }
+    const at = `${b.x},${b.y}`
+    if (img && at === this.standardAt) return
+    const scene = this.scene
+    const s = img ?? (this.standard = scene.add.image(0, 0, 'army_standard'))
+    const foot = 8 / s.height
+    s.setOrigin(14 / s.width, 1 - foot).setPosition(b.x, b.y).setDepth(b.y).setVisible(true)
+    scene.culler.add(s, b.x, b.y - s.height / 2, Math.max(s.width, s.height) / 2)
+    // planted, not placed: it drops into the ground with a little give
+    scene.tweens.killTweensOf(s)
+    s.setScale(1, 0.7)
+    scene.tweens.add({ targets: s, scaleY: 1, duration: 260, ease: 'Back.easeOut' })
+    this.standardAt = at
   }
 
   /**

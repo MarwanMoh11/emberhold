@@ -460,6 +460,29 @@ export function buildPropTextures(scene: Phaser.Scene) {
       outline: 1.5,
     })
   }
+
+  // ---- the army's standard (R6b): where the holding companies stand --------------
+  {
+    const w = 40, h = 84, cx = 14, by = h - FOOT
+    bake(scene, 'army_standard', w, h, {
+      under: x => groundShadow(x, cx + 3, by, 11, 3.5),
+      body: x => {
+        // the staff, a crosspiece and a gilt finial
+        form(x, P.round(cx - 1.8, by - 70, 3.6, 70, 1.4), 0x6e4a2c, { rim: 0.6, core: 1.2 })
+        form(x, P.round(cx - 3, by - 64, 22, 3, 1.2), 0x6e4a2c, { rim: 0.4, core: 0.8 })
+        form(x, P.poly([[cx, by - 78], [cx + 3.4, by - 71], [cx, by - 67], [cx - 3.4, by - 71]]), PAL.gilt, { rim: 0.6, core: 1, light: 0xfff0b8 })
+        // the hold's colours: a lapis swallowtail with a bone cross
+        const flag = P.poly([[cx + 1.5, by - 63], [cx + 21, by - 63], [cx + 21, by - 34], [cx + 11, by - 40], [cx + 1.5, by - 34]])
+        form(x, flag, PAL.lapis, { rim: 1.2, core: 3.5, hatch: 0.15 })
+        fill(x, P.rect(cx + 9.5, by - 62, 3, 24), PAL.bone)
+        fill(x, P.rect(cx + 2.5, by - 55, 17.5, 3), PAL.bone)
+        // stakes at its foot
+        line(x, x2 => { x2.moveTo(cx - 6, by + 1); x2.lineTo(cx, by - 6); x2.lineTo(cx + 6, by + 1) }, 1.4, 0x4a3424, 0.9)
+      },
+      outline: 1.5,
+      grain: 0.08,
+    })
+  }
 }
 
-const cy = (by: number, oy: number) => by + oy
+const cy =(by: number, oy: number) => by + oy
