@@ -21,6 +21,14 @@ waited on. Compare with R1's baseline and the act targets (act I: wave 8 by
 ~16 min; act II: wave 18 by ~42 min). If the probe's own logic broke on the
 new army or sacking (e.g. it still reads `army.holding`), fix the probe first.
 
+**C1b · Roadside holdings.** R3's smoke found advancing walkers aiming at a
+structure within `HOLD.advanceBump` (110 px) in ~40% of samples: holdings
+beside the roads get sacked every night, which is the complaint this rework
+answers. Make the bump rule "only what actually blocks": an advancing walker
+takes a non-defense structure as its target only if it is within ~60 px *and*
+the walker has made little progress along the field for ~1 s (walls and gates
+keep the latch). One harness sample to confirm the bump share drops.
+
 **C2 · Tune.** Coins should not be the binding wait in acts I and II; acts may
 land up to ~20% earlier than the targets, not more; nights should still be
 lost sometimes by a probe that skips towers (don't test that; reason from the
