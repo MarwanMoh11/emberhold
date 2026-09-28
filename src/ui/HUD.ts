@@ -11,6 +11,8 @@ import { ABILITY_ICON } from '../art/icons'
 import type { GameScene } from '../scenes/GameScene'
 import { fitWidth, screen, setColour, textStyle, titleCase } from './theme'
 import { medalTexture, ON_PAGE, PlateButton, sealTexture, SkinBar, SkinPanel, vignetteTexture } from './skin'
+import { OrdersPanel } from './OrdersPanel'
+import { ARMY_ICON } from './ordersMath'
 
 /**
  * The objective needs at least this much room between the vitals and the
@@ -116,6 +118,8 @@ export class HUD {
   private pauseBtn: PlateButton
   private mapBtn: PlateButton
   private holdBtn: PlateButton
+  /** R6b: the army button's drop-down, one row of order chips per company */
+  readonly orders: OrdersPanel
 
   private W = 0
   private H = 0
@@ -219,9 +223,10 @@ export class HUD {
 
     // A finger has no ESC, M or H. Without these, everything behind the pause
     // menu, the atlas and the army's standing order are unreachable on a phone.
-    this.holdBtn = this.makeIconButton('ico_follow', () => this.game.toggleHold())
+    this.holdBtn = this.makeIconButton(ARMY_ICON.defend, () => this.orders.toggle())
     this.mapBtn = this.makeIconButton('ico_map', () => this.ui.events.emit('toggleAtlas'))
     this.pauseBtn = this.makeIconButton('ico_pause', () => this.ui.events.emit('togglePause'))
+    this.orders = new OrdersPanel(ui, game)
 
     this.game.bus.on('achievement', p => this.toast(`Deed earned: ${p.title}`))
     this.game.bus.on('carry:full', () => {
@@ -451,11 +456,15 @@ export class HUD {
       this.lowHp.setAlpha((0.35 + Math.sin(g.now * speed) * 0.2) * (1 - hp / 0.3 * 0.5))
     }
 
-    // ---- icon buttons: the army's order shows as the lit button ------------------
-    const holding = g.army.holding
-    this.holdBtn.setIcon(holding ? 'ico_hold' : 'ico_follow')
-      .setTone(holding ? 'primary' : 'quiet')
+    // ---- icon buttons: the army's orders show on its button ------------------
+    // The glyph is the order the companies share (or mixed); it is lit while
+    // the banner stands, since then some of the army is pinned somewhere.
+    if (!live) this.orders.hide()
+    this.holdBtn.setIcon(ARMY_ICON[this.orders.look()])
+      .setTone(g.army.banner ? 'primary' : 'quiet')
+      .setSelected(this.orders.open)
       .setLive(live)
+    this.orders.update(this.W - padR, this.resTop)
     this.mapBtn.setLive(live)
     this.pauseBtn.setLive(live)
 
