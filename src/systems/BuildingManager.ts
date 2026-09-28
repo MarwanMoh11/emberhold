@@ -75,6 +75,9 @@ const DEMOLISH_HOLD = 1.6
 /** A sacked holding's darkened look (R4). */
 const SACKED_TINT = 0x6a5e54
 
+/** A holding raided in the last `SACK.raidedShow` s (R4): R5's army and R6's chevrons read these. */
+export interface RaidedHolding { padId: string; x: number; y: number; key: BuildingKey }
+
 export class BuildingManager {
   buildings: Building[] = []
   byPad = new Map<string, Building>()
@@ -113,6 +116,11 @@ export class BuildingManager {
   /** Pad whose DEMOLISH bar is being held down, and for how long so far. */
   private razePad: string | null = null
   private razeT = 0
+
+  /** R4: per holding outside the hold, when it was last struck and last called for help (scene ms) */
+  private raids = new Map<string, { hit: number; told: number }>()
+  /** R4: when the last raid popup and horn sounded (scene ms) */
+  private raidAlarmAt = -Infinity
 
   /**
    * The pad the hero is standing in having just pulled it down. An empty site
@@ -733,6 +741,11 @@ export class BuildingManager {
     return b.level > 0 && b.key !== 'townHall' && b.def.category !== 'defense'
   }
 
+  /** Outside the hold region. R3's regions.inHold replaces this at merge. */
+  private outsideHold(x: number, y: number): boolean {
+    return this.scene.regions.regionAt(x, y)?.id !== 'hold'
+  }
+
   /**
    * Knock a holding out at 0 hp: it keeps its level and crew (who shelter),
    * nothing can target it, and it produces, pays, trades, trains and lends
@@ -799,6 +812,38 @@ export class BuildingManager {
     const calm = !this.scene.waves.isNight
       && !this.scene.enemies.grid.nearest(b.x, b.y, SACK.calmRadius, e => e.alive)
     this.mendSacked(b, dt, calm)
+  }
+
+  /**
+   * Every hit on a building lands here (CombatSystem.damageAlly). A holding
+   * outside the hold calls for help: `holding:raided` at most every
+   * `SACK.raidedEvery` s per building, and a popup and horn at most every
+   * `SACK.alarmEvery` s overall, so the player hears it.
+   */
+  onStruck(b: Building) {
+    if (!this.isHolding(b) || !this.outsideHold(b.x, b.y)) return
+    const now = this.scene.now
+    let r = this.raids.get(b.padId)
+    if (!r) this.raids.set(b.padId, r = { hit: now, told: -Infinity })
+    r.hit = now
+    if (now - r.told < SACK.raidedEvery * 1000) return
+    r.told = now
+    this.scene.bus.emit('holding:raided', { padId: b.padId, x: b.x, y: b.y, key: b.key })
+    if (now - this.raidAlarmAt < SACK.alarmEvery * 1000) return
+    this.raidAlarmAt = now
+    this.scene.fx.popup(b.x, b.y - b.def.h - 30, `${b.def.short} RAIDED`, PAL.danger, 16)
+    this.scene.audio.play('waveWarn', 1.35, 0.45)
+  }
+
+  /** Holdings struck in the last `SACK.raidedShow` s, as of `now` (scene ms). */
+  raided(now: number): RaidedHolding[] {
+    const out: RaidedHolding[] = []
+    for (const [padId, r] of this.raids) {
+      if (now - r.hit > SACK.raidedShow * 1000) { this.raids.delete(padId); continue }
+      const b = this.byPad.get(padId)
+      if (b) out.push({ padId, x: b.x, y: b.y, key: b.key })
+    }
+    return out
   }
 
   /**

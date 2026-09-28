@@ -112,3 +112,25 @@ test('a wall at 0 hp still drops a level', () => {
   assert.equal(wall.sacked, false)
   assert.equal(wall.alive, true)
 })
+
+test('a holding outside the hold calls for help, at most every few seconds', () => {
+  const events = []
+  const noop = () => {}
+  const manager = Object.create(BuildingManager.prototype)
+  manager.raids = new Map()
+  manager.raidAlarmAt = -Infinity
+  const farm = { key: 'farm', padId: 'farm1', x: 10, y: 20, level: 1, def: { short: 'FARM', h: 50, category: 'production' } }
+  manager.byPad = new Map([['farm1', farm]])
+  manager.scene = {
+    now: 1000, fx: { popup: noop }, audio: { play: noop },
+    bus: { emit: (k, p) => events.push([k, p]) },
+    regions: { regionAt: () => ({ id: 'downs' }) },
+  }
+  manager.onStruck(farm)
+  manager.scene.now = 2000
+  manager.onStruck(farm)
+  assert.equal(events.length, 1)
+  assert.deepEqual(events[0], ['holding:raided', { padId: 'farm1', x: 10, y: 20, key: 'farm' }])
+  assert.equal(manager.raided(3000).length, 1)
+  assert.equal(manager.raided(60000).length, 0)
+})
