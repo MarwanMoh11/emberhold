@@ -3,11 +3,64 @@ import { Pool } from '../core/Pool'
 import { PICKUP } from '../config/balance'
 import { PAL } from '../config/palette'
 import { rr, chance } from '../core/math'
-import type { ResourceType } from '../core/types'
+import type { ResourceBag, ResourceType } from '../core/types'
 import type { EnemyDef } from '../config/enemies'
 import type { GameScene } from '../scenes/GameScene'
 
 type PickupKind = ResourceType | 'xp' | 'heart' | 'chest'
+type Cargo = Exclude<ResourceType, 'coins'>
+
+/** Wood, food, stone, metal and crystal: what needs a pack, a depot or the dawn sweep. */
+export const isCargo = (k: PickupKind): k is Cargo =>
+  k === 'wood' || k === 'food' || k === 'stone' || k === 'metal' || k === 'crystal'
+
+/** A walker's coin roll, shared by the scattered loot and the routed walker's bag. */
+const rollCoins = (def: EnemyDef, greed: number) => Math.max(1, Math.round(def.coins * greed * rr(0.75, 1.3)))
+
+/**
+ * A walker's loot as a bag, with `dropLoot`'s rolls: coins and cargo, no xp and
+ * no heart. What a walker that flees at dawn leaves to the sweep (R2).
+ */
+export function rollLoot(def: EnemyDef, greed: number, into: ResourceBag): ResourceBag {
+  into.coins = (into.coins ?? 0) + rollCoins(def, greed)
+  if (def.drops) {
+    for (const d of def.drops) {
+      if (chance(d.chance)) into[d.type] = (into[d.type] ?? 0) + Math.max(1, Math.round(d.amount * greed))
+    }
+  }
+  return into
+}
+
+/** The dawn sweep's popup: "swept from the field: +120 stone, +40 wood", largest first; '' when nothing moved. */
+export function sweptLine(bag: ResourceBag): string {
+  const parts = (Object.keys(bag) as ResourceType[])
+    .filter(k => (bag[k] ?? 0) > 0)
+    .sort((a, b) => (bag[b] ?? 0) - (bag[a] ?? 0))
+    .map(k => `+${Math.round(bag[k] ?? 0)} ${k}`)
+  return parts.length ? `swept from the field: ${parts.join(', ')}` : ''
+}
+
+interface SweepItem { active: boolean; kind: PickupKind; amount: number; x: number; y: number }
+
+/**
+ * The dawn sweep's rule, pure (the pool is one such list): cargo standing on
+ * claimed ground, and coins anywhere, are marked inactive and handed to `take`.
+ * Returns the cargo that moved; the coins show in the night's coin tally.
+ */
+export function sweepPickups<T extends SweepItem>(
+  items: readonly T[], claimed: (x: number, y: number) => boolean, take: (p: T) => void,
+): ResourceBag {
+  const bag: ResourceBag = {}
+  for (const p of items) {
+    if (!p.active) continue
+    const cargo = isCargo(p.kind)
+    if (p.kind !== 'coins' && !(cargo && claimed(p.x, p.y))) continue
+    p.active = false
+    take(p)
+    if (cargo) { const k = p.kind as Cargo; bag[k] = (bag[k] ?? 0) + p.amount }
+  }
+  return bag
+}
 
 interface Pickup {
   active: boolean
@@ -41,6 +94,8 @@ const SFX: Partial<Record<PickupKind, string>> = {
  */
 export class PickupManager {
   private pool: Pool<Pickup>
+  /** far xp not yet paid: fractions, and whatever was earned while the hero was down */
+  private xpOwed = 0
 
   constructor(private scene: GameScene) {
     this.pool = new Pool<Pickup>(() => {
@@ -55,8 +110,27 @@ export class PickupManager {
 
   get activeCount() { return this.pool.activeCount }
 
+  /** Whether coins and xp dropped here can fly home: the hero is up and within `homeRange`. */
+  private homeReach(x: number, y: number) {
+    const pl = this.scene.player
+    const dx = pl.x - x, dy = pl.y - y
+    return pl.alive && dx * dx + dy * dy < PICKUP.homeRange * PICKUP.homeRange
+  }
+
+  /** Coins and xp that cannot fly home: coins bank, xp is owed at `farXp` (paid while the hero is up). */
+  private creditFar(kind: 'coins' | 'xp', amount: number) {
+    if (kind === 'coins') this.scene.res.addStored('coins', amount)
+    else this.xpOwed += amount * PICKUP.farXp
+  }
+
   drop(kind: PickupKind, amount: number, x: number, y: number, power = 1) {
-    if (this.pool.activeCount >= PICKUP.maxActive) return
+    const full = this.pool.activeCount >= PICKUP.maxActive
+    // loot is never lost (R2): coins and xp nobody can come for are credited now
+    if ((kind === 'coins' || kind === 'xp') && (full || !this.homeReach(x, y))) {
+      this.creditFar(kind, amount)
+      return
+    }
+    if (full) return
     const p = this.pool.obtain()
     p.kind = kind
     p.amount = amount
@@ -81,10 +155,17 @@ export class PickupManager {
 
   /** Scatter a whole loot table from a dead enemy. */
   dropLoot(def: EnemyDef, x: number, y: number, greed: number) {
-    const coins = Math.max(1, Math.round(def.coins * greed * rr(0.75, 1.3)))
-    const stacks = Math.min(def.boss ? 26 : def.elite ? 8 : 4, Math.max(1, Math.round(coins / 8)))
-    const per = Math.max(1, Math.round(coins / stacks))
-    for (let i = 0; i < stacks; i++) this.drop('coins', per, x, y, def.boss ? 1.9 : 1)
+    const coins = rollCoins(def, greed)
+    // a kill the hero is nowhere near (or down for): coins and xp are credited whole, no stacks
+    const home = this.homeReach(x, y)
+    if (!home) {
+      this.creditFar('coins', coins)
+      this.creditFar('xp', def.xp)
+    } else {
+      const stacks = Math.min(def.boss ? 26 : def.elite ? 8 : 4, Math.max(1, Math.round(coins / 8)))
+      const per = Math.max(1, Math.round(coins / stacks))
+      for (let i = 0; i < stacks; i++) this.drop('coins', per, x, y, def.boss ? 1.9 : 1)
+    }
 
     if (def.drops) {
       for (const d of def.drops) {
@@ -95,7 +176,7 @@ export class PickupManager {
       }
     }
 
-    const xpStacks = Math.min(def.boss ? 18 : 4, Math.max(1, Math.round(def.xp / 6)))
+    const xpStacks = home ? Math.min(def.boss ? 18 : 4, Math.max(1, Math.round(def.xp / 6))) : 0
     for (let i = 0; i < xpStacks; i++) {
       this.drop('xp', Math.max(1, Math.round(def.xp / xpStacks)), x, y, def.boss ? 1.7 : 1)
     }
@@ -113,13 +194,25 @@ export class PickupManager {
     const depotOn = depot.level > 0
     const depotR = (depot.stats.range ?? 160) * 2.2
     const depotR2 = depotR * depotR
+    const homeR2 = PICKUP.homeRange * PICKUP.homeRange
+    // cargo on claimed ground keeps from dusk to the dawn sweep (R2)
+    const phase = this.scene.waves?.phase
+    const evening = phase !== undefined && phase !== 'day'
+    const regions = this.scene.regions
+
+    if (this.xpOwed >= 1 && player.alive) {
+      const n = Math.floor(this.xpOwed)
+      this.xpOwed -= n
+      player.addXp(n)
+    }
 
     this.pool.forEachActive(p => {
       // A haul you cannot lift right now should still be there when you come
       // back for it. Ore mined with a full pack used to sit untouched and rot
       // out on the 60s timer, which reads as the game eating your work.
-      const stranded = !canCarry && p.kind !== 'xp' && p.kind !== 'heart'
-        && p.kind !== 'chest' && p.kind !== 'coins' && !p.toDepot
+      const cargo = isCargo(p.kind)
+      const stranded = cargo && !p.toDepot
+        && (!canCarry || (evening && regions?.claimedAt(p.x, p.y) === true))
       if (!stranded) p.life -= dt
       if (p.life <= 0) {
         p.active = false
@@ -160,9 +253,22 @@ export class PickupManager {
         return
       }
 
+      const dx = player.x - p.x, dy = player.y - p.y
+      const d2 = dx * dx + dy * dy
+      // coins and xp come home (R2): once the bounce is done they fly to the hero
+      // from anywhere in range, and are credited from anywhere else
+      if ((p.kind === 'coins' || p.kind === 'xp')
+        && ((p.z === 0 && p.vz === 0) || PICKUP.lifetime - p.life >= PICKUP.bounceTime)) {
+        if (!player.alive || d2 >= homeR2) {
+          p.active = false
+          p.sprite.setVisible(false)
+          this.creditFar(p.kind, p.amount)
+          return
+        }
+        if (!p.magnet) { p.magnet = true; p.magnetSpeed = 160 }
+      }
+
       if (player.alive) {
-        const dx = player.x - p.x, dy = player.y - p.y
-        const d2 = dx * dx + dy * dy
         // xp, hearts and coins always come to you; cargo needs pack space
         const allowed = p.kind === 'xp' || p.kind === 'heart' || p.kind === 'coins' || canCarry
         if (!p.magnet && allowed && d2 < pr2) {
@@ -217,12 +323,16 @@ export class PickupManager {
     }
   }
 
-  /** Used by debug + wave clear sweeps. */
-  collectAllInRadius(x: number, y: number, r: number) {
-    const r2 = r * r
-    this.pool.forEachActive(p => {
-      const dx = p.x - x, dy = p.y - y
-      if (dx * dx + dy * dy < r2) p.magnet = true
+  /**
+   * The dawn sweep (R2): every cargo pickup on claimed ground goes into stores,
+   * and any coins still on the ground bank too. Returns the cargo that moved.
+   */
+  sweepField(): ResourceBag {
+    const s = this.scene
+    return sweepPickups(this.pool.items, (x, y) => s.regions.claimedAt(x, y), p => {
+      p.sprite.setVisible(false)
+      s.res.addStored(p.kind as ResourceType, p.amount)
     })
   }
+
 }
