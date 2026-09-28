@@ -381,10 +381,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   toggleHold() {
-    this.army.holding = !this.army.holding
-    this.fx.popup(this.player.x, this.player.y - 70,
-      this.army.holding ? 'ARMY HOLDS THE HOLD' : 'ARMY FOLLOWS YOU',
-      this.army.holding ? PAL.heroTrim : PAL.gold, 18)
+    // R5: every company to the next order (defend, follow, hold here)
+    const o = this.army.cycleAll()
+    this.fx.popup(this.player.x, this.player.y - 70, this.army.orderCall(o), o === 'follow' ? PAL.gold : PAL.heroTrim, 18)
     this.audio.play('ui')
   }
 

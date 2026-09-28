@@ -8,23 +8,37 @@ import { clamp, rr } from '../core/math'
 import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
 import { slowMult, tickSlow } from './walkers'
+import { ARMY } from '../config/balance'
+import {
+  COMPANIES, ORDERS, ORDER_CALL, companyOf, nextOrder,
+  type Anchor, type Company, type Order,
+} from './companies'
+
+export { companyOf, type Anchor, type Company, type Order } from './companies'
 
 /** Front-to-back ordering so tanks screen the shooters. */
 const LINE_ORDER: Record<SoldierKey, number> = {
   guard: 0, swordsman: 1, outrider: 1, spearman: 2, archer: 3, crossbow: 4,
 }
 
-const ENGAGE_RADIUS = 300
-const LEASH = 420
+const byLine = (a: Soldier, b: Soldier) => LINE_ORDER[a.key] - LINE_ORDER[b.key] || a.id - b.id
 
 export class ArmyManager {
   soldiers: Soldier[] = []
   private free: Soldier[] = []
-  private ordered: Soldier[] = []
   private dirty = true
 
-  /** false = the army follows you, true = it holds the settlement */
-  holding = false
+  /** R5: each company's order; defend by default */
+  orders: Record<Company, Order> = { infantry: 'defend', archers: 'defend', riders: 'defend' }
+  /** R5: where the holding companies stand: planted at the hero when the order is given; null while none holds */
+  banner: { x: number; y: number } | null = null
+  /** the follow formation's anchor, moved onto the hero every frame */
+  private readonly followAnchor: Anchor = { kind: 'follow', x: 0, y: 0, heading: 0, engage: ARMY.engage, leash: ARMY.leash }
+  private replanT = 0
+  private sinceReplan = 0
+
+  /** Old call sites: true when every company holds. */
+  get holding() { return COMPANIES.every(c => this.orders[c] === 'hold') }
 
   buffDamage = 1
   buffRate = 1
@@ -40,6 +54,38 @@ export class ArmyManager {
     return p
   }
 
+  /** The company a soldier kind belongs to (by muster). */
+  companyOf(key: SoldierKey): Company { return companyOf(key) }
+
+  /** Soldiers in a company. */
+  companyCount(c: Company) {
+    let n = 0
+    for (const s of this.soldiers) if (s.alive && s.company === c) n++
+    return n
+  }
+
+  /** Give a company an order. Hold plants the banner where the hero stands; the banner comes down once no company holds. */
+  setOrder(c: Company, o: Order) {
+    this.orders[c] = o
+    const p = this.scene.player
+    if (o === 'hold') this.banner = { x: Math.round(p.x), y: Math.round(p.y) }
+    else if (!COMPANIES.some(k => this.orders[k] === 'hold')) this.banner = null
+    this.dirty = true
+  }
+
+  /** `H`: every company to the order after the infantry's. Returns it. */
+  cycleAll(): Order {
+    const o = nextOrder(this.orders.infantry)
+    for (const c of COMPANIES) this.setOrder(c, o)
+    return o
+  }
+
+  /** What the hero calls out for an order given to the whole army. */
+  orderCall(o: Order): string { return ORDER_CALL[o] }
+
+  /** Whether a soldier goes with the hero (a waystone escort takes only these). */
+  follows(s: Soldier): boolean { return this.orders[s.company] === 'follow' }
+
   countOf(key: SoldierKey) {
     let c = 0
     for (const s of this.soldiers) if (s.key === key) c++
@@ -54,6 +100,7 @@ export class ArmyManager {
     // the Shrine of the Fallen (S14)
     const hpMult = this.scene.mods?.value('soldier.hp', base) ?? base
     s.spawn(def, x + (silent ? 0 : rr(-8, 8)), y + (silent ? 0 : rr(-4, 4)), this.soldiers.length, hpMult)
+    s.company = companyOf(key)
     this.soldiers.push(s)
     this.dirty = true
     this.totalRecruited++
@@ -109,15 +156,18 @@ export class ArmyManager {
     const player = this.scene.player
     const scene = this.scene
 
-    if (this.dirty) {
-      this.ordered = this.soldiers.slice().sort((a, b) => LINE_ORDER[a.key] - LINE_ORDER[b.key])
-      this.ordered.forEach((s, i) => { s.slot = i })
+    const fa = this.followAnchor
+    fa.x = player.x
+    fa.y = player.y
+    fa.heading = Math.atan2(player.vy, player.vx) || 0
+    this.replanT -= dt
+    this.sinceReplan += dt
+    if (this.dirty || this.replanT <= 0) {
+      this.replan(this.sinceReplan)
+      this.sinceReplan = 0
+      this.replanT = ARMY.replan
       this.dirty = false
     }
-
-    const heading = Math.atan2(player.vy, player.vx) || 0
-    const anchorX = this.holding ? scene.buildings.townHall.x : player.x
-    const anchorY = this.holding ? scene.buildings.townHall.y + 60 : player.y
     // the Gallows Bell (S15)
     const armySpeed = scene.mods?.value('army.speed', 1) ?? 1
 
@@ -127,10 +177,11 @@ export class ArmyManager {
 
       if (s.spawnT > 0) s.spawnT -= dt
       s.targetLockT -= dt
+      const a = s.anchor ?? fa
 
       // find something to fight
       if (!s.target || !s.target.alive || s.targetLockT <= 0) {
-        const t = scene.enemies.grid.nearest(s.x, s.y, ENGAGE_RADIUS, e => e.alive)
+        const t = scene.enemies.grid.nearest(s.x, s.y, a.engage, e => e.alive)
         if (t) {
           s.target = t
           s.targetLockT = 1.3
@@ -139,11 +190,8 @@ export class ArmyManager {
         }
       }
 
-      // leash: never chase so far that the hero is left naked
-      if (s.target) {
-        const leashD = Math.hypot(s.target.x - anchorX, s.target.y - anchorY)
-        if (leashD > LEASH) { s.target = null }
-      }
+      // leash: never chase so far that the hero (or the post) is left naked
+      if (s.target && Math.hypot(s.target.x - a.x, s.target.y - a.y) > a.leash) s.target = null
 
       const def = s.def
       let mx = 0, my = 0
@@ -170,11 +218,11 @@ export class ArmyManager {
         }
         if (Math.abs(dx) > 4) s.facing = dx > 0 ? 1 : -1
       } else {
-        s.state = this.holding ? 'hold' : 'form'
-        const p = this.slotPosition(s.slot, anchorX, anchorY, heading)
+        s.state = a.kind === 'follow' ? 'form' : 'hold'
+        const p = this.slotPosition(s.slot, a.x, a.y, a.heading)
         const d = Math.hypot(p.x - s.x, p.y - s.y)
         if (d > 16) {
-          const g = this.route(s, anchorX, anchorY, p.x, p.y, dt)
+          const g = this.route(s, a.x, a.y, p.x, p.y, dt)
           const dx = g.x - s.x, dy = g.y - s.y
           const dg = Math.hypot(dx, dy) || 1
           mx = dx / dg
@@ -234,6 +282,50 @@ export class ArmyManager {
     }
 
     this.drawBars()
+  }
+
+  /**
+   * R5: every soldier's anchor from its company's order, a few times a second.
+   * Each anchor's soldiers form up in line order (melee in front of shooters).
+   */
+  private replan(_step: number) {
+    const groups = new Map<string, { a: Anchor; list: Soldier[] }>()
+    const put = (key: string, s: Soldier, make: () => Anchor) => {
+      let g = groups.get(key)
+      if (!g) groups.set(key, g = { a: make(), list: [] })
+      g.list.push(s)
+    }
+    for (const s of this.soldiers) {
+      if (!s.alive) continue
+      const o = this.orders[s.company]
+      if (o === 'follow') put('follow', s, () => this.followAnchor)
+      else if (o === 'hold') put('hold', s, () => this.holdAnchor())
+      else put(`post:${s.company}`, s, () => this.dayPost(s.company))
+    }
+    for (const { a, list } of groups.values()) {
+      list.sort(byLine)
+      list.forEach((s, i) => { s.anchor = a; s.slot = i })
+    }
+  }
+
+  /** The banner, the formation facing out from the hall. */
+  private holdAnchor(): Anchor {
+    const hall = this.scene.buildings.townHall
+    const b = this.banner ?? { x: hall.x, y: hall.y + 60 }
+    return { kind: 'hold', x: b.x, y: b.y, heading: this.outward(b.x, b.y), engage: ARMY.holdEngage, leash: ARMY.holdLeash }
+  }
+
+  /** A company's post in the hold by day. */
+  private dayPost(_c: Company): Anchor {
+    const hall = this.scene.buildings.townHall
+    return { kind: 'post', x: hall.x, y: hall.y + 60, heading: Math.PI / 2, engage: ARMY.postEngage, leash: ARMY.postLeash }
+  }
+
+  /** The bearing from the hall to a point; south when it is the hall. */
+  private outward(x: number, y: number): number {
+    const hall = this.scene.buildings.townHall
+    const dx = x - hall.x, dy = y - hall.y
+    return Math.hypot(dx, dy) < 1 ? Math.PI / 2 : Math.atan2(dy, dx)
   }
 
   /**
@@ -334,9 +426,12 @@ export class ArmyManager {
     const counts: Partial<Record<SoldierKey, number>> = {}
     for (const s of this.soldiers) counts[s.key] = (counts[s.key] ?? 0) + 1
     const units = this.soldiers.map(s => ({ key: s.key, x: s.x, y: s.y, hp: s.hp }))
-    return { counts, units, totalRecruited: this.totalRecruited, holding: this.holding }
+    const orders: Record<Company, Order> = { ...this.orders }
+    const banner = this.banner ? { x: Math.round(this.banner.x), y: Math.round(this.banner.y) } : null
+    return { counts, units, totalRecruited: this.totalRecruited, orders, banner }
   }
 
+  /** An old save's `holding` flag loads as the default orders. */
   load(d: ReturnType<ArmyManager['toJSON']>) {
     const hall = this.scene.buildings.townHall
     if (Array.isArray(d.units)) {
@@ -354,6 +449,15 @@ export class ArmyManager {
       }
     }
     this.totalRecruited = Math.max(this.soldiers.length, d.totalRecruited ?? this.soldiers.length)
-    this.holding = !!d.holding
+    const orders = (d.orders ?? {}) as Partial<Record<Company, unknown>>
+    for (const c of COMPANIES) {
+      const o = orders[c]
+      this.orders[c] = ORDERS.includes(o as Order) ? o as Order : 'defend'
+    }
+    const b = d.banner
+    this.banner = b && Number.isFinite(b.x) && Number.isFinite(b.y) ? { x: b.x, y: b.y } : null
+    if (!this.banner && COMPANIES.some(c => this.orders[c] === 'hold')) this.banner = { x: hall.x, y: hall.y + 60 }
+    if (this.banner && !COMPANIES.some(c => this.orders[c] === 'hold')) this.banner = null
+    this.dirty = true
   }
 }

@@ -23,7 +23,7 @@ function world({ at, night = false, soldiers = [] }) {
     player,
     waves: { isNight: night },
     buildings: { outposts: () => [outDowns] },
-    army: { soldiers },
+    army: { soldiers, follows: () => true },
     nav: { passableAt: () => true },
     fx: { ring: noop, popup: noop },
     audio: { play: noop },

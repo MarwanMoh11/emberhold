@@ -5,6 +5,7 @@ import { nextId } from '../core/ids'
 import { PathFollower } from '../world/PathFollower'
 import type { PathTicket } from '../world/PathFind'
 import { noSlow } from '../systems/walkers'
+import type { Anchor, Company } from '../systems/companies'
 
 export type SoldierState = 'form' | 'engage' | 'hold' | 'dead'
 
@@ -40,6 +41,11 @@ export class Soldier implements Targetable {
   losT = 0
   /** S16: a bog wretch's slow */
   readonly slow = noSlow()
+  /** R5: its company (by muster), what it forms up on, tonight's front, and the raided holding it was sent to */
+  company: Company = 'infantry'
+  anchor: Anchor | null = null
+  front: string | null = null
+  detail: string | null = null
 
   sprite!: Phaser.GameObjects.Image
 
@@ -72,6 +78,9 @@ export class Soldier implements Targetable {
     this.pathT = 0
     this.losT = 0
     this.slow.t = 0; this.slow.mult = 1
+    this.anchor = null
+    this.front = null
+    this.detail = null
 
     this.sprite.setTexture(`sol_${def.key}`)
     this.sprite.setOrigin(0.5, 1 - 8 / this.sprite.height)
