@@ -241,15 +241,6 @@ export function buildFxTextures(scene: Phaser.Scene) {
     register(scene, 'px', c)
   }
 
-  // off-screen threat marker: a pennant-shaped arrowhead, white for tinting
-  bake(scene, 'fx_marker', 28, 28, {
-    body: x => {
-      fill(x, P.poly([[14, 3], [24, 22], [14, 17], [4, 22]]), 0xffffff)
-    },
-    outline: 1.6,
-    grain: 0,
-  })
-
   // the objective arrow: a gilt pointer, baked tip-down
   bake(scene, 'fx_objective', 32, 38, {
     under: x => glow(x, 16, 20, 16, PAL.gold, 0.35),

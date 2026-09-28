@@ -628,7 +628,7 @@ export class GameScene extends Phaser.Scene {
     this.objectiveArrow
       .setVisible(true)
       .setPosition(p.x + Math.cos(ang) * r, p.y - 16 + Math.sin(ang) * r)
-      // fx_objective is baked tip-DOWN (unlike fx_marker, which is tip-up), so
+      // fx_objective is baked tip-DOWN, so
       // it already points at +90°. Adding another 90° sent it the opposite way.
       .setRotation(ang - Math.PI / 2)
       .setAlpha(0.9)

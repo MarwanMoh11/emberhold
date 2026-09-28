@@ -270,8 +270,15 @@ export const HOLD = {
   assaultRadius: 900,
   /** an advancing walker fights the hero, a soldier or a worker this near (twice it, just after a close hit) */
   advanceSight: 220,
-  /** an advancing walker fights a structure this near: it is in the way */
+  /** an advancing walker fights a tower, wall or gate this near: it is in the way */
   advanceBump: 110,
+  /**
+   * R7: a holding only when the walker is up against it (this near) and stuck: it got less than
+   * `stallPx` further down the hall's field in the last `stallWindow` s. Roadside farms are passed by.
+   */
+  advanceBlock: 60,
+  stallWindow: 1,
+  stallPx: 24,
   /** a raid walker's score for a holding (not a wall, gate, tower or the hall): lower is likelier */
   raidHoldings: 0.5,
   /** an advancing walker struck from within twice its sight stays provoked this long (s) */
