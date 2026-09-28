@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { loadTs } from './load-ts.mjs'
 
-const { PickupManager, sweepPickups } = await loadTs('src/systems/PickupManager.ts')
+const { PickupManager, sweepPickups, sweptLine } = await loadTs('src/systems/PickupManager.ts')
 const { ENEMIES } = await loadTs('src/config/enemies.ts')
 
 function makeScene(heroAt) {
@@ -55,4 +55,6 @@ test('the dawn sweep banks cargo on claimed ground and leaves cargo off it', () 
   assert.deepEqual(bag, { stone: 20 })
   assert.deepEqual(taken, ['stone', 'stone', 'coins'])
   assert.deepEqual(items.map(p => p.active), [false, false, true, true, false, false])
+  assert.equal(sweptLine({ wood: 40, stone: 120 }), 'swept from the field: +120 stone, +40 wood')
+  assert.equal(sweptLine({}), '')
 })

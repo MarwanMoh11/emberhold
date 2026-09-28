@@ -5,6 +5,9 @@ import { DAYNIGHT, VILLAGE, dayLength, nightReward } from '../config/balance'
 import { PAL } from '../config/palette'
 import { rr, ri, shuffled, clamp } from '../core/math'
 import { ENEMIES, type EnemyKey } from '../config/enemies'
+import { RESOURCE_ORDER, type ResourceBag } from '../core/types'
+import type { NightLog } from '../core/Events'
+import { rollLoot, sweptLine } from './PickupManager'
 import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
 import { CAMP_MIX, SPAWN_SCATTER, splitBudget, type ApproachId, type NightPlan } from './Approaches'
@@ -76,6 +79,10 @@ export class WaveManager {
   private bossName: string | null = null
 
   wavesCleared = 0
+  /** tonight's tally from dusk to dawn, emitted as `night:summary` (R2); R4 counts `sacked` */
+  nightLog: NightLog = { wave: 0, kills: 0, coins: 0, swept: {}, sacked: 0 }
+  /** coins gathered in all, at dusk: the night's coins are the difference at dawn */
+  private duskCoins = 0
   /** set while the player is being told a wave is coming */
   bannerText = ''
 
@@ -211,6 +218,7 @@ export class WaveManager {
 
   private beginNight() {
     this.wave++
+    this.openLog()
     this.phase = 'night'
     this.phaseT = DAYNIGHT.nightSeconds
     this.nightElapsed = 0
@@ -321,21 +329,38 @@ export class WaveManager {
 
   /** Called by the scene when any wave enemy dies. */
   notifyKilled(fromWave: boolean) {
-    if (fromWave) this.remaining = Math.max(0, this.remaining - 1)
+    if (!fromWave) return
+    this.remaining = Math.max(0, this.remaining - 1)
+    this.nightLog.kills++
+  }
+
+  /** A fresh night log at dusk (R2). */
+  private openLog() {
+    this.nightLog = { wave: this.wave, kills: 0, coins: 0, swept: {}, sacked: 0 }
+    this.duskCoins = this.scene.res.totalGathered.coins
   }
 
   /**
    * Dawn breaks the horde (S20): night walkers still out when the fight
-   * window closes flee in smoke and drop what they carried (their loot, no
-   * kill or xp). Bosses stand their ground and carry into the day.
+   * window closes flee in smoke and leave what they carried (their loot, no
+   * kill or xp) to the dawn sweep, banked rather than dropped on the grass
+   * (R2). Bosses stand their ground and carry into the day.
    */
   private rout() {
     const fled: Enemy[] = []
     this.scene.enemies.forEachAlive(e => { if (e.fromWave && !e.def.boss) fled.push(e) })
+    const loot: ResourceBag = {}
     for (const e of fled) {
-      this.scene.pickups.dropLoot(e.def, e.x, e.y, this.scene.player.stats.greed)
+      rollLoot(e.def, this.scene.player.stats.greed, loot)
       this.scene.fx.smoke(e.x, e.y, 3)
       this.scene.enemies.despawn(e)
+    }
+    const swept = this.nightLog.swept
+    for (const k of RESOURCE_ORDER) {
+      const n = loot[k] ?? 0
+      if (n <= 0) continue
+      this.scene.res.addStored(k, n)
+      if (k !== 'coins') swept[k] = (swept[k] ?? 0) + n
     }
     this.remaining = 0
   }
@@ -354,8 +379,20 @@ export class WaveManager {
     this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 120, `NIGHT ${this.wave} HELD`, PAL.good, 30)
     this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 84, `+${reward} coins`, PAL.coins, 18)
     this.scene.audio.play('quest', 0.9)
-    this.scene.pickups.collectAllInRadius(this.scene.player.x, this.scene.player.y, 900)
+
+    // the dawn sweep (R2): the night's cargo on claimed ground goes into stores
+    const log = this.nightLog
+    const swept = this.scene.pickups.sweepField()
+    for (const k of RESOURCE_ORDER) {
+      const n = swept[k] ?? 0
+      if (n > 0) log.swept[k] = (log.swept[k] ?? 0) + n
+    }
+    const line = sweptLine(log.swept)
+    if (line) this.scene.fx.popup(this.scene.player.x, this.scene.player.y - 58, line, PAL.parchment, 14)
+    log.coins = Math.max(0, this.scene.res.totalGathered.coins - this.duskCoins) + reward
+
     this.scene.bus.emit('wave:cleared', { wave: this.wave })
+    this.scene.bus.emit('night:summary', log)
   }
 
   /** Debug / quest helper. */

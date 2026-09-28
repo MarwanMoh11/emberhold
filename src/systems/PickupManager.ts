@@ -31,6 +31,15 @@ export function rollLoot(def: EnemyDef, greed: number, into: ResourceBag): Resou
   return into
 }
 
+/** The dawn sweep's popup: "swept from the field: +120 stone, +40 wood", largest first; '' when nothing moved. */
+export function sweptLine(bag: ResourceBag): string {
+  const parts = (Object.keys(bag) as ResourceType[])
+    .filter(k => (bag[k] ?? 0) > 0)
+    .sort((a, b) => (bag[b] ?? 0) - (bag[a] ?? 0))
+    .map(k => `+${Math.round(bag[k] ?? 0)} ${k}`)
+  return parts.length ? `swept from the field: ${parts.join(', ')}` : ''
+}
+
 interface SweepItem { active: boolean; kind: PickupKind; amount: number; x: number; y: number }
 
 /**
@@ -326,12 +335,4 @@ export class PickupManager {
     })
   }
 
-  /** Used by debug + wave clear sweeps. */
-  collectAllInRadius(x: number, y: number, r: number) {
-    const r2 = r * r
-    this.pool.forEachActive(p => {
-      const dx = p.x - x, dy = p.y - y
-      if (dx * dx + dy * dy < r2) p.magnet = true
-    })
-  }
 }
