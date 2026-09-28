@@ -11,7 +11,7 @@ raided holdings, and deploy to tonight's front posts at night. Design: README §
   `plan`, `splitBudget` use in `beginNight`.
 - R4's `holding:raided` and `BuildingManager.raided()`; R3's `RegionManager.inHold`.
 - `src/scenes/GameScene.ts`: grep `army.holding` (the `H` toggle, ~line 384).
-- `src/ui/HUD.ts`: grep `army.holding` (~line 453) — keep it compiling; R6
+- `src/ui/HUD.ts`: grep `army.holding` (~line 453) — keep it compiling; R6b
   does the panel.
 - `src/dev/harness.ts`: grep `army.holding` (~line 454).
 - `src/systems/SaveManager.ts`: grep `army` (validation).
@@ -68,7 +68,7 @@ raided holdings, and deploy to tonight's front posts at night. Design: README §
 - One harness smoke check: recruit a few soldiers, pump to the warning, and
   report where each company's soldiers are headed vs tonight's posts; then
   raise `holding:raided` on a far farm by day and see a detachment leave.
-  Return ≤ 12 lines of JSON. No screenshots (R6 does the visuals).
+  Return ≤ 12 lines of JSON. No screenshots (R6b does the visuals).
 
 ## Acceptance
 

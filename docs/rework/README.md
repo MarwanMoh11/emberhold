@@ -153,11 +153,11 @@ Signatures only. A card that changes one updates this list.
 | Card | Contract |
 |---|---|
 | R1 | `TITHE`, `titheRate({ hallLevel, workers, homePop })` in `config/balance.ts`; `village.titheOf(buildings)`; `BuildingManager.titheRate(): number` (coins/s now); `Building.sacked` (false; gates the tithe) |
-| R2 | `PickupManager.sweepField(): ResourceBag` (claimed ground, cargo only); `WaveManager.nightLog: { wave, kills, coins, swept: ResourceBag, sacked: number }`; bus `night:summary` (the log) at dawn |
-| R3 | `Enemy.advancing: boolean`; `RegionManager.inHold(x, y): boolean`; `HOLD.assaultRadius`, `FRONT_STAGGER`; `TonightRoute.post: { x: number; y: number }` |
-| R4 | `Building.sacked: boolean`; `BuildingManager.isHolding(b)`; `SACK` in balance; bus `holding:raided { padId, x, y, key }`, `building:sacked`, `building:restored`; `BuildingManager.raided(now): { padId, x, y, key }[]` (raided in the last few seconds); `nightLog.sacked` counts |
+| R2 | `PickupManager.sweepField(): ResourceBag`; `WaveManager.nightLog: NightLog` (`{ wave, kills, coins, swept, sacked }`, type in `core/Events.ts`); bus `night:summary` (the log) at dawn, after `wave:cleared` |
+| R3 | `Enemy.advancing: boolean`; `RegionManager.inHold(x, y): boolean` (pure `inHold` in `Approaches.ts`); `HOLD` in balance; `FRONT_STAGGER`, `POST_BACK`, `frontStagger(plan, id)`, `frontPost(route, hold, back?)` in `Approaches.ts`; `TonightRoute.post: { x: number; y: number }`; `nearestStructure(x, y, r, preferDefense?, holdings?)` |
+| R4 | `Building.sacked`; `BuildingManager.isHolding(b)`, `sack(b)`, `restore(b, byHero?)`, `onStruck(b)`, `raided(now: ms): RaidedHolding[]` (`{ padId, x, y, key }`); `SACK` in balance; bus `holding:raided { padId, x, y, key }`, `building:sacked`, `building:restored { padId, key, x, y }`; `nightLog.sacked` counts |
 | R5 | `Company = 'infantry' \| 'archers' \| 'riders'`, `Order = 'defend' \| 'follow' \| 'hold'`; `ArmyManager.orders`, `.banner`, `setOrder(c, o)`, `cycleAll()`, `companyOf(key)`, `companyCount(c)`; `ARMY` in balance; save `army.orders`, `army.banner` |
-| R6 | UI only |
+| R6, R6b | UI only |
 
 ## If you are an implementing session
 
