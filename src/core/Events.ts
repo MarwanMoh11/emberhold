@@ -46,6 +46,8 @@ export interface GameEvents {
   /** S15: a relic was won (a barrow's guardian fell, or a stronghold burned) */
   'relic:granted': { id: string; name: string }
   'quest:complete': { id: string }
+  /** A dawn contract was met (its pay is already banked); the HUD's toast. `title` reads as the contract did. */
+  'contract:complete': { id: string; title: string; coins: number; crystal: number }
   'boss:spawned': { name: string }
   'boss:killed': { name: string }
   'achievement': { id: string; title: string }

@@ -38,6 +38,7 @@ import { Waystones } from '../systems/Waystones'
 import { AbilitySystem } from '../systems/AbilitySystem'
 import { LevelSystem } from '../systems/LevelSystem'
 import { QuestManager } from '../systems/QuestManager'
+import { ContractManager } from '../systems/ContractManager'
 import { SaveManager, type Settings } from '../systems/SaveManager'
 import { LightingManager } from '../systems/LightingManager'
 import { Modifiers } from '../systems/Modifiers'
@@ -103,6 +104,7 @@ export class GameScene extends Phaser.Scene {
   abilities!: AbilitySystem
   levels!: LevelSystem
   quests!: QuestManager
+  contracts!: ContractManager
   saves!: SaveManager
   lighting!: LightingManager
 
@@ -214,6 +216,7 @@ export class GameScene extends Phaser.Scene {
     this.routeMarks = new RouteMarks(this, DEPTH.light + 1)
     this.levels = new LevelSystem(this)
     this.quests = new QuestManager(this)
+    this.contracts = new ContractManager(this)
     this.saves = new SaveManager(this)
     this.lighting = new LightingManager(this, DEPTH.light)
     this.lighting.quality = this.settings.quality
