@@ -98,6 +98,8 @@ test('rewards grow with the wave, and crystal comes only from the fifth wave on'
 test('a contract reads as its goal, its progress and its pay', () => {
   const c = { id: 'x', kind: 'cull', target: 'swarm', need: 25, have: 18, reward: { coins: 140 }, state: 'open' }
   assert.equal(contractLine(c), 'Cull 18/25 Chitters — 140 coins')
+  // a haul names a resource, not a walker
+  assert.equal(contractLine({ ...c, kind: 'haul', target: 'wood', need: 180, have: 0 }), 'Haul 0/180 wood — 140 coins')
 })
 
 test('a saved board passes the validator; an older save has none and loads an empty board', () => {

@@ -128,8 +128,7 @@ export function settleAtDawn(board: Contract[]): { paid: Contract[]; expired: Co
 
 /** The line a contract reads as, e.g. "Cull 18/25 Chitters — 140 coins". */
 export function contractLine(c: Contract): string {
-  const name = c.target ? `${ENEMIES[c.target as EnemyKey].name}s` : ''
-  const what = c.kind === 'cull' ? `Cull ${c.have}/${c.need} ${name}`
+  const what = c.kind === 'cull' ? `Cull ${c.have}/${c.need} ${ENEMIES[c.target as EnemyKey]?.name ?? c.target}s`
     : c.kind === 'slaughter' ? `Slaughter ${c.have}/${c.need} walkers`
     : c.kind === 'hold' ? 'Hold fast: no holding sacked tonight'
     : c.kind === 'raise' ? `Raise ${c.have}/${c.need} buildings`
