@@ -12,6 +12,7 @@ import { FogMemory } from '../core/FogMemory'
 import { RELIC_BY_ID } from './Relics'
 import { guardIds } from './CampManager'
 import { GAME_VERSION } from '../config/version'
+import { isBoard, type Contract } from './contracts'
 
 // v2 (the frontier) never reads, writes or deletes the v1 keys: see docs/world/design/07-save.md
 const KEY = 'emberhold.save.v2'
@@ -125,6 +126,7 @@ function validShape(v: unknown): v is SaveBlobV2 {
     if (n !== undefined && (!finite(n) || n < 0)) return false
   }
   if (v.coreLost !== undefined && typeof v.coreLost !== 'boolean') return false
+  if (v.contracts !== undefined && !isBoard(v.contracts)) return false
   if (v.quests.defeatedBosses !== undefined && !strings(v.quests.defeatedBosses)) return false
   if (v.quests.finalBossHp !== undefined && (!finite(v.quests.finalBossHp)
     || v.quests.finalBossHp < 0 || v.quests.finalBossHp > 100000)) return false
@@ -315,6 +317,8 @@ export interface SaveBlobV2 {
   army: ReturnType<GameScene['army']['toJSON']>
   waves: ReturnType<GameScene['waves']['toJSON']>
   quests: ReturnType<GameScene['quests']['toJSON']>
+  /** Dawn contracts as posted, with progress. Optional: an older save has none until the next dawn. */
+  contracts?: Contract[]
   regions: string[]
   exploredFog?: string
   camps: string[]
@@ -418,6 +422,7 @@ export class SaveManager {
       army: s.army.toJSON(),
       waves: s.waves.toJSON(),
       quests: s.quests.toJSON(),
+      contracts: s.contracts.toJSON(),
       regions: s.regions.toJSON(),
       exploredFog: s.regions.fogJSON(),
       camps: s.camps.toJSON(),
@@ -511,6 +516,7 @@ export class SaveManager {
     s.combat.kills = blob.combat?.kills ?? 0
     s.combat.bossKills = blob.combat?.bossKills ?? 0
     s.quests.load(blob.quests)
+    s.contracts.load(blob.contracts)
     s.buildings.recomputeBonuses()
     return true
   }

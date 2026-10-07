@@ -3,6 +3,8 @@ import { Overlay } from './Overlay'
 import { PAL } from '../config/palette'
 import { ON_PAGE } from './skin'
 import { ACTS, QUESTS, actOf } from '../config/quests'
+import { CONTRACTS } from '../config/contracts'
+import { contractLine } from '../systems/contracts'
 import type { GameScene } from '../scenes/GameScene'
 
 interface Row {
@@ -45,6 +47,8 @@ export class QuestLog extends Overlay {
   private curCount!: Phaser.GameObjects.Text
   private curReward!: Phaser.GameObjects.Text
   private rows: Row[] = []
+  private conHead!: Phaser.GameObjects.Text
+  private conRows: Phaser.GameObjects.Text[] = []
   private btn!: ReturnType<Overlay['button']>
 
   constructor(scene: Phaser.Scene, private game: GameScene) {
@@ -71,6 +75,8 @@ export class QuestLog extends Overlay {
         task: this.text(11, PAL.uiDim, false, 0, 0.5),
       })
     }
+    this.conHead = this.text(10, PAL.gold, true, 0, 0.5, 'caps')
+    for (let i = 0; i < CONTRACTS.perDawn; i++) this.conRows.push(this.text(12, PAL.uiText, false, 0, 0.5))
     this.btn = this.button('Back', () => this.scene.events.emit('closeScreen'), 'plain')
   }
 
@@ -122,7 +128,11 @@ export class QuestLog extends Overlay {
     const rowH = c ? 22 : 26
     const listTop0 = headH + boxH + (c ? 12 : 18)
     const footH = c ? 44 : 60
-    const h = Math.min(this.H - 16, listTop0 + perCol * rowH + footH)
+    // the contracts under the act's list: a heading, then a row each
+    const board = this.game.contracts.board
+    const conRowH = c ? 16 : 20
+    const conH = (c ? 22 : 30) + CONTRACTS.perDawn * conRowH
+    const h = Math.min(this.H - 16, listTop0 + perCol * rowH + conH + footH)
     const x = this.W / 2 - w / 2
     const y = this.H / 2 - h / 2
     this.drawCard(x, y, w, h, PAL.wax)
@@ -176,7 +186,7 @@ export class QuestLog extends Overlay {
     const gap = 24
     const colW = (inner - gap * (cols - 1)) / cols
     const top = y + listTop0
-    const avail = h - listTop0 - footH
+    const avail = h - listTop0 - footH - conH
     const pitch = Math.min(rowH, avail / perCol)
     if (cols === 2) {
       m.lineStyle(1, ON_PAGE.rule, 0.14)
@@ -233,6 +243,24 @@ export class QuestLog extends Overlay {
       r.task.setFontSize(fs - 1).setAlpha(done ? 0.4 : active ? 0.95 : 0.7).setPosition(left + tw + 8, ry)
       clip(r.task, def.hint, colW - 16 - tw - 8)
       this.ink(r.task, active ? PAL.gold : PAL.uiDim)
+    }
+
+    // ---- the contracts: the hall's board, posted at dawn ----------------
+    const cTop = top + perCol * pitch + (c ? 6 : 10)
+    this.conHead.setVisible(true)
+      .setText(board.length ? 'Contracts  ·  until dawn' : 'Contracts')
+      .setPosition(x + padX, cTop + (c ? 8 : 10))
+    this.fitText(this.conHead, 10, inner)
+    for (let i = 0; i < this.conRows.length; i++) {
+      const t = this.conRows[i]
+      const bc = board[i]
+      const line = bc ? contractLine(bc) : i === 0 ? 'The hall posts its contracts at dawn.' : ''
+      t.setVisible(!!line)
+      if (!line) continue
+      const state = bc?.state
+      clip(t, state === 'done' ? `${line}  ·  done` : state === 'failed' ? `${line}  ·  failed` : line, inner)
+      this.ink(t, state === 'done' ? PAL.good : state === 'failed' ? PAL.danger : bc ? PAL.uiText : PAL.uiDim)
+      t.setAlpha(state === 'failed' ? 0.55 : 1).setPosition(x + padX, cTop + (c ? 22 : 28) + i * conRowH + conRowH / 2)
     }
 
     this.btn.setLabel(this.fromPause ? 'Back' : 'Back to the fight')

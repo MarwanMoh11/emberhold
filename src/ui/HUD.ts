@@ -244,6 +244,7 @@ export class HUD {
 
     this.game.bus.on('achievement', p => this.toast(`Deed earned: ${p.title}`))
     this.game.bus.on('night:warning', ({ omen }) => { if (omen) this.toast(OMENS[omen].name.toUpperCase(), OMENS[omen].hint, 6) })
+    this.game.bus.on('contract:complete', p => this.toast('Contract met', p.title, 3.6))
     this.game.bus.on('carry:full', () => {
       this.flashCarry = 0.5
       // The bar going red does not explain why loot stopped coming to you.

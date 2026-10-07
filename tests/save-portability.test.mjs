@@ -48,7 +48,7 @@ const sceneFrom = f => loose({
   res: { toJSON: () => f.res }, player: { ...f.player }, levels: { toJSON: () => f.upgrades },
   buildings: { toJSON: () => f.buildings }, workers: { toJSON: () => f.workers }, army: { toJSON: () => f.army },
   waves: { ...f.waves, toJSON: () => f.waves }, quests: { toJSON: () => f.quests }, abilities: { toJSON: () => f.abilities },
-  combat: { ...f.combat }, coreLost: f.coreLost ?? false,
+  combat: { ...f.combat }, coreLost: f.coreLost ?? false, contracts: { toJSON: () => f.contracts },
   regions: { toJSON: () => f.regions, fogJSON: () => f.exploredFog },
   camps: { toJSON: () => f.camps, awakeJSON: () => f.campAwake, healthJSON: () => f.campHealth, guardsJSON: () => f.campGuards },
   waystones: { toJSON: () => f.waystones }, pois: { toJSON: () => f.pois }, relics: { toJSON: () => f.relics },
@@ -64,7 +64,7 @@ function capture() {
     camps: mgr('camps', { loadHealth: h => { got.campHealth = h } }),
     pois: mgr('pois'), relics: mgr('relics'), buildings: mgr('buildings'), res: mgr('res'), levels: mgr('upgrades'),
     abilities: mgr('abilities'), workers: mgr('workers'), army: mgr('army'), waves: mgr('waves'),
-    waystones: mgr('waystones'), quests: mgr('quests'),
+    waystones: mgr('waystones'), quests: mgr('quests'), contracts: mgr('contracts'),
   })
   return { got, scene }
 }
@@ -100,6 +100,10 @@ const FULL = {
   abilities: { slots: [{ key: 'dash', unlocked: true }], ultimate: false },
   combat: { kills: 80, bossKills: 1 },
   coreLost: false,
+  contracts: [
+    { id: '8-cull', kind: 'cull', target: 'swarm', need: 24, have: 9, reward: { coins: 120 }, state: 'open' },
+    { id: '8-hold', kind: 'hold', need: 1, have: 1, reward: { coins: 90, crystal: 1 }, state: 'done' },
+  ],
 }
 
 test('a valid portable save replaces progress only on import and retains the previous slot', () => {
@@ -182,6 +186,7 @@ test('every save field round-trips, and the save names the build that wrote it',
   assert.deepEqual(got.army, FULL.army)
   assert.deepEqual(got.waves, [FULL.waves, false])
   assert.deepEqual(got.quests, FULL.quests)
+  assert.deepEqual(got.contracts, FULL.contracts)
   assert.deepEqual(got.regions, FULL.regions)
   assert.equal(got.exploredFog, FULL.exploredFog)
   assert.deepEqual(got.camps, [FULL.camps, [...FULL.campAwake, ...Object.keys(FULL.campHealth)], FULL.campGuards])
@@ -268,6 +273,12 @@ test('a frontier with every pad built and every worker hired fits in 64 KB', () 
   assert.equal(lean.workers.length, 500)
   assert.equal(lean.workers[0].x, undefined)
   assert.equal(lean.army.units, undefined)
+})
+
+test('contracts are optional: a save from before them loads, and a malformed board is refused', () => {
+  const { contracts, ...older } = FULL
+  assert.notEqual(SaveManager.inspectImport(JSON.stringify(older)), null)
+  assert.equal(SaveManager.inspectImport(JSON.stringify({ ...FULL, contracts: [{ ...contracts[0], kind: 'bribe' }] })), null)
 })
 
 test('the portable download imports back to the same world', async () => {
