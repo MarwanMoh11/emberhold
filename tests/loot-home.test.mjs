@@ -18,6 +18,7 @@ function makeScene(heroAt) {
     add: { image: sprite },
     player: { ...heroAt, alive: true, addXp: n => { xp += n } },
     res: { addStored: (k, n) => { banked[k] = (banked[k] ?? 0) + n; return n } },
+    waves: { omen: null },
   }
   return { scene, banked, xp: () => xp }
 }

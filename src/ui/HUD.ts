@@ -5,6 +5,7 @@ import { ABILITIES, ABILITY_KEYS, ABILITY_SLOTS } from '../config/abilities'
 import { PLAYER, POI } from '../config/balance'
 import { POIS, REGION_BY_ID } from '../config/world'
 import { ACTS, CAMP_BANNERS } from '../config/quests'
+import { OMENS } from '../config/omens'
 import { clamp, short } from '../core/math'
 import { DPR, IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
 import { ABILITY_ICON } from '../art/icons'
@@ -242,6 +243,7 @@ export class HUD {
     this.orders = new OrdersPanel(ui, game)
 
     this.game.bus.on('achievement', p => this.toast(`Deed earned: ${p.title}`))
+    this.game.bus.on('night:warning', ({ omen }) => { if (omen) this.toast(OMENS[omen].name.toUpperCase(), OMENS[omen].hint, 6) })
     this.game.bus.on('carry:full', () => {
       this.flashCarry = 0.5
       // The bar going red does not explain why loot stopped coming to you.

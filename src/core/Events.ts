@@ -3,9 +3,10 @@ import type { ResourceBag, ResourceType } from './types'
 import type { BuildingKey } from '../config/buildings'
 import type { RegionId } from '../config/world'
 import type { PoiKind, Pt } from '../config/world/blueprint'
+import type { OmenKey } from '../config/omens'
 
-/** A night from dusk to dawn (R2): wave walkers slain, coins earned (the reward included), the dawn sweep's cargo, holdings sacked (R4). */
-export interface NightLog { wave: number; kills: number; coins: number; swept: ResourceBag; sacked: number }
+/** A night from dusk to dawn (R2): wave walkers slain, coins earned (the reward included), the dawn sweep's cargo, holdings sacked (R4), its omen. */
+export interface NightLog { wave: number; kills: number; coins: number; swept: ResourceBag; sacked: number; omen?: OmenKey }
 
 export interface GameEvents {
   'res:gained': { type: ResourceType; amount: number }
@@ -22,8 +23,8 @@ export interface GameEvents {
   'holding:raided': { padId: string; x: number; y: number; key: BuildingKey }
   'soldier:recruited': { key: string }
   'worker:hired': { key: string }
-  /** `warningSeconds` before dusk (S09): tonight's approach ids and their routes from the spawn point to the hall. */
-  'night:warning': { approaches: string[]; routes: Pt[][] }
+  /** `warningSeconds` before dusk (S09): tonight's approach ids and their routes from the spawn point to the hall, and tonight's omen if any. */
+  'night:warning': { approaches: string[]; routes: Pt[][]; omen?: OmenKey }
   'wave:start': { wave: number }
   'wave:cleared': { wave: number }
   /** R2: at dawn, after `wave:cleared`, the night's log for the dawn card */

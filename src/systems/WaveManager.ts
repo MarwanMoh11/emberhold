@@ -12,6 +12,8 @@ import type { Enemy } from '../entities/Enemy'
 import type { GameScene } from '../scenes/GameScene'
 import { CAMP_MIX, SPAWN_SCATTER, frontPost, frontStagger, inHold, splitBudget, type ApproachId, type NightPlan } from './Approaches'
 import { mixHand } from './walkers'
+import { hordeSize, omenFor, swarmExtra } from './omens'
+import type { OmenDef } from '../config/omens'
 
 /** Walkers whose deck card opens into a pack (S16: thornlings come five at a time). */
 const PACKS: Partial<Record<EnemyKey, number>> = Object.fromEntries(
@@ -93,6 +95,8 @@ export class WaveManager {
   constructor(private scene: GameScene) {}
 
   get isNight() { return this.phase === 'night' }
+  /** tonight's omen (`omens.ts`), only while the night is on: the coin and light passes read it */
+  get omen(): OmenDef | null { return this.phase === 'night' ? omenFor(this.wave) : null }
   get enemiesRemaining() { return this.remaining }
   get tension() {
     if (this.phase === 'night') return clamp(0.55 + this.scene.enemies.walkerCount / 160, 0.55, 1)
@@ -170,6 +174,7 @@ export class WaveManager {
     this.scene.bus.emit('night:warning', {
       approaches: this.tonight.map(t => t.id),
       routes: this.tonight.map(t => t.route),
+      omen: omenFor(this.wave + 1)?.key,
     })
   }
 
@@ -268,13 +273,17 @@ export class WaveManager {
     const hpMult = def.hpMult ?? 1
     const dmgMult = def.dmgMult ?? 1
 
-    // one flat, shuffled list of the night's walkers, dealt out by budget
+    // one flat, shuffled list of the night's walkers, dealt out by budget; an omen scales the horde
+    const omen = omenFor(this.wave)
     const units: EnemyKey[] = []
     for (const [key, n] of Object.entries(def.enemies) as [EnemyKey, number][]) {
-      for (let i = 0; i < (n ?? 0); i++) units.push(key)
+      for (let i = 0; i < hordeSize(n ?? 0, omen); i++) units.push(key)
     }
     // three fronts or more: a share of the deck (S22, `FRONTS`)
-    const deck = shuffled(units).slice(0, Math.round(units.length * frontShare(plan.fronts.length)))
+    const dealt = shuffled(units).slice(0, Math.round(units.length * frontShare(plan.fronts.length)))
+    // a Swarm Night brings extra Chitters: a share of the walkers that came
+    const extra: EnemyKey[] = Array.from({ length: swarmExtra(dealt.length, omen) }, () => 'swarm' as const)
+    const deck = shuffled([...dealt, ...extra])
     const split = splitBudget(plan, deck.length)
     this.stagger = 0
     const mult = (t: TonightRoute) => {
@@ -353,7 +362,7 @@ export class WaveManager {
 
   /** A fresh night log at dusk (R2). */
   private openLog() {
-    this.nightLog = { wave: this.wave, kills: 0, coins: 0, swept: {}, sacked: 0 }
+    this.nightLog = { wave: this.wave, kills: 0, coins: 0, swept: {}, sacked: 0, omen: omenFor(this.wave)?.key }
     this.duskCoins = this.scene.res.totalGathered.coins
   }
 

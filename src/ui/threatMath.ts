@@ -1,6 +1,7 @@
 import type { NightLog } from '../core/Events'
 import { RESOURCE_ORDER } from '../core/types'
 import { short } from '../core/math'
+import { OMENS } from '../config/omens'
 
 /**
  * The pure half of the night awareness (R6): where the horde is bunched,
@@ -109,6 +110,7 @@ export const SEP = ' · '
  */
 export function dawnParts(log: NightLog): [string[], string[]] {
   const head = [`Night ${log.wave} held`]
+  if (log.omen) head.push(`${OMENS[log.omen].name} survived`)
   if (log.kills > 0) head.push(`${short(log.kills)} slain`)
   if (log.coins > 0) head.push(`+${short(Math.round(log.coins))} coins`)
   const tail: string[] = []

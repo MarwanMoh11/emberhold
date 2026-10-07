@@ -3,6 +3,7 @@ import { PAL } from '../config/palette'
 import { DPR } from '../core/device'
 import { css, makeCanvas, mix, type Ctx } from '../art/ink'
 import type { BuildingKey } from '../config/buildings'
+import type { OmenDef } from '../config/omens'
 import type { GameScene } from '../scenes/GameScene'
 
 /** Screen pixels per lightmap texel. Light is soft; a quarter-res map is plenty. */
@@ -65,6 +66,9 @@ export class LightingManager {
   private vignette: HTMLCanvasElement
   private flashes: Flash[] = []
   private t = 0
+  /** the night's omen, and how far its tint has come in (eased over dusk and dawn) */
+  private omen: OmenDef | null = null
+  private omenAmt = 0
   private w = 0
   private h = 0
 
@@ -119,6 +123,9 @@ export class LightingManager {
   update(dt: number) {
     const s = this.scene
     this.t += dt
+    // an omen's tint eases in as its night starts, and out again at dawn
+    if (s.waves.omen) this.omen = s.waves.omen
+    this.omenAmt += ((s.waves.omen ? 1 : 0) - this.omenAmt) * Math.min(1, dt * 0.8)
     for (let i = this.flashes.length - 1; i >= 0; i--) {
       this.flashes[i].t -= dt
       if (this.flashes[i].t <= 0) this.flashes.splice(i, 1)
@@ -144,7 +151,9 @@ export class LightingManager {
     const d = s.waves.darkness
     x.globalCompositeOperation = 'source-over'
     x.globalAlpha = 1
-    x.fillStyle = css(ambientFor(d))
+    const om = this.omen
+    const amb = ambientFor(d)
+    x.fillStyle = css(om ? mix(amb, om.tint, om.tintAmount * this.omenAmt) : amb)
     x.fillRect(0, 0, lw, lh)
 
     const view = cam.worldView
