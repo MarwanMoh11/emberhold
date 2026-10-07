@@ -5,6 +5,7 @@ import { nextId } from '../core/ids'
 import { HOLD } from '../config/balance'
 import type { FieldTarget } from '../world/NavGrid'
 import type { KitState } from '../systems/bosses'
+import type { AffixKey } from '../config/champions'
 
 export type EnemyState = 'move' | 'attack' | 'stun' | 'dead'
 
@@ -78,6 +79,10 @@ export class Enemy implements Targetable {
   bobSeed = 0
   /** true when this one belongs to the current night's wave */
   fromWave = false
+  /** a champion's affix (systems/champions.ts); null for every other walker. Cleared on each spawn */
+  affix: AffixKey | null = null
+  /** the wave's hp and damage multiples it was spawned with (a splitting champion's husks match them) */
+  hpMult = 1; dmgMult = 1
   /**
    * On a night march (S09): MARCH_SPEED, following `route`, deaf to aggro.
    * Cleared by a hit or by the first claimed cell.
@@ -161,6 +166,8 @@ export class Enemy implements Targetable {
     this.spawnT = 0.35
     this.bobSeed = Math.random() * 10
     this.fromWave = false
+    this.affix = null
+    this.hpMult = hpMult; this.dmgMult = dmgMult
     this.marching = false
     this.advancing = false
     this.hitT = 0

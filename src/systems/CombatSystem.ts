@@ -1,5 +1,7 @@
 import { PAL } from '../config/palette'
+import { CHAMPION_BOUNTY } from '../config/champions'
 import { rnd } from '../core/math'
+import { affixMods } from './champions'
 import type { Enemy } from '../entities/Enemy'
 import type { Targetable } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'
@@ -34,7 +36,8 @@ export class CombatSystem {
       }
       return
     }
-    const dmg = Math.max(1, amount)
+    // a warded champion takes a share less of every blow (systems/champions.ts)
+    const dmg = Math.max(1, amount * affixMods(e.affix).taken)
     const hpBefore = Math.max(0, e.hp)
     const killed = e.applyDamage(dmg, srcX, srcY, knockback)
     if (showNumber) this.scene.fx.damage(e.x, e.y - e.radius - 16, Math.round(dmg), crit)
@@ -53,7 +56,8 @@ export class CombatSystem {
       this.scene.bus.emit('boss:killed', { name: def.name })
     }
 
-    this.scene.pickups.dropLoot(def, e.x, e.y, this.scene.player.stats.greed)
+    // a champion pays a bounty on top of the walker's coins and drops
+    this.scene.pickups.dropLoot(def, e.x, e.y, this.scene.player.stats.greed, e.affix ? CHAMPION_BOUNTY : undefined)
 
     if (def.explodes) {
       this.scene.fx.explosion(e.x, e.y, def.explodes.radius, 0xff9840)
@@ -68,6 +72,8 @@ export class CombatSystem {
       this.scene.fx.hitSpark(e.x, e.y - e.radius * 0.5, 0xd8c890, 1.4)
     }
     if (def.deathPatch) this.scene.enemies.addPatch(e.x, e.y, def.deathPatch)
+    const mods = affixMods(e.affix)
+    if (mods.patch) this.scene.enemies.addPatch(e.x, e.y, mods.patch)
 
     this.scene.fx.deathBurst(e.x, e.y - e.radius * 0.5, def.colour, def.boss ? 3.5 : def.elite ? 1.8 : 1)
     if (def.boss) {
@@ -83,6 +89,7 @@ export class CombatSystem {
     this.scene.waves.notifyKilled(e.fromWave)
     this.scene.fx.registerKill(e.x, e.y)
     this.scene.bus.emit('enemy:killed', { key: def.key, x: e.x, y: e.y, boss: !!def.boss })
+    if (mods.split) this.scene.enemies.splitChampion(e)
     this.scene.enemies.despawn(e)
   }
 

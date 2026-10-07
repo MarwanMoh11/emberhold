@@ -5,6 +5,7 @@ import { PAL } from '../config/palette'
 import { rr, chance } from '../core/math'
 import type { ResourceBag, ResourceType } from '../core/types'
 import type { EnemyDef } from '../config/enemies'
+import type { ChampionBounty } from '../config/champions'
 import type { GameScene } from '../scenes/GameScene'
 
 type PickupKind = ResourceType | 'xp' | 'heart' | 'chest'
@@ -153,10 +154,10 @@ export class PickupManager {
       .setDepth(y)
   }
 
-  /** Scatter a whole loot table from a dead enemy. */
-  dropLoot(def: EnemyDef, x: number, y: number, greed: number) {
+  /** Scatter a whole loot table from a dead enemy; a champion's `bounty` multiplies its coins and adds drops. */
+  dropLoot(def: EnemyDef, x: number, y: number, greed: number, bounty?: ChampionBounty) {
     // an omen pays more per kill while its night is on
-    const coins = Math.round(rollCoins(def, greed) * (this.scene.waves.omen?.coinMult ?? 1))
+    const coins = Math.round(rollCoins(def, greed) * (bounty?.coins ?? 1) * (this.scene.waves.omen?.coinMult ?? 1))
     // a kill the hero is nowhere near (or down for): coins and xp are credited whole, no stacks
     const home = this.homeReach(x, y)
     if (!home) {
@@ -168,8 +169,9 @@ export class PickupManager {
       for (let i = 0; i < stacks; i++) this.drop('coins', per, x, y, def.boss ? 1.9 : 1)
     }
 
-    if (def.drops) {
-      for (const d of def.drops) {
+    const drops = [...(def.drops ?? []), ...(bounty?.drops ?? [])]
+    if (drops.length) {
+      for (const d of drops) {
         if (!chance(d.chance)) continue
         const amt = Math.max(1, Math.round(d.amount * greed))
         const n = Math.min(10, Math.max(1, Math.round(amt / 10)))
