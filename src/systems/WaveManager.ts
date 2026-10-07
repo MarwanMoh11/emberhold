@@ -249,6 +249,7 @@ export class WaveManager {
     this.queueHead = 0
     this.remaining = 0
     this.bossName = null
+    this.scene.enemies.championsTonight = 0
 
     const ap = this.scene.approaches
     // re-resolve the warning's plan: a camp may have burned or a region been claimed since
@@ -323,7 +324,7 @@ export class WaveManager {
     while (this.queueHead < this.queue.length && this.queue[this.queueHead].at <= this.nightElapsed) {
       const o = this.queue[this.queueHead++]
       const [x, y] = o.boss ? [o.x, o.y] : this.scatter(o.x, o.y)
-      const e = this.scene.enemies.spawn(o.key, x, y, o.hpMult, o.dmgMult)
+      const e = this.scene.enemies.spawnWalker(o.key, x, y, o.hpMult, o.dmgMult, this.wave)
       if (!e) { this.remaining--; continue }
       e.fromWave = true
       e.approach = o.approach
@@ -342,6 +343,11 @@ export class WaveManager {
         this.scene.fx.dust(x, y, 3)
       }
     }
+  }
+
+  /** A splitting champion's husks join tonight's count: they are wave walkers too. */
+  addWalkers(n: number) {
+    this.remaining += n
   }
 
   /** Called by the scene when any wave enemy dies. */

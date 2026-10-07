@@ -11,7 +11,9 @@ import { Grid } from '../core/Grid'
 import { applySlow, auraHealed, mergeAura, noAura, type Slow } from './walkers'
 import { BossKits } from './BossKits'
 import { BOSS_BAR_RANGE } from './bosses'
-import { clamp, rr } from '../core/math'
+import { affixMods, championCap, championChance, rollAffix } from './champions'
+import { CHAMPION, type AffixKey } from '../config/champions'
+import { chance, clamp, rnd, rr } from '../core/math'
 import type { Targetable } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'
 
@@ -42,6 +44,8 @@ export class EnemyManager {
   private auraFx = noAura()
 
   aliveCount = 0
+  /** champions spawned tonight, against championCap; WaveManager resets it as each night begins */
+  championsTonight = 0
   /** alive enemies excluding stationary camps — this is what "wave cleared" means */
   walkerCount = 0
   bossRef: Enemy | null = null
@@ -88,8 +92,11 @@ export class EnemyManager {
 
   get count() { return this.aliveCount }
 
-  /** `def` overrides the key's own (a stronghold's stand-in boss is a renamed elite until S17). */
-  spawn(key: EnemyKey, x: number, y: number, hpMult = 1, dmgMult = 1, def: EnemyDef = ENEMIES[key]): Enemy | null {
+  /**
+   * `def` overrides the key's own (a stronghold's stand-in boss is a renamed elite until S17).
+   * `affix` makes it a champion (systems/champions.ts): tougher, bigger, tinted, and counted tonight.
+   */
+  spawn(key: EnemyKey, x: number, y: number, hpMult = 1, dmgMult = 1, def: EnemyDef = ENEMIES[key], affix: AffixKey | null = null): Enemy | null {
     if (this.aliveCount >= MAX_ENEMIES) return null
     let e = this.free.pop()
     if (!e) {
@@ -106,13 +113,52 @@ export class EnemyManager {
       if (i >= 0) [x, y] = nav.r.xy(i)
     }
     e.spawn(def, x, y, hpMult, dmgMult)
+    if (affix) {
+      const m = affixMods(affix)
+      e.affix = affix
+      e.maxHp = Math.round(e.maxHp * CHAMPION.hp)
+      e.hp = e.maxHp
+      e.speed *= m.speed
+      e.attackRate *= m.attackRate
+      this.championsTonight++
+      if (Phaser.Geom.Rectangle.Contains(this.scene.cameras.main.worldView, e.x, e.y)) {
+        this.scene.fx.popup(e.x, e.y - e.radius - 40, 'CHAMPION', m.tint, 15)
+      }
+    }
     this.aliveCount++
     if (def.boss) {
       this.bossRef = e
       this.scene.bus.emit('boss:spawned', { name: def.name })
     }
-    this.scene.tweens.add({ targets: e.sprite, scale: 1, duration: 260, ease: 'Back.easeOut' })
+    this.scene.tweens.add({ targets: e.sprite, scale: affix ? CHAMPION.scale : 1, duration: 260, ease: 'Back.easeOut' })
     return e
+  }
+
+  /** A night-horde walker, which may come as a champion. Bosses and structures never do; camp men go through `spawn`. */
+  spawnWalker(key: EnemyKey, x: number, y: number, hpMult: number, dmgMult: number, wave: number): Enemy | null {
+    const def = ENEMIES[key]
+    const p = championChance(wave)
+    const champion = p > 0 && !def.boss && !def.structure && this.championsTonight < championCap(wave) && chance(p)
+    return this.spawn(key, x, y, hpMult, dmgMult, def, champion ? rollAffix(rnd) : null)
+  }
+
+  /** Splitting: a champion's death leaves its husks where it fell, as strong as the walkers of its night. */
+  splitChampion(e: Enemy) {
+    const sp = affixMods(e.affix).split
+    if (!sp) return
+    let n = 0
+    for (let i = 0; i < sp.count; i++) {
+      const h = this.spawn(sp.key, e.x + (i % 2 ? 10 : -10), e.y, e.hpMult, e.dmgMult)
+      if (!h) continue
+      n++
+      // they march or fight as their parent did, and count toward the night
+      h.fromWave = true
+      h.approach = e.approach
+      h.route = e.route
+      h.leg = e.leg
+      h.marching = e.marching
+    }
+    this.scene.waves.addWalkers(n)
   }
 
   despawn(e: Enemy) {
@@ -367,7 +413,7 @@ export class EnemyManager {
       // damage over time
       if (e.burnT > 0 && !e.shielded) {
         e.burnT -= dt
-        const tick = e.burnDps * dt
+        const tick = e.burnDps * dt * affixMods(e.affix).taken
         e.hp -= tick
         if (this.frame % 12 === 0) this.scene.fx.embers(e.x, e.y - e.radius, 1)
         if (e.hp <= 0) { e.alive = false; combat.killEnemy(e); continue }
@@ -611,6 +657,9 @@ export class EnemyManager {
 
   private strike(e: Enemy, t: Targetable) {
     const dmg = e.damage * e.auraDamage
+    // a vampiric champion heals a share of every blow it lands
+    const leech = affixMods(e.affix).leech
+    if (leech > 0) e.hp = Math.min(e.maxHp, e.hp + dmg * leech)
     const ang = Math.atan2(t.y - e.y, t.x - e.x)
     if (e.def.ranged) {
       this.scene.projectiles.fire(
@@ -840,6 +889,8 @@ export class EnemyManager {
       s.setTint(0xffd24a)
     } else if (stunned) {
       s.setTint(0x8fd0ff)
+    } else if (e.affix) {
+      s.setTint(affixMods(e.affix).tint)
     } else {
       s.clearTint()
     }
@@ -860,7 +911,7 @@ export class EnemyManager {
     const cam = this.scene.cameras.main
     const view = cam.worldView
     for (const e of this.list) {
-      if (!e.active || !e.alive || !e.def.healthbar) continue
+      if (!e.active || !e.alive || !(e.def.healthbar || e.affix)) continue
       if (!Phaser.Geom.Rectangle.Contains(view, e.x, e.y)) continue
       if (e.def.boss) continue // bosses get the big HUD bar instead
       const w = Math.max(30, e.radius * 2.4)
