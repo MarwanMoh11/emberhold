@@ -1,5 +1,6 @@
 import { PAL } from '../config/palette'
 import { rnd } from '../core/math'
+import { bountyMult, CHAIN_RANGE, chainChance, chainDamage, executeMult, thornsDamage } from './heroPerks'
 import type { Enemy } from '../entities/Enemy'
 import type { Targetable } from '../core/types'
 import type { GameScene } from '../scenes/GameScene'
@@ -34,13 +35,18 @@ export class CombatSystem {
       }
       return
     }
-    const dmg = Math.max(1, amount)
+    // Executioner: hero blows bite deeper into a foe already under the line
+    const stats = this.scene.player.stats
+    const dmg = Math.max(1, amount) * (fromPlayer ? executeMult(e.hp / e.maxHp, stats.executioner) : 1)
     const hpBefore = Math.max(0, e.hp)
     const killed = e.applyDamage(dmg, srcX, srcY, knockback)
     if (showNumber) this.scene.fx.damage(e.x, e.y - e.radius - 16, Math.round(dmg), crit)
-    if (fromPlayer && this.scene.player.stats.lifesteal > 0) {
-      this.scene.player.heal(Math.min(dmg, hpBefore) * this.scene.player.stats.lifesteal)
+    if (fromPlayer && stats.lifesteal > 0) {
+      this.scene.player.heal(Math.min(dmg, hpBefore) * stats.lifesteal)
     }
+    // Chain Spark: a discrete hero hit may arc on. Burn ticks are silent, so they never do.
+    const chance = fromPlayer && showNumber ? chainChance(stats.chainSpark) : 0
+    if (chance > 0 && rnd() < chance) this.arc(e, dmg)
     this.scene.audio.playVaried(crit ? 'crit' : 'hit', crit ? 0.9 : 0.45)
     if (killed) this.killEnemy(e)
   }
@@ -53,7 +59,9 @@ export class CombatSystem {
       this.scene.bus.emit('boss:killed', { name: def.name })
     }
 
-    this.scene.pickups.dropLoot(def, e.x, e.y, this.scene.player.stats.greed)
+    // Bounty Hunter: foes with a health bar pay more coin, and only coin
+    const stats = this.scene.player.stats
+    this.scene.pickups.dropLoot(def, e.x, e.y, stats.greed, bountyMult(!!(def.healthbar || def.elite), stats.bountyHunter))
 
     if (def.explodes) {
       this.scene.fx.explosion(e.x, e.y, def.explodes.radius, 0xff9840)
@@ -86,12 +94,36 @@ export class CombatSystem {
     this.scene.enemies.despawn(e)
   }
 
+  /** Chain Spark: the hit leaps to the nearest other foe in reach, carrying a share of its damage. */
+  private arc(from: Enemy, hit: number) {
+    let best: Enemy | null = null
+    let bestD = CHAIN_RANGE
+    for (const o of this.scene.enemies.grid.query(from.x, from.y, CHAIN_RANGE, this.scratch)) {
+      if (o === from || !o.alive || o.shielded) continue
+      const d = Math.hypot(o.x - from.x, o.y - from.y)
+      if (d <= bestD) { best = o; bestD = d }
+    }
+    if (!best) return
+    this.scene.fx.beam(from.x, from.y - from.radius, best.x, best.y - best.radius, 0xc8ff3a, 3)
+    // an arc is not a hero blow: it cannot lifesteal, execute or arc again
+    this.damageEnemy(best, chainDamage(hit), from.x, from.y, 0, false, false, true)
+  }
+
+  /** Thornmail: a melee foe takes back a share of the blow it just landed on the hero. */
+  private thornmail(foe: Enemy) {
+    const hero = this.scene.player
+    const back = thornsDamage(hero.lastBlow, hero.stats.thorns)
+    if (back > 0) this.damageEnemy(foe, back, foe.x, foe.y, 0, false, false, true)
+  }
+
   /** dev: the hero takes no damage (harness `H.god()`, S17) */
   god = false
 
-  damageAlly(t: Targetable, amount: number, srcX: number, srcY: number, knockback = 0) {
+  damageAlly(t: Targetable, amount: number, srcX: number, srcY: number, knockback = 0, attacker?: Enemy) {
     if (!t.alive || (this.god && t.kind === 'player')) return
     const killed = t.applyDamage(amount, srcX, srcY, knockback)
+    // Thornmail: a melee foe takes back part of the blow it just landed on the hero
+    if (attacker && t.kind === 'player') this.thornmail(attacker)
     // a holding outside the hold calls for help (R4)
     if (t.kind === 'building') this.scene.buildings.onStruck(t as never)
     if (t.kind !== 'player') {

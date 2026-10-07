@@ -7,6 +7,7 @@ export type UpgradeId =
   | 'longbow' | 'packMule' | 'regen' | 'armor' | 'knockback'
   | 'warlordAura' | 'scavenger' | 'splashShots' | 'quickHands' | 'bulwark'
   | 'masteryArms' | 'masteryVigor' | 'masteryCommand'
+  | 'thorns' | 'executioner' | 'chainSpark' | 'lastStand' | 'bountyHunter' | 'adrenaline'
 
 export interface UpgradeDef {
   id: UpgradeId
@@ -45,6 +46,38 @@ export interface PlayerStats {
   /** multiplies allied damage */
   troopDamage: number
   projectileSpeed: number
+  /** fight-changing picks: the rank taken, 0 when not (see systems/heroPerks.ts) */
+  thorns: number
+  executioner: number
+  chainSpark: number
+  lastStand: number
+  bountyHunter: number
+  adrenaline: number
+}
+
+/**
+ * Tuning for the six fight-changing picks. The rules that read these live in
+ * systems/heroPerks.ts; the numbers sit here with the rest of the upgrade data.
+ */
+export const HERO_PERK = {
+  /** Thornmail: share of a melee blow the attacker takes back, per rank */
+  thornsShare: 0.35,
+  /** Executioner: bonus hero damage per rank, against foes below the line */
+  executePerRank: 0.4,
+  executeBelow: 0.3,
+  /** Chain Spark: arc chance per rank, reach in px, and the arc's share of the hit */
+  chancePerRank: 0.15,
+  chainRange: 160,
+  chainShare: 0.6,
+  /** Bounty Hunter: extra coin per rank from foes with a health bar */
+  bountyPerRank: 0.5,
+  /** Adrenaline: attack and move speed bonus per rank, below the hp line */
+  adrenalineAttackPerRank: 0.3,
+  adrenalineMovePerRank: 0.15,
+  adrenalineBelow: 0.4,
+  /** Last Stand: hp fraction a fatal blow leaves, and seconds of invulnerability */
+  lastStandHp: 0.3,
+  lastStandSeconds: 2,
 }
 
 const U = (
@@ -74,6 +107,15 @@ export const UPGRADES: UpgradeDef[] = [
   U('splashShots', 'Shattering', 'Shots explode for area damage', 0xff9840, 3, 5, s => { s.splash += 46 }),
   U('quickHands', 'Quick Hands', '+15% projectile speed, +8% attack speed', 0x8fd0ff, 3, 5, s => { s.projectileSpeed *= 1.15; s.attackRate *= 1.08 }),
   U('bulwark', 'Bulwark', '+80 max health and +15% troop health', 0x5f6f8c, 3, 5, s => { s.maxHp += 80 }),
+
+  // Fights change shape here. Each apply records the rank reached; the rule
+  // that reads it lives in systems/heroPerks.ts.
+  U('thorns', 'Thornmail', 'Melee foes take back 35% of each blow', 0x9b5de5, 3, 7, (s, r) => { s.thorns = r }),
+  U('executioner', 'Executioner', '+40% damage to foes under 30% health', 0xc2439a, 3, 7, (s, r) => { s.executioner = r }),
+  U('chainSpark', 'Chain Spark', '15% chance a hit arcs to a nearby foe', 0xc8ff3a, 3, 6, (s, r) => { s.chainSpark = r }),
+  U('lastStand', 'Last Stand', 'Once a night, cheat death at 30% health', 0xfff1c9, 1, 7, (s, r) => { s.lastStand = r }),
+  U('bountyHunter', 'Bounty Hunter', '+50% coins from foes with health bars', 0x2fd6c0, 2, 8, (s, r) => { s.bountyHunter = r }),
+  U('adrenaline', 'Adrenaline', 'Under 40% health: +30% attack, +15% speed', 0xffe23a, 2, 6, (s, r) => { s.adrenaline = r }),
 
   // Endless nights keep granting a real choice once the capped boons are full.
   // Each rank gives a little less than the last, so mastery stays useful

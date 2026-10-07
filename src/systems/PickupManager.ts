@@ -154,8 +154,8 @@ export class PickupManager {
   }
 
   /** Scatter a whole loot table from a dead enemy. */
-  dropLoot(def: EnemyDef, x: number, y: number, greed: number) {
-    const coins = rollCoins(def, greed)
+  dropLoot(def: EnemyDef, x: number, y: number, greed: number, coinMult = 1) {
+    const coins = Math.round(rollCoins(def, greed) * coinMult)
     // a kill the hero is nowhere near (or down for): coins and xp are credited whole, no stacks
     const home = this.homeReach(x, y)
     if (!home) {
