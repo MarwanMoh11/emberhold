@@ -628,10 +628,21 @@ export class EnemyManager {
     const room = summonRoom(living, rule.count, rule.cap)
     if (room <= 0) return
     const ring = summonRing(e.x, e.y, rule.count, SUMMON_RADIUS, Math.random() * Math.PI * 2)
+    let n = 0
     for (let i = 0; i < room; i++) {
-      const s = this.spawn(rule.key, ring[i].x, ring[i].y)
-      if (s) s.summonerId = e.spawnId
+      const s = this.spawn(rule.key, ring[i].x, ring[i].y, e.hpMult, e.dmgMult)
+      if (!s) continue
+      s.summonerId = e.spawnId
+      // a night summoner's brood belongs to the night: it counts toward it and flees at dawn
+      if (!e.fromWave) continue
+      n++
+      s.fromWave = true
+      s.approach = e.approach
+      s.route = e.route
+      s.leg = e.leg
+      s.marching = e.marching
     }
+    if (n) this.scene.waves.addWalkers(n)
     this.scene.fx.ring(e.x, e.y, SUMMON_RADIUS + 10, e.def.colour, 0.5)
     this.scene.fx.embers(e.x, e.y - e.radius, 4)
   }
