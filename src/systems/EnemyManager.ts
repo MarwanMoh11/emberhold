@@ -9,6 +9,7 @@ import { walkRadius, type FlowField } from '../world/NavGrid'
 import { MARCH_SPEED, VIA_REACH, viaMid } from './Approaches'
 import { Grid } from '../core/Grid'
 import { applySlow, auraHealed, mergeAura, noAura, type Slow } from './walkers'
+import { blinkTarget, summonRing, summonRoom, SUMMON_RADIUS } from './newWalkers'
 import { BossKits } from './BossKits'
 import { BOSS_BAR_RANGE } from './bosses'
 import { affixMods, championCap, championChance, rollAffix } from './champions'
@@ -489,6 +490,10 @@ export class EnemyManager {
         if (!t && !home) { this.render(e, dt); continue }
         // a patrol with nothing to fight strolls about its camp, or walks back to it
         const goal = t ?? this.wanderGoal(e, home!, dt)
+        if (t) {
+          if (e.def.summons) this.summonTick(e, dt)
+          if (e.def.blinks) this.blinkTick(e, t, dt)
+        }
 
         const dx = goal.x - e.x
         const dy = goal.y - e.y
@@ -506,7 +511,12 @@ export class EnemyManager {
           }
         }
 
-        if (!t && d <= reach) {
+        if (e.def.keepsDistance && t && d <= e.def.keepsDistance) {
+          // keeps its distance: it holds, and summons from here, but never melees
+          e.state = 'attack'
+          e.vx *= 0.85
+          e.vy *= 0.85
+        } else if (!t && d <= reach) {
           e.state = 'move'
           e.vx *= 0.85
           e.vy *= 0.85
@@ -605,6 +615,41 @@ export class EnemyManager {
 
     // players and towers can be swarmed off-screen — let the HUD know
     this.drawBars()
+  }
+
+  /** A summoner's ring: `count` of its walkers round it every `every` s, never more than `cap` of its own alive. */
+  private summonTick(e: Enemy, dt: number) {
+    const rule = e.def.summons!
+    e.summonT -= dt
+    if (e.summonT > 0) return
+    e.summonT = rule.every
+    let living = 0
+    for (const o of this.list) if (o.active && o.alive && o.summonerId === e.spawnId) living++
+    const room = summonRoom(living, rule.count, rule.cap)
+    if (room <= 0) return
+    const ring = summonRing(e.x, e.y, rule.count, SUMMON_RADIUS, Math.random() * Math.PI * 2)
+    for (let i = 0; i < room; i++) {
+      const s = this.spawn(rule.key, ring[i].x, ring[i].y)
+      if (s) s.summonerId = e.spawnId
+    }
+    this.scene.fx.ring(e.x, e.y, SUMMON_RADIUS + 10, e.def.colour, 0.5)
+    this.scene.fx.embers(e.x, e.y - e.radius, 4)
+  }
+
+  /** A blinker's jump toward its target across open ground, a puff at both ends; a blocked landing is skipped. */
+  private blinkTick(e: Enemy, t: Targetable, dt: number) {
+    const rule = e.def.blinks!
+    e.blinkT -= dt
+    if (e.blinkT > 0) return
+    e.blinkT = rule.every
+    const nav = this.scene.nav
+    const to = blinkTarget(e, t, rule, (x, y) => nav.passableAt(x, y) && !nav.blockedAt(x, y))
+    if (!to) return
+    this.scene.fx.smoke(e.x, e.y - e.radius, 6)
+    e.x = to.x
+    e.y = to.y
+    e.vx = e.vy = 0
+    this.scene.fx.smoke(e.x, e.y - e.radius, 6)
   }
 
   /** Past its via crossing (within VIA_REACH of the midpoint, on the crossing, or nearer the hall than it): take the next leg. */
@@ -903,6 +948,8 @@ export class EnemyManager {
     } else {
       s.rotation *= 0.9
     }
+    // the shade's alpha breathes, out of step with its bob
+    if (e.def.blinks) s.setAlpha(0.72 + 0.22 * Math.sin(this.scene.now * 0.02 + e.bobSeed))
   }
 
   private drawBars() {
