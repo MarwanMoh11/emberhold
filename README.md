@@ -27,7 +27,7 @@ Then open <http://localhost:5180>.
 | Hire, recruit | stand on the camp or barracks |
 | Abilities | `SPACE`, `Q`, `E`, `F`, `G`, ultimate on `R` |
 | Army orders | the army button (top right) opens an orders panel: one row per company (infantry, archers, riders) with Defend, Follow and Hold. Hold plants a banner where the hero stands. `H` cycles every company's order |
-| Quest log | `J`, a tap on the quest tracker top centre, or d-pad up: the quest you are on (what to do next, progress, reward) and every quest of the act |
+| Quest log | `J`, a tap on the quest tracker top centre, or d-pad up: the quest you are on (what to do next, progress, reward) every quest of the act, and the day's contracts |
 | Atlas | `M`, the map button top right, or a tap on the minimap: the whole frontier as you have explored it |
 | Travel | walk onto a lit waystone (every outpost has one), or pick a lit stone in the atlas |
 | Pause | `ESC` or `P`, or the pause button top right |
@@ -97,6 +97,22 @@ deploys to tonight's front posts, where each road enters the hold. Chevrons on
 the screen edge point at walkers you cannot see and at raided holdings, and at
 dawn a small card sums the night up: kills, coins, what was swept, what was
 sacked.
+
+Some nights carry an omen, named at the warning. Every seventh night is a
+**Blood Moon**: a larger horde under a red sky, and every kill pays more. From
+night 4 a night may instead be a **Swarm Night** (extra Chitters) or a
+**Quiet Night** (a smaller horde, a breather). From night 3 a few walkers come
+as **champions**: tinted, tougher, and carrying one affix (Swift, Vampiric,
+Molten, Warded or Splitting); a champion pays three times the coins and a
+crystal. Two walkers join the horde later on: the **Ashen Shade** (night 6),
+which blinks toward the hero, and the **Hexcaller** (night 8), which hangs back
+and summons Chitters until it is cut down.
+
+At each dawn the hall posts three **contracts** for the coming day and night:
+cull a kind of walker, slay a number of them, lose no holding, raise
+buildings, recruit soldiers, or haul wood or stone. Each pays coins on the spot
+when met, sometimes crystal too, and all of them lapse at the next dawn. They
+are listed in the quest log.
 
 Progress saves to `localStorage` every 10 seconds, when you pause, and when the
 page is hidden. The previous valid save is kept as a fallback. Use **EXPORT FILE**
