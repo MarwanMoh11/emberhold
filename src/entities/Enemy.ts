@@ -111,6 +111,12 @@ export class Enemy implements Targetable {
   /** a patrol's path round what blocks its straight line (S06's queue), where it was aimed, and the next waypoint */
   path: PathTicket | null = null
   pathX = 0; pathY = 0; pathI = 0
+  /** a fresh number each spawn (bodies are pooled); a summoned walker carries its summoner's */
+  spawnId = 0
+  summonerId = 0
+  /** a summoner's countdown to its next ring; a blinker's to its next jump */
+  summonT = 0
+  blinkT = 0
 
   sprite!: Phaser.GameObjects.Image
 
@@ -174,6 +180,10 @@ export class Enemy implements Targetable {
     this.guard = false
     this.shielded = false
     this.path = null
+    this.spawnId = nextId()
+    this.summonerId = 0
+    this.summonT = def.summons?.every ?? 0
+    this.blinkT = def.blinks?.every ?? 0
 
     const tex = `enm_${def.key}`
     this.sprite.setTexture(tex)

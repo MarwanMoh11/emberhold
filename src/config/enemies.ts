@@ -6,6 +6,7 @@ export type EnemyKey =
   | 'siegeBeast' | 'warlord' | 'cinderRegent' | 'camp' | 'brazier'
   | 'bogWretch' | 'thornling' | 'ashPriest' | 'cinderHound'
   | 'gallowsKnight' | 'thornmother' | 'seamOverseer' | 'stairwarden'
+  | 'hexcaller' | 'shade'
 
 export type TargetPref = 'nearest' | 'structures' | 'workers' | 'player'
 
@@ -50,6 +51,12 @@ export interface EnemyDef {
   healthbar?: boolean
   /** stationary objective rather than a walking unit */
   structure?: boolean
+  /** a summoner raises `count` walkers of `key` round itself every `every` s, at most `cap` of its own alive */
+  summons?: { key: EnemyKey; count: number; every: number; cap: number }
+  /** a blinker jumps `range` px toward its target every `every` s, when the target is more than `minDist` away */
+  blinks?: { range: number; every: number; minDist: number }
+  /** holds this far from its target, and never melees */
+  keepsDistance?: number
 }
 
 export const ENEMIES: Record<EnemyKey, EnemyDef> = {
@@ -160,6 +167,21 @@ export const ENEMIES: Record<EnemyKey, EnemyDef> = {
     hp: 60, damage: 8, speed: 170, range: 28, attackRate: 1.2, radius: 14, scale: 1.05,
     colour: 0xff6a2a, accent: 0x5a2010, xp: 6, coins: 7, prefers: 'nearest',
     deathPatch: { radius: 56, dps: 14, seconds: 3 },
+  },
+  // ---- the summoner and the blinker (their rules are in systems/newWalkers.ts) ----
+  hexcaller: {
+    key: 'hexcaller', name: 'Hexcaller',
+    hp: 70, damage: 0, speed: 56, range: 0, attackRate: 0.01, radius: 15, scale: 1.15,
+    colour: 0x7fe0d0, accent: 0x2a1b40, xp: 12, coins: 16, prefers: 'nearest',
+    healthbar: true, keepsDistance: 200,
+    summons: { key: 'swarm', count: 3, every: 7, cap: 9 },
+    drops: [{ type: 'crystal', chance: 0.15, amount: 1 }],
+  },
+  shade: {
+    key: 'shade', name: 'Ashen Shade',
+    hp: 60, damage: 9, speed: 92, range: 30, attackRate: 1, radius: 13, scale: 1.05,
+    colour: 0x9fc0e6, accent: 0x3a4256, xp: 7, coins: 9, prefers: 'player',
+    blinks: { range: 150, every: 4, minDist: 120 },
   },
   // ---- S17: the stronghold bosses (05-content §Bosses; kits in systems/bosses.ts) ----
   gallowsKnight: {

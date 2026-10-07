@@ -1,5 +1,6 @@
 import type { EnemyKey } from './enemies'
 import type { ApproachId } from '../systems/Approaches'
+import { inDeck } from '../systems/newWalkers'
 
 export interface WaveDef {
   wave: number
@@ -19,19 +20,22 @@ export interface WaveDef {
   spread?: number
 }
 
+// The ashen shade joins from night 6 and the hexcaller from night 8 (DECK_FROM in
+// systems/newWalkers.ts). Each takes its share of its night from the grunts, runners
+// and swarm, so every scripted night keeps its first-pass total (pacing.test pins night 9).
 export const WAVES: WaveDef[] = [
   { wave: 1, enemies: { grunt: 8 }, banner: 'Scouts on the ridge', spread: 5 },
   { wave: 2, enemies: { grunt: 12, runner: 4 }, spread: 6 },
   { wave: 3, enemies: { grunt: 16, runner: 8 }, spread: 7 },
-  { wave: 4, enemies: { grunt: 20, runner: 10, brute: 3 }, banner: 'Brutes in the line', spread: 8 },
-  { wave: 5, enemies: { grunt: 18, runner: 10, brute: 4 }, boss: 'siegeBeast', banner: 'A SIEGE BEAST IS COMING', spread: 9 },
-  { wave: 6, enemies: { grunt: 24, runner: 14, swarm: 20 }, spread: 9 },
-  { wave: 7, enemies: { grunt: 22, archer: 8, brute: 4, runner: 10 }, banner: 'They brought slingers', spread: 9 },
-  { wave: 8, enemies: { grunt: 26, archer: 10, shield: 6, bomber: 4, runner: 12 }, spread: 10 },
-  { wave: 9, enemies: { grunt: 24, archer: 12, brute: 6, elite: 2, swarm: 30 }, banner: 'Champions among them', spread: 10 },
-  { wave: 10, enemies: { grunt: 30, archer: 12, shield: 8, brute: 6, bomber: 6 }, boss: 'warlord', banner: 'WARLORD KRAHN MARCHES', spread: 12 },
-  { wave: 11, enemies: { grunt: 34, runner: 20, archer: 14, shield: 8, commander: 2 }, spread: 11 },
-  { wave: 12, enemies: { grunt: 36, brute: 10, elite: 3, bomber: 8, swarm: 40 }, spread: 12 },
+  { wave: 4, enemies: { grunt: 17, runner: 10, brute: 3, shade: 3 }, banner: 'Brutes in the line', spread: 8 },
+  { wave: 5, enemies: { grunt: 14, runner: 8, brute: 4, shade: 4, hexcaller: 2 }, boss: 'siegeBeast', banner: 'A SIEGE BEAST IS COMING', spread: 9 },
+  { wave: 6, enemies: { grunt: 20, runner: 12, swarm: 20, shade: 4, hexcaller: 2 }, spread: 9 },
+  { wave: 7, enemies: { grunt: 16, archer: 8, brute: 4, runner: 9, shade: 5, hexcaller: 2 }, banner: 'They brought slingers', spread: 9 },
+  { wave: 8, enemies: { grunt: 22, archer: 9, shield: 6, bomber: 4, runner: 9, shade: 5, hexcaller: 3 }, spread: 10 },
+  { wave: 9, enemies: { grunt: 20, archer: 11, brute: 6, elite: 2, swarm: 26, shade: 6, hexcaller: 3 }, banner: 'Champions among them', spread: 10 },
+  { wave: 10, enemies: { grunt: 25, archer: 11, shield: 7, brute: 5, bomber: 5, shade: 6, hexcaller: 3 }, boss: 'warlord', banner: 'WARLORD KRAHN MARCHES', spread: 12 },
+  { wave: 11, enemies: { grunt: 29, runner: 17, archer: 12, shield: 7, commander: 2, shade: 7, hexcaller: 4 }, spread: 11 },
+  { wave: 12, enemies: { grunt: 32, brute: 9, elite: 3, bomber: 8, swarm: 33, shade: 8, hexcaller: 4 }, spread: 12 },
 ]
 
 /**
@@ -76,6 +80,8 @@ export function proceduralWave(wave: number): WaveDef {
       swarm: Math.round(24 * s),
       elite: 2 + Math.floor(t / 2),
       commander: 1 + Math.floor(t / 3),
+      shade: Math.round(6 * s),
+      hexcaller: 3 + Math.floor(t / 3),
     },
     // S22: 0.22/0.13 left the hold at 2-4% hall most nights from 28, towers up (FRONTS already eased)
     hpMult: 1 + t * GROWTH.hp,
@@ -101,7 +107,7 @@ export function waveDef(wave: number): WaveDef {
   const enemies: WaveDef['enemies'] = {}
   for (const key of new Set([...Object.keys(a.enemies), ...Object.keys(b.enemies)]) as Set<EnemyKey>) {
     const n = Math.round((a.enemies[key] ?? 0) * (1 - f) + (b.enemies[key] ?? 0) * f)
-    if (n > 0) enemies[key] = n
+    if (n > 0 && inDeck(key, wave)) enemies[key] = n
   }
   return { wave, enemies, spread: a.spread }
 }

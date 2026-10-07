@@ -1010,6 +1010,89 @@ function bakeSwarm(scene: Phaser.Scene, key: string, H: number, g: number) {
   })
 }
 
+/** S18: the hexcaller, a hooded summoner: a staff with a crystal focus that glows, and a glow pooled under its robe. */
+function bakeHexcaller(scene: Phaser.Scene, key: string, H: number, g: number) {
+  const w = Math.ceil(H * 2 + 18), h = Math.ceil(H * 1.9 + FOOT + 8)
+  const cx = w / 2, by = h - FOOT
+  const k = H / 16
+  const ROBE = 0x2a1f3c, HOOD = 0x3b2c54, WOOD = 0x6b4a2e, HOLLOW = 0x120c1c
+  const fx = cx + 0.42 * H, fy = by - 1.44 * H, fr = 0.11 * H
+  const face = by - 1.04 * H
+  bake(scene, key, w, h, {
+    under: x => {
+      fill(x, P.ellipse(cx, by - 1, 0.44 * H, 0.12 * H), g, 0.14)
+      line(x, x2 => { x2.ellipse(cx, by - 1, 0.44 * H, 0.12 * H, 0, 0, Math.PI * 2) }, 1, g, 0.4)
+    },
+    body: x => {
+      // the robe: a bell with a flared hem, its trim lit by the glow
+      const robe = P.blob([
+        [cx - 0.46 * H, by], [cx - 0.3 * H, by - 0.6 * H], [cx - 0.2 * H, by - 0.9 * H],
+        [cx + 0.2 * H, by - 0.9 * H], [cx + 0.3 * H, by - 0.6 * H], [cx + 0.46 * H, by],
+      ], 0.4)
+      form(x, robe, ROBE, { rim: 1.2, core: 2.4, hatch: 0.12 })
+      line(x, x2 => { x2.moveTo(cx - 0.44 * H, by - 0.05 * H); x2.quadraticCurveTo(cx, by - 0.14 * H, cx + 0.44 * H, by - 0.05 * H) }, 1.1 * k, g, 0.6)
+      // the hood, pointed, its opening dark
+      const hood = P.blob([
+        [cx - 0.28 * H, by - 0.84 * H], [cx - 0.16 * H, by - 1.22 * H], [cx, by - 1.52 * H],
+        [cx + 0.16 * H, by - 1.22 * H], [cx + 0.28 * H, by - 0.84 * H],
+      ], 0.6)
+      form(x, hood, HOOD, { rim: 1.2, core: 2 })
+      rimLight(x, hood, mix(g, HOOD, 0.45), 1)
+      fill(x, P.ellipse(cx, face, 0.13 * H, 0.15 * H), HOLLOW, 0.95)
+      // the staff, its crystal focus held at the top
+      line(x, x2 => { x2.moveTo(cx + 0.44 * H, by - 0.02 * H); x2.quadraticCurveTo(cx + 0.47 * H, by - 0.8 * H, fx, fy + fr) }, 1.6 * k, WOOD, 1)
+      form(x, P.poly([[fx, fy - fr * 1.4], [fx + fr, fy], [fx, fy + fr * 1.1], [fx - fr, fy]]), mix(g, 0xffffff, 0.35), { rim: 0.8, core: 1.2 })
+      // a bone hand on the staff
+      form(x, P.ellipse(cx + 0.4 * H, by - 0.62 * H, 0.06 * H, 0.05 * H, -0.4), mix(PAL.bone, ROBE, 0.2), { rim: 0.6, core: 0.8 })
+    },
+    over: x => {
+      glow(x, fx, fy, fr * 4, g, 0.6)
+      fill(x, P.ellipse(fx - fr * 0.3, fy - fr * 0.4, fr * 0.35, fr * 0.25, -0.6), 0xffffff, 0.7)
+      emberEyes(x, cx - 0.1 * H, face, 0.2 * H, 0.06 * H, g)
+    },
+    outline: 1.3,
+    grain: 0.12,
+  })
+}
+
+/** S18: the ashen shade, a tattered shroud that hangs a hand above the ground, half seen through. */
+function bakeShade(scene: Phaser.Scene, key: string, H: number, g: number) {
+  const w = Math.ceil(H * 2 + 18), h = Math.ceil(H * 1.7 + FOOT + 8)
+  const cx = w / 2, by = h - FOOT
+  const k = H / 16
+  const SHROUD = 0x8a97ad, DEEP = 0x3b4558, HOLLOW = 0x0d1119
+  const hem = by - 0.2 * H
+  bake(scene, key, w, h, {
+    under: x => {
+      fill(x, P.ellipse(cx, by, 0.32 * H, 0.08 * H), 0x1a1620, 0.3)
+      glow(x, cx, by - 0.4 * H, 0.55 * H, g, 0.2)
+    },
+    body: x => {
+      // the shroud, its hem torn into points and clear of the ground
+      const shroud = P.blob([
+        [cx - 0.3 * H, by - 0.92 * H], [cx - 0.34 * H, by - 0.5 * H], [cx - 0.28 * H, by - 0.3 * H],
+        [cx - 0.38 * H, hem - 0.04 * H], [cx - 0.2 * H, hem - 0.12 * H], [cx - 0.12 * H, hem],
+        [cx - 0.03 * H, hem - 0.1 * H], [cx + 0.04 * H, hem - 0.02 * H], [cx + 0.13 * H, hem - 0.1 * H],
+        [cx + 0.22 * H, hem - 0.02 * H], [cx + 0.36 * H, hem - 0.06 * H], [cx + 0.3 * H, by - 0.3 * H],
+        [cx + 0.34 * H, by - 0.5 * H], [cx + 0.3 * H, by - 0.92 * H],
+      ], 0.15)
+      fill(x, shroud, SHROUD, 0.6)
+      rimLight(x, shroud, mix(g, 0xffffff, 0.3), 1.1)
+      // folds, and wisps torn off the sides
+      line(x, x2 => { x2.moveTo(cx - 0.12 * H, by - 0.8 * H); x2.quadraticCurveTo(cx - 0.16 * H, by - 0.5 * H, cx - 0.08 * H, hem - 0.1 * H) }, 0.9 * k, DEEP, 0.4)
+      line(x, x2 => { x2.moveTo(cx + 0.14 * H, by - 0.78 * H); x2.quadraticCurveTo(cx + 0.18 * H, by - 0.46 * H, cx + 0.1 * H, hem - 0.12 * H) }, 0.9 * k, DEEP, 0.4)
+      line(x, x2 => { x2.moveTo(cx - 0.3 * H, by - 0.5 * H); x2.quadraticCurveTo(cx - 0.5 * H, by - 0.42 * H, cx - 0.46 * H, by - 0.26 * H) }, 1 * k, SHROUD, 0.5)
+      line(x, x2 => { x2.moveTo(cx + 0.3 * H, by - 0.6 * H); x2.quadraticCurveTo(cx + 0.5 * H, by - 0.5 * H, cx + 0.44 * H, by - 0.34 * H) }, 1 * k, SHROUD, 0.5)
+      // the hood, dark, with its hollow face
+      fill(x, P.ellipse(cx, by - 1.0 * H, 0.2 * H, 0.23 * H), DEEP, 0.85)
+      fill(x, P.ellipse(cx, by - 0.98 * H, 0.13 * H, 0.1 * H), HOLLOW, 0.9)
+    },
+    over: x => emberEyes(x, cx - 0.08 * H, by - 0.98 * H, 0.16 * H, 0.05 * H, g),
+    outline: 1.2,
+    grain: 0.12,
+  })
+}
+
 /** The siege beast: a horned ram-thing hauling a spiked battering sledge. */
 function bakeSiegeBeast(scene: Phaser.Scene, key: string, H: number, g: number) {
   const w = Math.ceil(H * 1.9 + 30), h = Math.ceil(H * 1.25 + FOOT + 14)
@@ -1123,6 +1206,8 @@ export function buildUnitTextures(scene: Phaser.Scene) {
     if (def.key === 'siegeBeast') { bakeSiegeBeast(scene, 'enm_siegeBeast', h, def.colour); continue }
     if (def.key === 'thornling') { bakeThornling(scene, 'enm_thornling', h, def.colour); continue }
     if (def.key === 'cinderHound') { bakeHound(scene, 'enm_cinderHound', h, def.colour); continue }
+    if (def.key === 'hexcaller') { bakeHexcaller(scene, 'enm_hexcaller', h, def.colour); continue }
+    if (def.key === 'shade') { bakeShade(scene, 'enm_shade', h, def.colour); continue }
     const boss = BOSS_PAINTERS[def.key]
     if (boss) { boss(scene, `enm_${def.key}`, h, def.colour); continue } // S17: the stronghold bosses
     const spec = HORDE[def.key] ?? { build: 'husk' as const }
