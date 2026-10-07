@@ -2,7 +2,8 @@ import Phaser from 'phaser'
 import { PLAYER, HERO_TIERS, XP } from '../config/balance'
 import { HALL, WORLD } from '../config/world'
 import { PAL } from '../config/palette'
-import type { PlayerStats } from '../config/upgrades'
+import { HERO_PERK, type PlayerStats } from '../config/upgrades'
+import { adrenalineMults, lastStandHp } from '../systems/heroPerks'
 import { clamp, dist } from '../core/math'
 import { nextId } from '../core/ids'
 import { CarryStack } from './CarryStack'
@@ -19,6 +20,7 @@ export function freshStats(): PlayerStats {
     carryCapacity: PLAYER.carryCapacity, lifesteal: PLAYER.lifesteal, knockback: PLAYER.knockback,
     multishot: PLAYER.multishot, pierce: PLAYER.pierce, regen: PLAYER.regen, splash: 0,
     greed: 1, troopDamage: 1, projectileSpeed: PLAYER.projectileSpeed,
+    thorns: 0, executioner: 0, chainSpark: 0, lastStand: 0, bountyHunter: 0, adrenaline: 0,
   }
 }
 
@@ -63,6 +65,13 @@ export class Player implements Targetable {
   buffDamage = 1
   buffRate = 1
 
+  /** post-armour damage of the last blow that landed, 0 if none (Thornmail) */
+  lastBlow = 0
+  /** Last Stand: armed again at each night's start (wave:start) */
+  private lastStandReady = true
+  /** seconds of invulnerability left from a Last Stand */
+  private lastStandT = 0
+
   readonly container: Phaser.GameObjects.Container
   readonly sprite: Phaser.GameObjects.Image
   private shadow: Phaser.GameObjects.Image
@@ -83,6 +92,8 @@ export class Player implements Targetable {
     this.container.add([this.shadow, this.aura, this.sprite])
     this.carryStack = new CarryStack(scene, this.container)
     this.container.setDepth(0)
+    // each night arms Last Stand again
+    scene.bus.on('wave:start', () => { this.lastStandReady = true })
   }
 
   get tierIndex() {
@@ -133,9 +144,11 @@ export class Player implements Targetable {
   }
 
   applyDamage(amount: number, srcX: number, srcY: number, knockback = 0): boolean {
-    if (!this.alive || this.invincible || this.dodgeTime > 0 || this.respawnShieldT > 0) return false
+    this.lastBlow = 0
+    if (!this.alive || this.invincible || this.dodgeTime > 0 || this.respawnShieldT > 0 || this.lastStandT > 0) return false
     const dmg = Math.max(1, amount - this.stats.armor)
     this.hp -= dmg
+    this.lastBlow = dmg
     this.flashUntil = this.scene.now + 120
     if (knockback > 0) {
       const d = Math.max(1, dist(srcX, srcY, this.x, this.y))
@@ -146,6 +159,18 @@ export class Player implements Targetable {
       this.scene.audio.playVaried('playerHurt', 0.8)
       this.hurtCd = 0.25
       this.scene.fx.shake(0.006, 0.12)
+    }
+    if (this.hp <= 0 && this.lastStandReady && this.stats.lastStand > 0) {
+      // Last Stand: the fatal blow leaves the hero standing, briefly untouchable
+      this.lastStandReady = false
+      this.lastStandT = HERO_PERK.lastStandSeconds
+      this.hp = lastStandHp(this.maxHp)
+      this.flashUntil = this.scene.now + 400
+      this.scene.fx.flash(0xfff1c9, 0.3)
+      this.scene.fx.ring(this.x, this.y - 12, 150, PAL.gold, 0.6)
+      this.scene.fx.popup(this.x, this.y - 70, 'LAST STAND', PAL.gold, 24)
+      this.scene.audio.play('levelup')
+      return false
     }
     if (this.hp <= 0) { this.die(); return true }
     return false
@@ -183,6 +208,7 @@ export class Player implements Targetable {
     }
     this.respawnShieldT = Math.max(0, this.respawnShieldT - dt)
     tickSlow(this.slow, dt)
+    this.lastStandT = Math.max(0, this.lastStandT - dt)
 
     const regen = this.scene.mods?.value('hero.regen', this.stats.regen) ?? this.stats.regen
     if (regen > 0 && this.hp < this.maxHp) {
@@ -190,7 +216,7 @@ export class Player implements Targetable {
     }
 
     const len = Math.hypot(inputX, inputY)
-    const speed = this.stats.moveSpeed * slowMult(this.slow)
+    const speed = this.stats.moveSpeed * slowMult(this.slow) * adrenalineMults(this.hp / this.maxHp, this.stats.adrenaline).move
     if (this.dodgeTime > 0) {
       this.dodgeTime = Math.max(0, this.dodgeTime - dt)
       this.vx = this.dodgeX * PLAYER.dodgeSpeed
@@ -230,7 +256,7 @@ export class Player implements Targetable {
     this.sprite.setFlipX(this.facing < 0)
     this.sprite.rotation = this.moving ? Math.sin(this.bob * 0.5) * 0.035 * this.facing : 0
     this.sprite.setAlpha(this.dodgeTime > 0 ? 0.7 : 1)
-    const shielded = this.respawnShieldT > 0
+    const shielded = this.respawnShieldT > 0 || this.lastStandT > 0
     this.aura.setVisible(this.tier >= 2 || shielded)
       .setTint(shielded ? PAL.heroTrim : this.tier >= 3 ? PAL.gold : PAL.heroTrim)
       .setAlpha(shielded
@@ -266,7 +292,8 @@ export class Player implements Targetable {
   canAttack() { return this.alive && this.attackCd <= 0 }
 
   noteAttack() {
-    this.attackCd = 1 / Math.max(0.05, this.stats.attackRate * this.buffRate)
+    const adrenal = adrenalineMults(this.hp / this.maxHp, this.stats.adrenaline).attack
+    this.attackCd = 1 / Math.max(0.05, this.stats.attackRate * this.buffRate * adrenal)
   }
 
   get damage() { return this.stats.damage * this.buffDamage }

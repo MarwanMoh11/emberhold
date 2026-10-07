@@ -154,10 +154,10 @@ export class PickupManager {
       .setDepth(y)
   }
 
-  /** Scatter a whole loot table from a dead enemy; a champion's `bounty` multiplies its coins and adds drops. */
-  dropLoot(def: EnemyDef, x: number, y: number, greed: number, bounty?: ChampionBounty) {
+  /** Scatter a whole loot table from a dead enemy; a champion's `bounty` multiplies its coins and adds drops, `coinMult` (Bounty Hunter) its coins. */
+  dropLoot(def: EnemyDef, x: number, y: number, greed: number, bounty?: ChampionBounty, coinMult = 1) {
     // an omen pays more per kill while its night is on
-    const coins = Math.round(rollCoins(def, greed) * (bounty?.coins ?? 1) * (this.scene.waves.omen?.coinMult ?? 1))
+    const coins = Math.round(rollCoins(def, greed) * (bounty?.coins ?? 1) * coinMult * (this.scene.waves.omen?.coinMult ?? 1))
     // a kill the hero is nowhere near (or down for): coins and xp are credited whole, no stacks
     const home = this.homeReach(x, y)
     if (!home) {

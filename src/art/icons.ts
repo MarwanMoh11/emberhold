@@ -192,6 +192,59 @@ const GLYPHS: Record<string, Glyph> = {
     for (const ox of [-9, 0, 9]) fill(x, P.circle(C + ox, C + 6, 2.4), ox === 0 ? PAL.wax : PAL.lapis)
   },
 
+  // ---- the hero perks: thorns, executing blow, arc, last stand, bounty, adrenaline
+  thorns: x => {
+    line(x, xx => { xx.moveTo(C - 16, C + 14); xx.quadraticCurveTo(C, C - 4, C + 14, C - 14) }, 2.4, 0x5a6a2e, 1)
+    for (const [tx, ty, a] of [[C - 8, C + 4, -2.3], [C + 2, C - 2, -1.1], [C + 7, C - 9, -0.4]] as const) {
+      x.save(); x.translate(tx, ty); x.rotate(a)
+      form(x, P.poly([[-3.5, 0], [3.5, 0], [0, -10]]), 0x9b5de5, { rim: 0.5, core: 0.9 })
+      x.restore()
+    }
+    fill(x, P.circle(C + 14, C - 15, 3.4), 0x9b5de5)
+  },
+  skull: x => {
+    form(x, xx => {
+      xx.arc(C, C - 3, 14, Math.PI, 0)
+      xx.lineTo(C + 12, C + 9); xx.quadraticCurveTo(C, C + 14, C - 12, C + 9)
+      xx.closePath()
+    }, BONE, INKED)
+    fill(x, P.circle(C - 5.5, C - 3, 3.6), 0x121014)
+    fill(x, P.circle(C + 5.5, C - 3, 3.6), 0x121014)
+    fill(x, P.poly([[C, C + 2], [C - 2, C + 6], [C + 2, C + 6]]), 0x121014)
+  },
+  bolt: x => {
+    form(x, P.poly([[C + 4, C - 19], [C - 10, C + 3], [C - 1, C + 3], [C - 5, C + 19], [C + 11, C - 4], [C + 2, C - 4]]), 0xc8ff3a, { rim: 1, core: 2, light: 0xf4ffd0 })
+  },
+  flame: x => {
+    form(x, xx => {
+      xx.moveTo(C, C - 19)
+      xx.quadraticCurveTo(C + 16, C - 2, C + 11, C + 9)
+      xx.quadraticCurveTo(C + 8, C + 18, C, C + 18)
+      xx.quadraticCurveTo(C - 8, C + 18, C - 11, C + 9)
+      xx.quadraticCurveTo(C - 16, C - 2, C, C - 19)
+      xx.closePath()
+    }, 0xff8a3a, { rim: 1, core: 2.2, light: 0xfff0b0 })
+    fill(x, P.blob([[C, C + 2], [C + 6, C + 9], [C, C + 15], [C - 6, C + 9]], 0.6), 0xfff4d8)
+  },
+  target: x => {
+    line(x, P.circle(C, C, 16), 2.4, 0xd84a3a, 1)
+    line(x, P.circle(C, C, 7), 2, 0xd84a3a, 1)
+    line(x, xx => {
+      xx.moveTo(C - 22, C); xx.lineTo(C - 11, C); xx.moveTo(C + 11, C); xx.lineTo(C + 22, C)
+      xx.moveTo(C, C - 22); xx.lineTo(C, C - 11); xx.moveTo(C, C + 11); xx.lineTo(C, C + 22)
+    }, 2, 0xd84a3a, 1)
+    fill(x, P.circle(C, C, 3), BONE)
+  },
+  syringe: x => {
+    x.save(); x.translate(C, C); x.rotate(-Math.PI / 4)
+    line(x, xx => { xx.moveTo(-23, 0); xx.lineTo(-16, 0) }, 1.6, BONE, 1)
+    form(x, P.round(-16, -6.5, 25, 13, 3), BONE, { rim: 0.8, core: 1.8 })
+    fill(x, P.rect(-12, -3.5, 17, 7), 0xffe23a)
+    line(x, xx => { xx.moveTo(9, 0); xx.lineTo(19, 0) }, 2.6, 0x8a5a32, 1)
+    form(x, P.round(17, -6, 4, 12, 1.5), 0x8a5a32, { rim: 0.4, core: 0.8 })
+    x.restore()
+  },
+
   // ---- the HUD's own marks ---------------------------------------------------
   sun: x => {
     for (let i = 0; i < 12; i++) {
@@ -255,6 +308,8 @@ export const UPGRADE_ICON: Record<UpgradeId, string> = {
   regen: 'ico_leaf', armor: 'ico_shield', knockback: 'ico_fist', warlordAura: 'ico_banner',
   scavenger: 'ico_coin', splashShots: 'ico_burst', quickHands: 'ico_feather', bulwark: 'ico_tower',
   masteryArms: 'ico_crown', masteryVigor: 'ico_heart', masteryCommand: 'ico_banner',
+  thorns: 'ico_thorns', executioner: 'ico_skull', chainSpark: 'ico_bolt', lastStand: 'ico_flame',
+  bountyHunter: 'ico_target', adrenaline: 'ico_syringe',
 }
 
 /**

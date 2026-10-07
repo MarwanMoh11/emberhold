@@ -728,7 +728,7 @@ export class EnemyManager {
       )
       this.scene.audio.playVaried('shoot', 0.18)
     } else {
-      this.scene.combat.damageAlly(t, dmg, e.x, e.y, e.def.boss ? 220 : 40)
+      this.scene.combat.damageAlly(t, dmg, e.x, e.y, e.def.boss ? 220 : 40, e)
       const sl = e.def.slows
       if (sl && t.alive && (t.kind === 'player' || t.kind === 'soldier')) {
         applySlow((t as unknown as { slow: Slow }).slow, sl.mult, sl.seconds)
