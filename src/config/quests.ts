@@ -1,4 +1,5 @@
-import type { ResourceBag } from '../core/types'
+import { RESOURCE_ORDER, type ResourceBag } from '../core/types'
+import { short } from '../core/math'
 import type { BuildingKey } from './buildings'
 import type { EnemyKey } from './enemies'
 import { PADS, POIS, REGIONS, type RegionId } from './world'
@@ -56,6 +57,20 @@ export const ACTS: ActDef[] = [
 
 /** 1-based act of a quest, from its id's letter. */
 export const actOf = (q: Pick<QuestDef, 'id'>) => 'abcde'.indexOf(q.id[0]) + 1
+
+/** A quest's act, its place in that act (1-based) and the act's length: "quest 3 of 14, act I". */
+export function questPlace(q: Pick<QuestDef, 'id'>) {
+  const act = actOf(q)
+  const list = QUESTS.filter(d => actOf(d) === act)
+  return { act, n: list.findIndex(d => d.id === q.id) + 1, of: list.length }
+}
+
+/** A reward as it reads on a card: `+60 coins  ·  +60 wood  ·  +12 xp`. */
+export function rewardText(r: QuestDef['reward']) {
+  const parts = RESOURCE_ORDER.filter(k => r[k]).map(k => `+${short(r[k] ?? 0)} ${k}`)
+  if (r.xp) parts.push(`+${short(r.xp)} xp`)
+  return parts.join('  ·  ')
+}
 
 /** Banners for camps whose burning changes the nights (design 06: b9, c4). */
 export const CAMP_BANNERS: Record<string, [string, string]> = {

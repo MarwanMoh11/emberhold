@@ -4,7 +4,7 @@ import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { ABILITIES, ABILITY_KEYS, ABILITY_SLOTS } from '../config/abilities'
 import { PLAYER, POI } from '../config/balance'
 import { POIS, REGION_BY_ID } from '../config/world'
-import { CAMP_BANNERS } from '../config/quests'
+import { ACTS, CAMP_BANNERS } from '../config/quests'
 import { clamp, short } from '../core/math'
 import { DPR, IS_TOUCH, safeAreaInsets, wantsTouchTargets } from '../core/device'
 import { ABILITY_ICON } from '../art/icons'
@@ -78,9 +78,18 @@ export class HUD {
   private xpBar: SkinBar
 
   private objPanel: SkinPanel
+  /** "Quest 3 of 14 · Act I ›": where you are in the chain, and that the card opens the log */
+  private objHead: Phaser.GameObjects.Text
   private objTitle: Phaser.GameObjects.Text
   private objHint: Phaser.GameObjects.Text
   private objBar: SkinBar
+  /** the whole tracker is one tap target: it opens the quest log */
+  private objZone: Phaser.GameObjects.Zone
+  /** the hint's wrap is redone only when its words or the card's width change */
+  private objSig = ''
+  private lastQuest = -1
+  /** seconds left on the "New quest" flag after the chain moves on */
+  private newQuestT = 0
   private phaseIcon: Phaser.GameObjects.Image
   private phaseText: Phaser.GameObjects.Text
 
@@ -168,9 +177,13 @@ export class HUD {
 
     // ---- the day and the objective ------------------------------------------
     this.objPanel = panel('hud', D.panel, 0.5)
+    this.objHead = t({ voice: 'caps', size: 10, weight: '800', colour: PAL.uiDim })
     this.objTitle = t({ size: 15, weight: '800', colour: PAL.bone })
-    this.objHint = t({ size: 12, weight: '600', colour: PAL.gold })
+    this.objHint = t({ size: 12, weight: '600', colour: PAL.gold, align: 'center' }, 0.5, 0)
     this.objBar = bar(PAL.gold)
+    this.objZone = ui.add.zone(0, 0, 10, 10).setOrigin(0, 0).setScrollFactor(0)
+      .setInteractive({ useHandCursor: true })
+    this.objZone.on('pointerdown', () => { if (!this.blocked) this.ui.events.emit('openQuests') })
     this.phaseIcon = ui.add.image(0, 0, 'ico_sun').setScrollFactor(0).setDepth(D.text)
     this.phaseText = t({ voice: 'caps', size: 12, weight: '800', colour: PAL.uiDim }, 0, 0.5)
 
@@ -539,22 +552,49 @@ export class HUD {
     const objW = narrow ? Math.max(160, this.W - padR - resW - 10 - padL) : Math.min(320, room)
     const objX = narrow ? padL : this.W / 2 - objW / 2
     const objY = narrow ? padT + HERO_PLATE_H + 8 : padT
-    const objH = q ? 64 : 26
+    // A mission tracker: where you are in the chain, the quest, and the one
+    // thing to do next (wrapping to two lines rather than shrinking to dust).
+    const qi = g.quests.index
+    if (qi !== this.lastQuest) {
+      if (this.lastQuest >= 0) this.newQuestT = 4
+      this.lastQuest = qi
+    }
+    this.newQuestT = Math.max(0, this.newQuestT - dt)
+    if (q) {
+      const sig = `${q.hint}|${q.need > 1 ? `${q.have}/${q.need}` : ''}|${Math.round(objW)}`
+      if (sig !== this.objSig) {
+        this.objSig = sig
+        this.objHint.setText(`${q.hint}${q.need > 1 ? `  ·  ${short(q.have)}/${short(q.need)}` : ''}`)
+          .setWordWrapWidth(objW - 24, true)
+        for (let size = 12; size >= 10; size--) {
+          this.objHint.setFontSize(size)
+          if (this.objHint.height <= size * 2.8) break
+        }
+      }
+    }
+    const objH = q ? 64 + Math.ceil(this.objHint.height) : 26
     const cx = objX + objW / 2
     this.objPanel.place(objX, objY, objW, objH)
     const or = this.objRect
     or.x = objX; or.y = objY; or.w = objW; or.h = objH
     if (q) {
-      this.objTitle.setText(q.title).setPosition(cx, objY + 31)
+      const fresh = this.newQuestT > 0
+      const head = fresh ? 'New quest'
+        : q.place ? `Quest ${q.place.n} of ${q.place.of}  ·  Act ${ACTS[q.place.act - 1]?.roman ?? ''}`
+        : 'Campaign complete'
+      setColour(this.objHead.setText(`${head}  ›`), fresh ? PAL.gold : PAL.uiDim).setPosition(cx, objY + 31)
+      this.fit(this.objHead, 10, objW - 24)
+      this.objTitle.setText(q.title).setPosition(cx, objY + 46)
       this.fit(this.objTitle, 15, objW - 24)
-      this.objHint.setText(`${q.hint}${q.need > 1 ? `  ·  ${short(q.have)}/${short(q.need)}` : ''}`).setPosition(cx, objY + 47)
-      this.fit(this.objHint, 12, objW - 24)
+      this.objHint.setPosition(cx, objY + 56)
       this.objBar.place(objX + 14, objY + objH - 6, objW - 28, 2)
       this.objBar.set(q.need > 0 ? clamp(q.have / q.need, 0, 1) : 1)
     }
+    this.objHead.setVisible(!!q)
     this.objTitle.setVisible(!!q)
     this.objHint.setVisible(!!q)
     this.objBar.setVisible(!!q)
+    this.objZone.setPosition(objX, objY).setSize(live ? objW : 1, live ? objH : 1)
     // tell world-space cards how much of the screen we are covering
     g.uiBands.top = objY + objH + 8
     g.uiBands.left = narrow ? objY + objH : padT + HERO_PLATE_H

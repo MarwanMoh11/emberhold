@@ -1,4 +1,4 @@
-import { QUESTS, ACHIEVEMENTS, ACTS, actOf, type QuestDef } from '../config/quests'
+import { QUESTS, ACHIEVEMENTS, ACTS, actOf, questPlace, rewardText, type QuestDef } from '../config/quests'
 import { PAL } from '../config/palette'
 import { RESOURCE_ORDER, type ResourceType } from '../core/types'
 import { dist, short } from '../core/math'
@@ -13,9 +13,16 @@ const QUEST_IDS = new Set(QUESTS.map(q => q.id))
 
 export interface QuestView {
   title: string
+  /** what to do right now: the quest's objective, or the step standing in its way */
   hint: string
+  /** the quest's own objective, whatever is in its way */
+  task: string
   have: number
   need: number
+  /** act, number within the act and the act's length; absent once the chain is done */
+  place?: { act: number; n: number; of: number }
+  /** what finishing it pays, as it reads on a card */
+  reward?: string
   /** world position the guidance arrow should point at, if any */
   targetX?: number
   targetY?: number
@@ -325,12 +332,17 @@ export class QuestManager {
 
   view(): QuestView | null {
     const q = this.current
-    if (!q) return { title: 'FRONTIER SECURED', hint: 'Hold Emberhold as long as you can', have: this.scene.waves.wave, need: this.scene.waves.wave }
+    if (!q) {
+      const hold = 'Hold Emberhold as long as you can'
+      return { title: 'FRONTIER SECURED', hint: hold, task: hold, have: this.scene.waves.wave, need: this.scene.waves.wave }
+    }
     const p = this.progress(q)
     const t = this.targetFor(q)
     return {
-      title: q.title, hint: t?.hint ?? q.hint,
-      have: Math.min(p.have, p.need), need: p.need, targetX: t?.x, targetY: t?.y,
+      title: q.title, hint: t?.hint ?? q.hint, task: q.hint,
+      have: Math.min(p.have, p.need), need: p.need,
+      place: questPlace(q), reward: rewardText(q.reward),
+      targetX: t?.x, targetY: t?.y,
     }
   }
 

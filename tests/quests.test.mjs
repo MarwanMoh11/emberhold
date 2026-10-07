@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { loadTs } from './load-ts.mjs'
 
-const { QUESTS, ACTS, actOf, ACHIEVEMENTS } = await loadTs('src/config/quests.ts')
+const Q = await loadTs('src/config/quests.ts')
+const { QUESTS, ACTS, actOf, ACHIEVEMENTS } = Q
 const { goalAnchors, HALL_ANCHOR } = await loadTs('src/systems/questAnchors.ts')
 const W = await loadTs('src/config/world/index.ts')
 const { BUILDINGS } = await loadTs('src/config/buildings.ts')
@@ -97,4 +98,14 @@ test('new goals read the world, and the act banner plays on entering an act', as
   qm.announce(QUESTS.find(x => x.id === 'b1'))
   qm.announce(QUESTS.find(x => x.id === 'b2'))
   assert.deepEqual(emitted.map(([k, p]) => `${k}:${p.roman}`), ['act:begun:II'])
+})
+
+test('the quest log: every quest knows its place in its act, and its reward reads', () => {
+  const { questPlace, rewardText } = Q
+  for (const [i, a] of ACTS.entries()) {
+    const list = QUESTS.filter(q => actOf(q) === i + 1)
+    list.forEach((q, k) => assert.deepEqual(questPlace(q), { act: i + 1, n: k + 1, of: list.length }, q.id))
+  }
+  assert.equal(rewardText({ coins: 60, wood: 60, xp: 12 }), '+60 coins  ·  +60 wood  ·  +12 xp')
+  for (const q of QUESTS) assert.ok(rewardText(q.reward).length > 0, `${q.id} pays nothing`)
 })

@@ -182,9 +182,9 @@ export class PauseMenu extends Overlay {
     // portrait phone and on any window narrow enough to pin the card to 400.
     this.controls.setFontSize(c ? 10 : 12).setWordWrapWidth(w - 44).setText(
       c
-        ? `WASD move  ·  X dodge  ·  ${ABILITY_KEYS.join(' ')} skills  ·  R ultimate  ·  H army`
+        ? `WASD move  ·  X dodge  ·  ${ABILITY_KEYS.join(' ')} skills  ·  R ultimate  ·  H army  ·  J quests`
         : `WASD move  ·  X dodge  ·  ${ABILITY_KEYS.join(' ')} skills\n` +
-          'R ultimate  ·  H army  ·  ESC pause  ·  F2 debug\n' +
+          'R ultimate  ·  H army  ·  J quests  ·  ESC pause  ·  F2 debug\n' +
           'Stand at a site to build, recruit or claim',
     ).setLineSpacing(2)
 

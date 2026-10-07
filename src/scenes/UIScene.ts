@@ -115,6 +115,7 @@ export class UIScene extends Phaser.Scene {
 
     this.events.on('togglePause', () => this.togglePause())
     this.events.on('toggleAtlas', () => this.toggleAtlas())
+    this.events.on('openQuests', () => this.toggleQuests())
     this.events.on('toggleStats', () => { this.hud.showStats = !this.hud.showStats })
     this.events.on('upgradeChosen', () => this.resumeGame())
     this.events.on('openScreen', (n: ScreenName) => this.openScreen(n))
@@ -125,6 +126,7 @@ export class UIScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-F2', () => this.toggleDebug())
     this.input.keyboard?.on('keydown-P', () => this.togglePause())
     this.input.keyboard?.on('keydown-M', () => this.toggleAtlas())
+    this.input.keyboard?.on('keydown-J', () => this.toggleQuests())
     this.input.keyboard?.on('keydown-ENTER', () => { if (this.atlas.open) this.atlas.confirm() })
     this.input.keyboard?.on('keydown', () => this.gs.audio.unlock())
 
@@ -132,7 +134,9 @@ export class UIScene extends Phaser.Scene {
       ? 'Drag to move  ·  you attack on your own'
       : 'WASD to move  ·  you attack on your own')
     this.time.delayedCall(6000, () => this.hud.hint('Walk over loot, then stand on a build site to spend it'))
-    if (!IS_TOUCH) this.time.delayedCall(12500, () => this.hud.hint('M map  ·  H army  ·  Esc pause'))
+    this.time.delayedCall(12500, () => this.hud.hint(IS_TOUCH
+      ? 'Tap the quest card up top for the quest log'
+      : 'J quests  ·  M map  ·  H army  ·  Esc pause'))
 
     const pauseWhenHidden = () => {
       if (document.hidden && !this.anyModalOpen()) this.togglePause()
@@ -155,6 +159,7 @@ export class UIScene extends Phaser.Scene {
   private openScreen(name: ScreenName) {
     this.pause.hide()
     for (const s of this.screens()) s.hide()
+    this.questLog.fromPause = true
     if (name === 'quests') this.questLog.show()
     else if (name === 'deeds') this.deeds.show()
     else if (name === 'respec') this.respec.show()
@@ -169,9 +174,23 @@ export class UIScene extends Phaser.Scene {
    */
   private closeScreen() {
     const wasVictory = this.summary.open && this.summary.victory
+    // the quest log opened from the HUD tracker hands the fight straight back too
+    const fromHud = this.questLog.open && !this.questLog.fromPause
     for (const s of this.screens()) s.hide()
-    if (wasVictory) this.resumeGame()
+    if (wasVictory || fromHud) this.resumeGame()
     else this.pause.show()
+  }
+
+  /** The quest log from the HUD (its tracker, J, the pad's d-pad up), over a paused game. */
+  toggleQuests() {
+    if (this.questLog.open) { this.closeScreen(); return }
+    if (this.anyModalOpen()) return
+    if (this.debug.open) this.debug.hide()
+    this.questLog.fromPause = false
+    this.questLog.show()
+    this.gs.audio.play('ui')
+    this.gs.paused = true
+    this.scene.pause('Game')
   }
 
   /**
@@ -325,6 +344,7 @@ export class UIScene extends Phaser.Scene {
     if (b.has(5)) this.gs.player.dodge(pad.x, pad.y)
     if (b.has(7)) this.gs.abilities.castUltimate()
     if (b.has(8)) this.openAtlas()
+    if (b.has(12)) this.toggleQuests()
     if (b.has(10)) this.gs.toggleHold()
   }
 

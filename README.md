@@ -27,6 +27,7 @@ Then open <http://localhost:5180>.
 | Hire, recruit | stand on the camp or barracks |
 | Abilities | `SPACE`, `Q`, `E`, `F`, `G`, ultimate on `R` |
 | Army orders | the army button (top right) opens an orders panel: one row per company (infantry, archers, riders) with Defend, Follow and Hold. Hold plants a banner where the hero stands. `H` cycles every company's order |
+| Quest log | `J`, a tap on the quest tracker top centre, or d-pad up: the quest you are on (what to do next, progress, reward) and every quest of the act |
 | Atlas | `M`, the map button top right, or a tap on the minimap: the whole frontier as you have explored it |
 | Travel | walk onto a lit waystone (every outpost has one), or pick a lit stone in the atlas |
 | Pause | `ESC` or `P`, or the pause button top right |
